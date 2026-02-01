@@ -1,0 +1,52 @@
+[package]
+name = "zk"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+
+[dependencies]
+wasm-bindgen = "=0.2.108"
+orchard = { version = "0.12", default-features = false, features = ["circuit"] }
+getrandom = { version = "0.2", features = ["js"] }
+
+poseidon = { package = "halo2_poseidon", version = "0.1" }
+# Circuit
+halo2_gadgets = { version = "0.4", default-features = false }
+halo2_proofs = { version = "0.3",  default-features = false, features = [] }
+
+
+# Circuits
+bls12_381 = { version = "0.8", default-features = false, features = ["alloc"] }
+jubjub = { version = "0.10", default-features = false, features = ["alloc"] }
+rand_core = { version = "0.6", default-features = false }
+bellman = { version = "0.14", default-features = false, features = ["groth16"], optional = true }
+web-sys = { version = "0.3", features = ["console"] }
+lazy_static = "1"
+group = "0.13"
+once_cell = "1.18"
+ff = { version = "0.13", default-features = false }
+pasta_curves = "0.5"
+console_error_panic_hook = "0.1"
+rand_chacha = "0.3"
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"
+
+
+[features]
+default = [ "circuit"]
+circuit = [
+  "dep:bellman",
+  "bls12_381/bits",
+  "bls12_381/groups",
+  "bls12_381/pairings",
+  "jubjub/bits",
+]
+
+
+
