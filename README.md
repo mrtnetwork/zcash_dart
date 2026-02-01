@@ -101,7 +101,3 @@ Contributions are welcome.
 Please use the GitHub Issues tab.
 
 ---
-
-## License
-
-Specify your license (e.g. MIT, Apache-2.0).
