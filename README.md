@@ -79,7 +79,7 @@ All Zcash-required cryptographic primitives are implemented in `blockchain_utils
 - **ZKLib**
   - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/zk_lib_example.dart
 - **Address Management**
-  - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/addreses.dart
+  - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/address_example.dart
 - **Provider Usage**
   - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/clinet/
 
