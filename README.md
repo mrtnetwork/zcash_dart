@@ -74,8 +74,6 @@ Compile the prover for your required target:
 - WebAssembly (WASM)
 - Other supported targets
 
-The ZK module can be built independently and integrated with Dart applications.
-
 ---
 
 # Cryptography
@@ -128,7 +126,6 @@ Zcash cryptography and zero-knowledge proof generation are computationally expen
 For production web applications:
 
 - Compile heavy cryptographic operations to WASM
-- Run proving operations inside a Web Worker
 - Avoid blocking the browser main thread
 
 ---
