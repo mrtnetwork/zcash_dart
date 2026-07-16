@@ -3,3 +3,8 @@ export 'transaction/commitment.dart';
 export 'utils/utils.dart';
 export 'note/note.dart';
 export 'merkle/merkle.dart';
+export 'builder/builder.dart';
+export 'exception/exception.dart';
+export 'pczt/exception.dart';
+export 'pczt/pczt.dart';
+export 'proof/types.dart';

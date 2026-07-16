@@ -10,3 +10,4 @@ export 'pczt/utils.dart';
 export 'transaction/bundle.dart';
 export 'transaction/output.dart';
 export 'transaction/utxo.dart';
+export 'transaction/input.dart';

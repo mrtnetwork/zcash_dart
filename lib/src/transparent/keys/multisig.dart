@@ -2,13 +2,19 @@ import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
 import 'package:zcash_dart/src/transparent/exception/exception.dart';
-import 'package:zcash_dart/src/transparent/keys/public_key.dart';
 
-/// TransparentMultiSignatureSigner is an interface that defines methods required for representing
+abstract class TransparentMultiSignatureSigner {}
+
+/// TransparentMultiSignatureSignerDefault is an interface that defines methods required for representing
 /// signers in a multi-signature scheme. A multi-signature signer typically includes
 /// information about their public key and weight within the scheme.
-class TransparentMultiSignatureSigner {
-  TransparentMultiSignatureSigner._(this.publicKey, this.weight, this.keyType);
+class TransparentMultiSignatureSignerDefault
+    implements TransparentMultiSignatureSigner {
+  TransparentMultiSignatureSignerDefault.unsafe({
+    required this.publicKey,
+    required int weight,
+  }) : keyType = BtcUtils.determinatePubKeyModeHex(publicKey),
+       weight = weight.asU8;
 
   /// PublicKey returns the public key associated with the signer.
   final String publicKey;
@@ -21,14 +27,21 @@ class TransparentMultiSignatureSigner {
 
   /// creates a new instance of a multi-signature signer with the
   /// specified public key and weight.
-  factory TransparentMultiSignatureSigner(
-      {required String publicKey, required int weight}) {
+  factory TransparentMultiSignatureSignerDefault({
+    required String publicKey,
+    required int weight,
+  }) {
+    if (weight > 16 || weight < 1) {
+      throw TransparentExceptoion.multisigFailed(
+        'The weight should be between 1 and 16',
+      );
+    }
     final pubkeyMode = BtcUtils.determinatePubKeyModeHex(publicKey);
 
-    return TransparentMultiSignatureSigner._(
-        ZECPublic.fromHex(publicKey).toHex(mode: pubkeyMode),
-        weight,
-        pubkeyMode);
+    return TransparentMultiSignatureSignerDefault.unsafe(
+      publicKey: ECPublic.fromHex(publicKey).toHex(mode: pubkeyMode),
+      weight: weight,
+    );
   }
 }
 
@@ -47,52 +60,65 @@ class TransparentMultiSignatureAddress {
   /// including "OP_M", compressed public keys, "OP_N", and "OP_CHECKMULTISIG."
   final Script multiSigScript;
 
-  const TransparentMultiSignatureAddress._(
-      {required this.signers,
-      required this.threshold,
-      required this.multiSigScript});
+  const TransparentMultiSignatureAddress.unsafe({
+    required this.signers,
+    required this.threshold,
+    required this.multiSigScript,
+  });
 
   /// CreateMultiSignatureAddress creates a new instance of a TransparentMultiSignatureAddress, representing
   /// a multi-signature transparent address configuration. It allows you to specify the minimum number
   /// of required signatures (threshold), provide the collection of signers participating in the
   /// multi-signature scheme, and specify the address type.
-  factory TransparentMultiSignatureAddress(
-      {required int threshold,
-      required List<TransparentMultiSignatureSigner> signers}) {
-    final sumWeight =
-        signers.fold<int>(0, (sum, signer) => sum + signer.weight);
-    if (threshold > 16 || threshold < 1) {
+  factory TransparentMultiSignatureAddress({
+    required int threshold,
+    required List<TransparentMultiSignatureSignerDefault> signers,
+  }) {
+    final sumWeight = signers.fold<int>(
+      0,
+      (sum, signer) => sum + signer.weight,
+    );
+    final opN = BitcoinOpcode.opNum(threshold);
+    final opW = BitcoinOpcode.opNum(sumWeight);
+    if (opN == null || threshold == 0) {
       throw TransparentExceptoion.multisigFailed(
-          'The threshold should be between 1 and 16');
+        'The threshold should be between 1 and 16',
+      );
     }
-    if (sumWeight > 16) {
+    if (opW == null) {
       throw TransparentExceptoion.multisigFailed(
-          'The total weight of the owners should not exceed 16');
+        'The total weight of the owners should not exceed 16',
+      );
     }
     if (sumWeight < threshold) {
       throw TransparentExceptoion.multisigFailed(
-          'The total weight of the signatories should reach the threshold');
+        'The total weight of the signatories should reach the threshold',
+      );
     }
-    final multiSigScript = <String>['OP_$threshold'];
+    final multiSigScript = <Object>[opN];
     for (final signer in signers) {
       for (var w = 0; w < signer.weight; w++) {
         multiSigScript.add(signer.publicKey);
       }
     }
-    multiSigScript
-        .addAll(['OP_$sumWeight', BitcoinOpcode.opCheckMultiSig.name]);
+    multiSigScript.addAll([opW, BitcoinOpcode.opCheckMultiSig.name]);
     final script = Script(script: multiSigScript);
-    return TransparentMultiSignatureAddress._(
-        signers: signers, threshold: threshold, multiSigScript: script);
+    return TransparentMultiSignatureAddress.unsafe(
+      signers: signers,
+      threshold: threshold,
+      multiSigScript: script,
+    );
   }
 
   /// geneerate transparent p2sh address for selected network
-  ZCashP2shAddress toP2shAddress(
-      {P2shAddressType addressType = P2shAddressType.p2pkhInP2sh,
-      ZCashNetwork network = ZCashNetwork.mainnet}) {
-    return ZCashP2shAddress.fromScript(
-        script: multiSigScript,
-        type: P2shAddressType.p2pkhInP2sh,
-        network: network);
+  ZcashP2shAddress toTransparentAddress({
+    P2shAddressType addressType = P2shAddressType.p2pkhInP2sh,
+    ZcashNetwork network = ZcashNetwork.mainnet,
+  }) {
+    return ZcashP2shAddress.fromScript(
+      script: multiSigScript,
+      type: addressType,
+      network: network,
+    );
   }
 }

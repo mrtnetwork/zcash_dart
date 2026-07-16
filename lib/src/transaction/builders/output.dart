@@ -15,102 +15,129 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
     return m;
   }
 
-  void _validateOutputParams(
-      {required TransactionOutputTarget traget,
-      required bool shieldedModifiable,
-      required bool inputsModifiable,
-      required bool outputsModifiable,
-      List<int>? shieldMemo}) {
-    switch (traget) {
+  void _validateOutputParams({
+    required TransactionOutputTarget target,
+    required bool shieldedModifiable,
+    required bool inputsModifiable,
+    required bool outputsModifiable,
+    List<int>? shieldMemo,
+  }) {
+    switch (target) {
       case TransparentOutputTarget _:
         if (!outputsModifiable) {
-          throw TransactionBuilderException.failed("addOutput",
-              reason:
-                  "Transparent outputs are marked as unmodifiable by the builder.");
+          throw TransactionBuilderException.failed(
+            "addOutput",
+            reason:
+                "Transparent outputs are marked as unmodifiable by the builder.",
+          );
         }
         if (shieldMemo != null) {
-          throw TransactionBuilderException.failed("addOutput",
-              reason: "Memo not allowed in transparent output.");
+          throw TransactionBuilderException.failed(
+            "addOutput",
+            reason: "Memo not allowed in transparent output.",
+          );
         }
         break;
       case SaplingOutputTarget _:
         if (!shieldedModifiable) {
-          throw TransactionBuilderException.failed("addOutput",
-              reason:
-                  "Shielded outputs are marked as unmodifiable by the builder.");
+          throw TransactionBuilderException.failed(
+            "addOutput",
+            reason:
+                "Shielded outputs are marked as unmodifiable by the builder.",
+          );
         }
         break;
       case OrchardOutputTarget _:
         if (!shieldedModifiable) {
-          throw TransactionBuilderException.failed("addOutput",
-              reason:
-                  "Shielded outputs are marked as unmodifiable by the builder.");
+          throw TransactionBuilderException.failed(
+            "addOutput",
+            reason:
+                "Shielded outputs are marked as unmodifiable by the builder.",
+          );
         }
         break;
     }
   }
 
-  Future<void> _addOutput(
-      {required TransactionOutputTarget traget,
-      required ZAmount amount,
-      required bool shieldedModifiable,
-      required bool inputsModifiable,
-      required bool outputsModifiable,
-      List<int>? shieldMemo}) async {
+  Future<int> _addOutput({
+    required TransactionOutputTarget target,
+    required ZAmount amount,
+    required bool shieldedModifiable,
+    required bool inputsModifiable,
+    required bool outputsModifiable,
+    List<int>? shieldMemo,
+  }) async {
     _validateOutputParams(
-        traget: traget,
-        shieldedModifiable: shieldedModifiable,
-        inputsModifiable: inputsModifiable,
-        outputsModifiable: outputsModifiable);
-    switch (traget) {
+      target: target,
+      shieldedModifiable: shieldedModifiable,
+      inputsModifiable: inputsModifiable,
+      outputsModifiable: outputsModifiable,
+    );
+    switch (target) {
       case TransparentOutputTarget target:
         final receipt = target.recipient;
         if (receipt case TransparentNullDataOutput _) {
           if (!amount.isZero()) {
-            throw TransactionBuilderException.failed("addOutput",
-                reason: "Value for null data output must be zero.");
+            throw TransactionBuilderException.failed(
+              "addOutput",
+              reason: "Value for null data output must be zero.",
+            );
           }
-          transparent.addOutput(receipt);
+          return transparent.addOutput(receipt);
         }
         if (receipt case TransparentSpendableOutput output) {
-          transparent.addOutput(TransparentSpendableOutput(
-              address: output.address, value: amount.toZatoshi()));
+          return transparent.addOutput(
+            TransparentSpendableOutput(
+              address: output.address,
+              value: amount.toZatoshi(),
+            ),
+          );
         }
-
-        break;
+        throw TransactionBuilderException.failed(
+          "addOutput",
+          reason: "Invalid transport output target.",
+        );
       case SaplingOutputTarget target:
-        sapling.addOutput(
-            recipient: target.recipient,
-            value: amount.asZatoshi(),
-            memo: _getMemo(shieldMemo));
-        break;
+        return sapling.addOutput(
+          recipient: target.recipient,
+          value: amount.asZatoshi(),
+          memo: _getMemo(shieldMemo),
+        );
       case OrchardOutputTarget target:
-        orchard.addOutput(
-            recipient: target.recipient,
-            value: amount.asZatoshi(),
-            memo: _getMemo(shieldMemo));
-        break;
+        return orchard.addOutput(
+          recipient: target.recipient,
+          value: amount.asZatoshi(),
+          memo: _getMemo(shieldMemo),
+        );
     }
   }
 
-  Future<void> addOutput(
-      {required TransactionOutputTarget traget,
-      required ZAmount amount,
-      List<int>? shieldMemo}) async {
-    await _modify((shieldedModifiable, inputsModifiable, outputsModifiable) =>
-        _addOutput(
-            traget: traget,
-            amount: amount,
-            shieldedModifiable: shieldedModifiable,
-            inputsModifiable: inputsModifiable,
-            outputsModifiable: outputsModifiable,
-            shieldMemo: shieldMemo));
+  Future<int> addOutput({
+    required TransactionOutputTarget target,
+    required ZAmount amount,
+    List<int>? shieldMemo,
+  }) async {
+    return await _modify(
+      (shieldedModifiable, inputsModifiable, outputsModifiable) => _addOutput(
+        target: target,
+        amount: amount,
+        shieldedModifiable: shieldedModifiable,
+        inputsModifiable: inputsModifiable,
+        outputsModifiable: outputsModifiable,
+        shieldMemo: shieldMemo,
+      ),
+    );
   }
 
-  Future<ZAmount> addChange(
-      {required TransactionOutputTarget traget, List<int>? shieldMemo}) async {
-    return await _modify(
-        (shieldedModifiable, inputsModifiable, outputsModifiable) async {
+  Future<ZAmount> addChange({
+    required TransactionOutputTarget target,
+    List<int>? shieldMemo,
+  }) async {
+    return await _modify((
+      shieldedModifiable,
+      inputsModifiable,
+      outputsModifiable,
+    ) async {
       ZAmount value = valueBalance();
       if (value.value <= BigInt.zero) {
         throw TransactionBuilderException.failed(
@@ -121,7 +148,7 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
       int saplingOutput = sapling.outputs.length;
       int orchardOutput = orchard.outputs.length;
       int transparentOutput = transparent.outputSizes();
-      switch (traget) {
+      switch (target) {
         case TransparentOutputTarget target:
           transparentOutput +=
               target.recipient.toOutput().toSerializeBytes().length;
@@ -135,32 +162,37 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
           break;
       }
       final fee = feeBuilder.feeRequired(
-          network: network,
-          targetHeight: targetHeight,
-          trasparentInputSizes: transparent.inputSizes(),
-          transparentOutputSizes: transparentOutput,
-          saplingInputCount: sapling.spends.length,
-          saplingOutputCount: sapling.bundleType.numOutputs(
-              numSpends: sapling.spends.length, numOutputs: saplingOutput),
-          orchardActionCount: orchard.bundleType.numActions(
-              numSpends: orchard.spends.length, numOutputs: orchardOutput));
+        network: network,
+        targetHeight: targetHeight,
+        trasparentInputSizes: transparent.inputSizes(),
+        transparentOutputSizes: transparentOutput,
+        saplingInputCount: sapling.spends.length,
+        saplingOutputCount: sapling.bundleType.numOutputs(
+          numSpends: sapling.spends.length,
+          numOutputs: saplingOutput,
+        ),
+        orchardActionCount: orchard.bundleType.numActions(
+          numSpends: orchard.spends.length,
+          numOutputs: orchardOutput,
+        ),
+      );
       value -= fee;
       if (value.isNegative()) {
-        throw TransactionBuilderException.failed("addChange",
-            reason:
-                "Insufficient balance to cover the required transaction fee.",
-            details: {
-              "requiredFee": fee.toString(),
-            });
+        throw TransactionBuilderException.failed(
+          "addChange",
+          reason: "Insufficient balance to cover the required transaction fee.",
+          details: {"requiredFee": fee.toString()},
+        );
       }
       if (value.isZero()) return fee;
       await _addOutput(
-          traget: traget,
-          amount: value,
-          shieldedModifiable: shieldedModifiable,
-          inputsModifiable: inputsModifiable,
-          outputsModifiable: outputsModifiable,
-          shieldMemo: shieldMemo);
+        target: target,
+        amount: value,
+        shieldedModifiable: shieldedModifiable,
+        inputsModifiable: inputsModifiable,
+        outputsModifiable: outputsModifiable,
+        shieldMemo: shieldMemo,
+      );
       value = valueBalance() - fee;
       if (!value.isZero()) {
         throw TransactionBuilderException.failed(

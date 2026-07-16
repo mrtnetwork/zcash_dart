@@ -1,10 +1,7 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 import 'package:zcash_dart/src/note/note.dart';
-import 'package:zcash_dart/src/pedersen_hash/pedersen_hash.dart';
-import 'package:zcash_dart/src/sapling/exception/exception.dart';
 import 'package:zcash_dart/src/sapling/sapling.dart';
-import 'package:zcash_dart/src/sapling/utils/utils.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
 abstract class SaplingTrapdoor with Equality {
@@ -44,15 +41,17 @@ class SaplingValueCommitTrapdoor extends SaplingTrapdoor
     return SaplingValueCommitTrapdoor(JubJubNativeFr.fromBytes(bytes));
   }
   factory SaplingValueCommitTrapdoor.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return SaplingValueCommitTrapdoor.fromBytes(json.valueAsBytes("inner"));
   }
   factory SaplingValueCommitTrapdoor.random() =>
       SaplingValueCommitTrapdoor(JubJubNativeFr.random());
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
-    return LayoutConst.struct([LayoutConst.fixedBlob32(property: "inner")],
-        property: property);
+    return LayoutConst.struct([
+      LayoutConst.fixedBlob32(property: "inner"),
+    ], property: property);
   }
 
   @override
@@ -88,19 +87,25 @@ class SaplingValueCommitment extends SaplingBaseValueCommitment
   const SaplingValueCommitment(this.inner);
   factory SaplingValueCommitment.deserializeJson(Map<String, dynamic> json) {
     return SaplingValueCommitment(
-        JubJubNativePoint.fromBytes(json.valueAsBytes("inner")));
+      JubJubNativePoint.fromBytes(json.valueAsBytes("inner")),
+    );
   }
   factory SaplingValueCommitment.fromBytes(List<int> bytes) {
     final point = JubJubNativePoint.fromBytes(bytes);
     if (point.isSmallOrder()) {
-      throw SaplingException.operationFailed("SaplingValueCommitment",
-          reason: "Invalid value commitment point encoding bytes.");
+      throw SaplingException.operationFailed(
+        "SaplingValueCommitment",
+        reason: "Invalid value commitment point encoding bytes.",
+      );
     }
     return SaplingValueCommitment(point);
   }
-  factory SaplingValueCommitment.derive(
-      {required ZAmount value, required SaplingValueCommitTrapdoor rcv}) {
-    final cv = (SaplingUtils.valueCommitmentValueGeneratorNative *
+  factory SaplingValueCommitment.derive({
+    required ZAmount value,
+    required SaplingValueCommitTrapdoor rcv,
+  }) {
+    final cv =
+        (SaplingUtils.valueCommitmentValueGeneratorNative *
             JubJubNativeFr(value.value)) +
         (SaplingUtils.valueCommitmentRandomnessGeneratorNative * rcv.value);
     return SaplingValueCommitment(cv);
@@ -172,24 +177,30 @@ class SaplingNoteCommitment with Equality {
     required List<int> pkD,
     required ZAmount v,
     required SaplingNoteCommitTrapdoor rcm,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
   }) {
     return SaplingUtils.windowedPedersenCommitNative(
-        personalization: PersonalizationNoteCommitment(),
-        context: context,
-        s: [
-          ...v.toBits(),
-          ...BytesUtils.bytesToBits(gD.exc(
-              length: 32,
-              operation: "SaplingNoteCommitment",
-              reason: "Invalid gd bytes length.")),
-          ...BytesUtils.bytesToBits(pkD.exc(
+      personalization: PersonalizationNoteCommitment(),
+      context: context,
+      s: [
+        ...v.toBits(),
+        ...BytesUtils.bytesToBits(
+          gD.exc(
+            length: 32,
+            operation: "SaplingNoteCommitment",
+            reason: "Invalid gd bytes length.",
+          ),
+        ),
+        ...BytesUtils.bytesToBits(
+          pkD.exc(
             length: 32,
             operation: "SaplingNoteCommitment",
             reason: "Invalid pkD bytes length.",
-          )),
-        ],
-        r: rcm.inner);
+          ),
+        ),
+      ],
+      r: rcm.inner,
+    );
   }
 
   factory SaplingNoteCommitment.deriv({
@@ -197,7 +208,7 @@ class SaplingNoteCommitment with Equality {
     required List<int> pkD,
     required ZAmount v,
     required SaplingNoteCommitTrapdoor rcm,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
   }) {
     final result = _derive(gD: gD, pkD: pkD, v: v, rcm: rcm, context: context);
     return SaplingNoteCommitment(result);
@@ -219,17 +230,20 @@ class SaplingExtractedNoteCommitment with Equality, LayoutSerializable {
   }
 
   factory SaplingExtractedNoteCommitment.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return SaplingExtractedNoteCommitment.fromBytes(json.valueAsBytes("inner"));
   }
   factory SaplingExtractedNoteCommitment.fromNoteCommitment(
-      SaplingNoteCommitment com) {
+    SaplingNoteCommitment com,
+  ) {
     return SaplingExtractedNoteCommitment(com.inner.toAffine().u);
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
-    return LayoutConst.struct([LayoutConst.fixedBlob32(property: "inner")],
-        property: property);
+    return LayoutConst.struct([
+      LayoutConst.fixedBlob32(property: "inner"),
+    ], property: property);
   }
 
   List<int> toBytes() {
@@ -256,9 +270,10 @@ enum SaplingRSeedType {
 
   final int value;
   const SaplingRSeedType(this.value);
-  static SaplingRSeedType fromValue(int? value) =>
-      values.firstWhere((e) => e.value == value,
-          orElse: () => throw ItemNotFoundException(value: value));
+  static SaplingRSeedType fromValue(int? value) => values.firstWhere(
+    (e) => e.value == value,
+    orElse: () => throw ItemNotFoundException(value: value),
+  );
 }
 
 sealed class SaplingRSeed with Equality, LayoutSerializable {
@@ -273,7 +288,9 @@ sealed class SaplingRSeed with Equality, LayoutSerializable {
     final List<int> rseed = json.valueAsBytes("rseed");
     return switch (type) {
       SaplingRSeedType.afterZip212 => SaplingRSeedAfterZip212(rseed),
-      SaplingRSeedType.beforeZip212 => SaplingRSeedBeforeZip212.fromBytes(rseed)
+      SaplingRSeedType.beforeZip212 => SaplingRSeedBeforeZip212.fromBytes(
+        rseed,
+      ),
     };
   }
 
@@ -291,14 +308,14 @@ sealed class SaplingRSeed with Equality, LayoutSerializable {
 
   @override
   Map<String, dynamic> toSerializeJson() {
-    return {"type": type, "rseed": toBytes()};
+    return {"type": type.value, "rseed": toBytes()};
   }
 }
 
 class SaplingRSeedBeforeZip212 extends SaplingRSeed {
   final JubJubNativeFr inner;
   const SaplingRSeedBeforeZip212(this.inner)
-      : super(SaplingRSeedType.beforeZip212);
+    : super(SaplingRSeedType.beforeZip212);
   factory SaplingRSeedBeforeZip212.fromBytes(List<int> bytes) {
     return SaplingRSeedBeforeZip212(JubJubNativeFr.fromBytes(bytes));
   }
@@ -325,17 +342,19 @@ class SaplingRSeedBeforeZip212 extends SaplingRSeed {
 class SaplingRSeedAfterZip212 extends SaplingRSeed {
   final List<int> inner;
   SaplingRSeedAfterZip212(List<int> bytes)
-      : inner = bytes.exc(
-            length: 32,
-            operation: "SaplingRSeedAfterZip212",
-            reason: "Invalid rseed bytes length."),
-        super(SaplingRSeedType.afterZip212);
+    : inner = bytes.exc(
+        length: 32,
+        operation: "SaplingRSeedAfterZip212",
+        reason: "Invalid rseed bytes length.",
+      ),
+      super(SaplingRSeedType.afterZip212);
   factory SaplingRSeedAfterZip212.random() =>
       SaplingRSeedAfterZip212(QuickCrypto.generateRandom());
   @override
   SaplingNoteCommitTrapdoor rcm() {
     return SaplingNoteCommitTrapdoor(
-        JubJubNativeFr.fromBytes64(PrfExpand.saplingRcm.apply(inner)));
+      JubJubNativeFr.fromBytes64(PrfExpand.saplingRcm.apply(inner)),
+    );
   }
 
   @override
@@ -354,14 +373,19 @@ class SaplingRSeedAfterZip212 extends SaplingRSeed {
 
 class SaplingNullifier extends Nullifier<List<int>> {
   SaplingNullifier(List<int> bytes)
-      : super(bytes.exc(
-            length: 32,
-            operation: "SaplingNullifier",
-            reason: "Invalid sapling nullifier bytes length."));
+    : super(
+        bytes.exc(
+          length: 32,
+          operation: "SaplingNullifier",
+          reason: "Invalid sapling nullifier bytes length.",
+        ),
+      );
   factory SaplingNullifier.deserializeJson(Map<String, dynamic> json) {
     return SaplingNullifier(json.valueAsBytes("inner"));
   }
 
   @override
   List<int> toBytes() => inner.clone();
+  @override
+  ZcashProtocol get protocol => ZcashProtocol.sapling;
 }

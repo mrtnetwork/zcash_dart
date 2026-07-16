@@ -1,31 +1,53 @@
-// Copyright (c) 2019, the Dart project authors.  Please see the AUTHORS file
-// for details. All rights reserved. Use of this source code is governed by a
-// BSD-style license that can be found in the LICENSE file.
-
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:zcash_dart/src/zk_proof/lib/exception/exception.dart';
 
-typedef ProcessBytesNative = Uint32 Function(
-  Uint32 id,
-  Pointer<Uint8> payload,
-  Uint64 payloadLen,
-  Pointer<Pointer<Uint8>> outPtr,
-  Pointer<Uint64> outLen,
-);
+typedef ProcessBytesNative =
+    Uint32 Function(
+      Uint32 id,
+      Pointer<Uint8> payload,
+      Uint64 payloadLen,
+      Pointer<Pointer<Uint8>> outPtr,
+      Pointer<Uint64> outLen,
+    );
 
-typedef ProcessBytesDart = int Function(
-  int id,
-  Pointer<Uint8> payload,
-  int payloadLen,
-  Pointer<Pointer<Uint8>> outPtr,
-  Pointer<Uint64> outLen,
-);
+typedef ProcessBytesDart =
+    int Function(
+      int id,
+      Pointer<Uint8> payload,
+      int payloadLen,
+      Pointer<Pointer<Uint8>> outPtr,
+      Pointer<Uint64> outLen,
+    );
 
-// Free function
+typedef ZKRequestNative =
+    Uint32 Function(
+      Pointer<Uint8> payload,
+      Uint64 payloadLen,
+      Pointer<Pointer<Uint8>> outPtr,
+      Pointer<Uint64> outLen,
+    );
+
+typedef ZKRequestDart =
+    int Function(
+      Pointer<Uint8> payload,
+      int payloadLen,
+      Pointer<Pointer<Uint8>> outPtr,
+      Pointer<Uint64> outLen,
+    );
+
+typedef ZKRequestSetupSaplingParamsNative =
+    Uint32 Function(Pointer<Uint8> payload, Uint64 payloadLen);
+
+typedef ZKRequestSetupSaplingParamsDart =
+    int Function(Pointer<Uint8> payload, int payloadLen);
 typedef FreeBytesNative = Void Function(Pointer<Uint8> ptr, IntPtr len);
 typedef FreeBytesDart = void Function(Pointer<Uint8> ptr, int len);
+
+// Copyright (c) 2019, the Dart project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
 typedef PosixCallocNative = Pointer Function(IntPtr num, IntPtr size);
 typedef PosixFreeNative = Void Function(Pointer);
 typedef WinCoTaskMemAllocNative = Pointer Function(NSize);
@@ -39,9 +61,10 @@ final Pointer<NativeFunction<PosixFreeNative>> posixFreePointer =
 const CallocAllocator calloc = CallocAllocator._();
 
 final DynamicLibrary ole32lib = DynamicLibrary.open('ole32.dll');
-final WinCoTaskMemAlloc winCoTaskMemAlloc =
-    ole32lib.lookupFunction<WinCoTaskMemAllocNative, WinCoTaskMemAlloc>(
-        'CoTaskMemAlloc');
+final WinCoTaskMemAlloc winCoTaskMemAlloc = ole32lib
+    .lookupFunction<WinCoTaskMemAllocNative, WinCoTaskMemAlloc>(
+      'CoTaskMemAlloc',
+    );
 final Pointer<NativeFunction<WinCoTaskMemFreeNative>> winCoTaskMemFreePointer =
     ole32lib.lookup('CoTaskMemFree');
 final WinCoTaskMemFree winCoTaskMemFree = winCoTaskMemFreePointer.asFunction();

@@ -9,37 +9,43 @@ import 'package:zcash_dart/src/transparent/keys/private_key.dart';
 
 abstract mixin class PcztSigner implements PcztExtractor {
   ({TransactionData txData, TxDigestsPart digest, List<int> sighash})
-      _generateTxDigest(SignableInput input) {
+  _generateTxDigest(SignableInput input) {
     final txData = toTxData();
     final digest = txData.toTxDeigest();
     final amounts = transparent.inputs.map((e) => e.value).toList();
     final scripts = transparent.inputs.map((e) => e.scriptPubkey).toList();
     final sighash = SighashGenerator.v5(
-        tx: txData,
-        digest: digest,
-        input: input,
-        amounts: amounts,
-        scriptPubKeys: scripts);
+      tx: txData,
+      digest: digest,
+      input: input,
+      amounts: amounts,
+      scriptPubKeys: scripts,
+    );
     return (txData: txData, digest: digest, sighash: sighash.asImmutableBytes);
   }
 
-  Future<void> signTransparent(
-      {required int index,
-      required ZECPrivate sk,
-      required ZCashCryptoContext context}) async {
+  Future<void> signTransparent({
+    required int index,
+    required ZECPrivate sk,
+    required ZcashCryptoContext context,
+  }) async {
     final input = transparent.inputs.elementAtOrNull(index);
     if (input == null) {
-      throw PcztException.failed("signTransparent",
-          reason: "Index out of range.", details: {"index": index});
+      throw PcztException.failed(
+        "signTransparent",
+        reason: "Index out of range.",
+        details: {"index": index.toString()},
+      );
     }
 
     final redeemScript = input.redeemScript ?? input.scriptPubkey;
     final signableInput = TransparentSignableInput(
-        hashType: input.sighashType,
-        index: index,
-        scriptCode: redeemScript,
-        sciptPubKey: input.scriptPubkey,
-        amount: input.value);
+      hashType: input.sighashType,
+      index: index,
+      scriptCode: redeemScript,
+      sciptPubKey: input.scriptPubkey,
+      amount: input.value,
+    );
     final digests = _generateTxDigest(signableInput);
     await input.sign(sighash: digests.sighash, context: context, sk: sk);
 
@@ -68,14 +74,18 @@ abstract mixin class PcztSigner implements PcztExtractor {
     global.disableShieldModifiable();
   }
 
-  Future<void> signSapling(
-      {required int index,
-      required SaplingSpendAuthorizingKey ask,
-      required ZCashCryptoContext context}) async {
+  Future<void> signSapling({
+    required int index,
+    required SaplingSpendAuthorizingKey ask,
+    required ZcashCryptoContext context,
+  }) async {
     final spend = sapling.spends.elementAtOrNull(index);
     if (spend == null) {
-      throw PcztException.failed("signSapling",
-          reason: "Index out of range.", details: {"index": index});
+      throw PcztException.failed(
+        "signSapling",
+        reason: "Index out of range.",
+        details: {"index": index.toString()},
+      );
     }
     spend.verifyNullifier(context);
     final digests = _generateTxDigest(ShieldedSignableInput());
@@ -83,14 +93,18 @@ abstract mixin class PcztSigner implements PcztExtractor {
     global.disableModifiable();
   }
 
-  Future<void> signOrchard(
-      {required int index,
-      required OrchardSpendAuthorizingKey ask,
-      required ZCashCryptoContext context}) async {
+  Future<void> signOrchard({
+    required int index,
+    required OrchardSpendAuthorizingKey ask,
+    required ZcashCryptoContext context,
+  }) async {
     final action = orchard.actions.elementAtOrNull(index);
     if (action == null) {
-      throw PcztException.failed("signOrchard",
-          reason: "Index out of range.", details: {"index": index});
+      throw PcztException.failed(
+        "signOrchard",
+        reason: "Index out of range.",
+        details: {"index": index.toString()},
+      );
     }
     action.spend.verifyNullifier(context);
     final digests = _generateTxDigest(ShieldedSignableInput());
@@ -99,19 +113,25 @@ abstract mixin class PcztSigner implements PcztExtractor {
     global.disableModifiable();
   }
 
-  void setSaplingProofGenerationKey(
-      {required int index,
-      SaplingProofGenerationKey? proofGenerationKey,
-      SaplingExpandedSpendingKey? expsk}) {
+  void setSaplingProofGenerationKey({
+    required int index,
+    SaplingProofGenerationKey? proofGenerationKey,
+    SaplingExpandedSpendingKey? expsk,
+  }) {
     final spend = sapling.spends.elementAtOrNull(index);
     if (spend == null) {
-      throw PcztException.failed("setSaplingProofGenerationKey",
-          reason: "Index out of range.", details: {"index": index});
+      throw PcztException.failed(
+        "setSaplingProofGenerationKey",
+        reason: "Index out of range.",
+        details: {"index": index.toString()},
+      );
     }
     if (proofGenerationKey == null && expsk == null) {
-      throw PcztException.failed("setSaplingProofGenerationKey",
-          reason: "Either proofGenerationKey or expsk must be provided.",
-          details: {"index": index});
+      throw PcztException.failed(
+        "setSaplingProofGenerationKey",
+        reason: "Either proofGenerationKey or expsk must be provided.",
+        details: {"index": index.toString()},
+      );
     }
     proofGenerationKey ??=
         SaplingProofGenerationKey.fromSaplingExpandedSpendingKey(expsk!);

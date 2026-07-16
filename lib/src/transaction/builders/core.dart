@@ -12,9 +12,9 @@ abstract mixin class BaseTransactionBuilder {
   abstract final TransparentBuilder transparent;
   abstract final int targetHeight;
   abstract final int expiryHeight;
-  abstract final ZCashCryptoContext context;
-  abstract final ZCashNetwork network;
-  abstract final Zip317FeeRole feeBuilder;
+  abstract final ZcashCryptoContext context;
+  abstract final ZcashNetwork network;
+  abstract final ZFeeRole feeBuilder;
   final lock = SafeAtomicLock();
 
   bool hasShieldedSpends() {

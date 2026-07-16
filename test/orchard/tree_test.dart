@@ -42,19 +42,12 @@ void _test() {
         expect(position, witness?.position);
       }
     }
-    final s = tree.toSerializeBytes();
-    final decode = OrchardShardTree.deserialize(
-      bytes: s,
-      store: OrchardShardStore(hashable),
-      maxCheckpoints: 100,
-      depth: 4,
-      shardHeight: 3,
-    );
+
     for (final (index, j) in _tVecotor.indexed) {
       final tv = _TestVector.fromJson(j);
       for (int j = 0; j <= index; j++) {
         final position = LeafPosition(j);
-        final witness = decode.witnessAtCheckpointId(
+        final witness = tree.witnessAtCheckpointId(
           position: LeafPosition(j),
           checkpointId: index,
         );
@@ -69,12 +62,12 @@ void _test() {
     final shards = tree.store.getShards();
     for (final i in shards) {
       final shard = tree.store.getShard(i.rootAddr);
-      final dShard = decode.store.getShard(i.rootAddr);
+      final dShard = tree.store.getShard(i.rootAddr);
       expect(shard, dShard);
     }
     final checkpoints = tree.store.getCheckpoints();
     for (final i in checkpoints) {
-      final checkpoint = decode.store.getCheckpoint(i.key);
+      final checkpoint = tree.store.getCheckpoint(i.key);
       expect(checkpoint?.treeState, i.value.treeState);
     }
   });

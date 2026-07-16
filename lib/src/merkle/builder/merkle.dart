@@ -7,21 +7,28 @@ import 'package:zcash_dart/src/merkle/exception/exception.dart';
 import 'package:zcash_dart/src/merkle/builder/types.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
+import 'package:zcash_dart/src/merkle/tree/shard_tree.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/note/note.dart';
 import 'package:zcash_dart/src/orchard/orchard.dart';
 import 'package:zcash_dart/src/provider/provider.dart';
 import 'package:zcash_dart/src/sapling/merkle/merkle.dart';
 
-abstract class MerkleBuilder {
-  int? saplingMaxCheckpointHeigt(int height);
-  int? orchardMaxCheckpointHeight(int height);
-  OrchardShardTree getOrcardShardTree();
-  SaplingShardTree getSaplingShardTree();
-  List<int> serializeSaplingTree();
-  List<int> serializeOrchardTree();
-  FutureOr<void> updateState(List<ScannedBlock> scannedBlocks);
-  Future<void> initSubtreeRoot();
+abstract class MerkleController {
+  FutureOr<OrchardShardTree> getOrcardShardTree();
+  FutureOr<SaplingShardTree> getSaplingShardTree();
+
+  FutureOr<SerializableMerkleInsertReport?> updateState(
+    List<ScannedBlock> scannedBlocks, {
+    bool continually = false,
+  });
+  Future<void> initSubtreeRoot({
+    required int finalSaplingTree,
+    required int finalOrchardTree,
+  });
+  Future<void> insertSubtree(SerializableMerkleInsertReport subutree);
+  FutureOr<ChainMerkleState> toSerializableChainShardTree();
+
   FutureOr<BuildMerleOutput> buildMerkle({
     int? targetHeight,
     List<SaplingScannedOutput> saplingOutputs = const [],
@@ -29,68 +36,302 @@ abstract class MerkleBuilder {
   });
 }
 
-class DefaultMerkleBuilder implements MerkleBuilder {
-  final ZCashCryptoContext context;
-  final ZCashWalletdProvider provider;
+class DefaultMerkleController implements MerkleController {
+  final ZcashCryptoContext context;
+  final IGrpcProvider<
+    IServiceProvider,
+    IServiceRequestParams,
+    BaseGRPCServiceRequestParams
+  >
+  provider;
   final OrchardShardTree _orchardTree;
   final SaplingShardTree _saplingTree;
   final TreeLevel shardHeight = TreeLevel(NoteEncryptionConst.shardHeight);
   final _lock = SafeAtomicLock();
-  bool _saplingUpdated = false;
-  bool _orchardUpdated = false;
-  ChainState? _chainState;
+  MerkleState? _latestState;
+  Hashable<OrchardMerkleHash> get orchardHashable => _orchardTree.hashContext;
+  Hashable<SaplingNode> get saplingHashable => _saplingTree.hashContext;
+  int _saplingSubtreeIndex = 0;
+  int _orchardSubtreeIndex = 0;
+  int get saplingSubtreeIndex => _saplingSubtreeIndex;
+  int get orchardSubtreeIndex => _orchardSubtreeIndex;
 
-  DefaultMerkleBuilder({
+  DefaultMerkleController._({
     required this.context,
     required this.provider,
     OrchardShardTree? orchardTree,
     SaplingShardTree? saplingTree,
+    int? saplingSubtreeIndex,
+    int? orchardSubtreeIndex,
   }) : _orchardTree =
            orchardTree ??
            OrchardShardTree(OrchardShardStore(context.orchardHashable())),
        _saplingTree =
            saplingTree ??
-           SaplingShardTree(SaplingShardStore(context.saplingHashable()));
+           SaplingShardTree(SaplingShardStore(context.saplingHashable())),
+       _saplingSubtreeIndex = saplingSubtreeIndex ?? 0,
+       _orchardSubtreeIndex = orchardSubtreeIndex ?? 0;
+  factory DefaultMerkleController({
+    required ZcashCryptoContext context,
+    required IGrpcProvider<
+      IServiceProvider,
+      IServiceRequestParams,
+      BaseGRPCServiceRequestParams
+    >
+    provider,
+  }) {
+    return DefaultMerkleController._(context: context, provider: provider);
+  }
+  factory DefaultMerkleController.fromChainMerkleState({
+    required ZcashCryptoContext context,
+    required IGrpcProvider<
+      IServiceProvider,
+      IServiceRequestParams,
+      BaseGRPCServiceRequestParams
+    >
+    provider,
+    required ChainMerkleState state,
+  }) {
+    return DefaultMerkleController._(
+      context: context,
+      provider: provider,
+      orchardSubtreeIndex: state.orchardSabtreeIndex,
+      orchardTree: state.orchard,
+      saplingSubtreeIndex: state.saplingSubtreeIndex,
+      saplingTree: state.sapling,
+    );
+  }
+  factory DefaultMerkleController.deserialize({
+    List<int>? bytes,
+    CborObject? obj,
+    required ZcashCryptoContext context,
+    required ZcashWalletdProvider provider,
+  }) {
+    final state = ChainMerkleState.deserialize(
+      bytes: bytes,
+      orchardHashable: context.orchardHashable(),
+      saplingHashable: context.saplingHashable(),
+      object: obj,
+    );
+    return DefaultMerkleController.fromChainMerkleState(
+      context: context,
+      provider: provider,
+      state: state,
+    );
+  }
 
   @override
-  Future<void> initSubtreeRoot() async {
-    if (_saplingUpdated && _orchardUpdated) return;
+  Future<void> initSubtreeRoot({
+    required int finalSaplingTree,
+    required int finalOrchardTree,
+  }) async {
     await _lock.run(() async {
-      if (!_saplingUpdated) {
-        await _updateSaplingSubtreeRoots();
-        _saplingUpdated = true;
+      final cSapIndex = _saplingSubtreeIndex;
+      final cOrchardIndex = _orchardSubtreeIndex;
+      int index = finalSaplingTree ~/ BinaryOps.mask16;
+      if (index > cSapIndex) {
+        _saplingSubtreeIndex = await _updateSaplingSubtreeRoots(cSapIndex + 1);
       }
-      if (!_orchardUpdated) {
-        await _updateOrchardSubtreeRoots();
-        _orchardUpdated = true;
+      index = finalOrchardTree ~/ BinaryOps.mask16;
+      if (index > cOrchardIndex) {
+        _orchardSubtreeIndex = await _updateOrchardSubtreeRoots(
+          cOrchardIndex + 1,
+        );
       }
     });
   }
 
   @override
-  Future<void> updateState(List<ScannedBlock> scannedBlocks) async {
-    await initSubtreeRoot();
+  Future<void> insertSubtree(SerializableMerkleInsertReport subutree) async {
+    await initSubtreeRoot(
+      finalOrchardTree: subutree.finalOrchardTree,
+      finalSaplingTree: subutree.finalSaplingTree,
+    );
     await _lock.run(() async {
-      if (scannedBlocks.isEmpty) return;
-      scannedBlocks =
-          scannedBlocks.clone()..sort((a, b) => a.blockId.compareTo(b.blockId));
-      final chainState = await _updateeChainState(
-        block: scannedBlocks.first.blockId - 1,
+      final sapling = subutree.sapling;
+      SplayTreeMap<int, LeafPosition>? saplingCheckpoints;
+      SplayTreeMap<int, LeafPosition>? orchardCheckpoints;
+      final chainState = subutree.chainState;
+      await updateChainState(
+        IntUtils.max(subutree.height - 1, 0),
+        chainState: chainState,
       );
+      if (sapling != null) {
+        final entries = sapling.checkpoints.map(
+          (e) => MapEntry<int, LeafPosition>(e.checkpoint, e.position),
+        );
+        saplingCheckpoints = SplayTreeMap<int, LeafPosition>.from(
+          Map<int, LeafPosition>.fromEntries(entries),
+        );
+        _saplingTree.insertTree(sapling.subtree, saplingCheckpoints);
+      }
+      final orchard = subutree.orchard;
+      if (orchard != null) {
+        final entries = orchard.checkpoints.map(
+          (e) => MapEntry<int, LeafPosition>(e.checkpoint, e.position),
+        );
+        orchardCheckpoints = SplayTreeMap<int, LeafPosition>.from(
+          Map<int, LeafPosition>.fromEntries(entries),
+        );
+        _orchardTree.insertTree(orchard.subtree, orchardCheckpoints);
+      }
+      final saplingMissing = ensureCheckpoints(
+        orchardCheckpoints?.keys.toList() ?? [],
+        saplingCheckpoints,
+        chainState.finalSaplingTree,
+      );
+      final orchardMissing = ensureCheckpoints(
+        saplingCheckpoints?.keys.toList() ?? [],
+        orchardCheckpoints,
+        chainState.finalOrchardTree,
+      );
+      final minSaplingHeight = _saplingTree.store.maxCheckpointId() ?? 0;
+      for (final i in saplingMissing) {
+        if (i.key > minSaplingHeight) {
+          _saplingTree.store.addCheckpoint(i.key, i.value);
+        }
+      }
+      final minOrchardHeight = _orchardTree.store.maxCheckpointId() ?? 0;
+      for (final i in orchardMissing) {
+        if (i.key > minOrchardHeight) {
+          _orchardTree.store.addCheckpoint(i.key, i.value);
+        }
+      }
+    });
+  }
+
+  Future<MerkleState> _buildContinuallyState({
+    required MerkleState? previousState,
+    required List<ScannedBlock> scannedBlocks,
+  }) async {
+    if (scannedBlocks.isEmpty) {
+      throw MerkleBuilderException.failed(
+        "updateState",
+        reason: "No scanned blocks provided.",
+      );
+    }
+
+    final scannedBlock = scannedBlocks.first.blockId;
+    ChainState state = switch (previousState) {
+      MerkleState(:final state) => state,
+      null => await updateChainState(IntUtils.max(0, scannedBlock - 1)),
+    };
+    final latestState = MerkleState(
+      state: state,
+      saplingFinalTreeSize: scannedBlocks.last.bundles.sapling.finalTreeSize,
+      orchardFinalTreeSize: scannedBlocks.last.bundles.orchard.finalTreeSize,
+      latestBlockId: scannedBlocks.last.blockId,
+      startBlock: scannedBlock,
+    );
+    if (previousState == null) {
+      return latestState;
+    }
+
+    try {
+      final int expectedOrchardTreeSize = previousState.orchardFinalTreeSize;
+      final int expectedSaplingTreeSize = previousState.saplingFinalTreeSize;
+      final first = scannedBlocks.first;
+      final actualOrchardStart =
+          first.bundles.orchard.finalTreeSize -
+          first.bundles.orchard.commitments.length;
+
+      final actualSaplingStart =
+          first.bundles.sapling.finalTreeSize -
+          first.bundles.sapling.commitments.length;
+
+      final int expectedNextBlock = previousState.latestBlockId + 1;
+      if (scannedBlock != expectedNextBlock) {
+        throw MerkleBuilderException.failed(
+          "updateState",
+          reason: "Non-sequential block detected. ",
+        );
+      }
+      if (actualOrchardStart != expectedOrchardTreeSize) {
+        throw MerkleBuilderException.failed(
+          "updateState",
+          reason: "Orchard tree size mismatch at block $scannedBlock.",
+        );
+      }
+
+      if (actualSaplingStart != expectedSaplingTreeSize) {
+        throw MerkleBuilderException.failed(
+          "updateState",
+          reason: "Sapling tree size mismatch at block $scannedBlock. ",
+        );
+      }
+      return latestState;
+    } on MerkleBuilderException catch (e) {
+      throw MerkleBuilderException(
+        e.message,
+        details: {
+          ...e.details ?? {},
+          "firstBlock": latestState.startBlock.toString(),
+          "latestBlockId": latestState.latestBlockId.toString(),
+          "orchardFinalTreeSize": latestState.orchardFinalTreeSize.toString(),
+          "saplingFinalTreeSize": latestState.saplingFinalTreeSize.toString(),
+          "stateBlockHeight": latestState.state.blockHeight.toString(),
+          "actualOrchardTreeSize":
+              scannedBlocks.first.bundles.orchard.finalTreeSize.toString(),
+          "actualSaplingTreeSize":
+              scannedBlocks.first.bundles.sapling.finalTreeSize.toString(),
+        },
+      );
+    }
+  }
+
+  @override
+  Future<SerializableMerkleInsertReport?> updateState(
+    List<ScannedBlock> scannedBlocks, {
+    bool continually = false,
+  }) async {
+    if (scannedBlocks.isEmpty) return null;
+    scannedBlocks = switch (continually) {
+      true => scannedBlocks,
+      false =>
+        scannedBlocks.clone()..sort((a, b) => a.blockId.compareTo(b.blockId)),
+    };
+    final int finalOrchardTreeSize =
+        scannedBlocks.last.bundles.orchard.finalTreeSize;
+    final int finalSaplingTreeSize =
+        scannedBlocks.last.bundles.sapling.finalTreeSize;
+    await initSubtreeRoot(
+      finalOrchardTree: finalOrchardTreeSize,
+      finalSaplingTree: finalSaplingTreeSize,
+    );
+    return await _lock.run(() async {
+      if (!continually) _latestState = null;
+      final scannedBlock = scannedBlocks.first.blockId;
+      ChainState chainState;
+      if (continually) {
+        final state = await _buildContinuallyState(
+          scannedBlocks: scannedBlocks,
+          previousState: _latestState,
+        );
+        _latestState = state;
+        chainState = state.state;
+      } else {
+        chainState = await updateChainState(IntUtils.max(scannedBlock - 1, 0));
+      }
       final startOrchard = LeafPosition(
-        scannedBlocks.first.orchard.finalTreeSize -
-            scannedBlocks.first.orchard.commitments.length,
+        scannedBlocks.first.bundles.orchard.finalTreeSize -
+            scannedBlocks.first.bundles.orchard.commitments.length,
       );
+
       final startSapling = LeafPosition(
-        scannedBlocks.first.sapling.finalTreeSize -
-            scannedBlocks.first.sapling.commitments.length,
+        scannedBlocks.first.bundles.sapling.finalTreeSize -
+            scannedBlocks.first.bundles.sapling.commitments.length,
       );
-      final endOrchard = LeafPosition(scannedBlocks.last.orchard.finalTreeSize);
-      final endSapling = LeafPosition(scannedBlocks.last.sapling.finalTreeSize);
+
+      final endOrchard = LeafPosition(
+        scannedBlocks.last.bundles.orchard.finalTreeSize,
+      );
+      final endSapling = LeafPosition(
+        scannedBlocks.last.bundles.sapling.finalTreeSize,
+      );
       final saplingCommitments =
-          scannedBlocks.expand((e) => e.sapling.commitments).toList();
+          scannedBlocks.expand((e) => e.bundles.sapling.commitments).toList();
       final orchardCommitments =
-          scannedBlocks.expand((e) => e.orchard.commitments).toList();
+          scannedBlocks.expand((e) => e.bundles.orchard.commitments).toList();
 
       final orchardSubtree = LocatedPrunableTree.fromIter<
         int,
@@ -113,19 +354,20 @@ class DefaultMerkleBuilder implements MerkleBuilder {
         hashContext: _saplingTree.hashContext,
         values: saplingCommitments.map((e) => (e.node, e.retention)).iterator,
       );
+
       if (saplingSubtree != null) {
         _saplingTree.insertTree(
           saplingSubtree.subtree,
           saplingSubtree.checkpoints,
         );
       }
-
-      final saplingMissing = _ensureCheckpoints(
+      final saplingMissing = ensureCheckpoints(
         orchardSubtree?.checkpoints.keys.toList() ?? [],
         saplingSubtree?.checkpoints,
         chainState.finalSaplingTree,
       );
-      final orchardMissing = _ensureCheckpoints(
+
+      final orchardMissing = ensureCheckpoints(
         saplingSubtree?.checkpoints.keys.toList() ?? [],
         orchardSubtree?.checkpoints,
         chainState.finalOrchardTree,
@@ -137,29 +379,83 @@ class DefaultMerkleBuilder implements MerkleBuilder {
           _saplingTree.store.addCheckpoint(i.key, i.value);
         }
       }
-      final minOrchardHeigt = _orchardTree.store.maxCheckpointId() ?? 0;
+      final minOrchardHeight = _orchardTree.store.maxCheckpointId() ?? 0;
       for (final i in orchardMissing) {
-        if (i.key > minOrchardHeigt) {
+        if (i.key > minOrchardHeight) {
           _orchardTree.store.addCheckpoint(i.key, i.value);
         }
       }
+      return SerializableMerkleInsertReport(
+        height: scannedBlock,
+        finalOrchardTree: finalOrchardTreeSize,
+        chainState: chainState,
+        finalSaplingTree: finalSaplingTreeSize,
+        sapling: switch (saplingSubtree) {
+          null => null,
+          TreeBatchInsertReport<SaplingNode, int> insert =>
+            SerializableTreeInsertReport(
+              subtree: insert.subtree,
+              checkpoints:
+                  insert.checkpoints.entries
+                      .map(
+                        (e) => SerializableTreeCheckpointPosition(
+                          checkpoint: e.key,
+                          position: e.value,
+                        ),
+                      )
+                      .toList(),
+            ),
+        },
+        orchard: switch (orchardSubtree) {
+          null => null,
+          TreeBatchInsertReport<OrchardMerkleHash, int> insert =>
+            SerializableTreeInsertReport(
+              subtree: insert.subtree,
+              checkpoints:
+                  insert.checkpoints.entries
+                      .map(
+                        (e) => SerializableTreeCheckpointPosition(
+                          checkpoint: e.key,
+                          position: e.value,
+                        ),
+                      )
+                      .toList(),
+            ),
+        },
+      );
     });
   }
 
-  @override
-  Future<BuildMerleOutput> buildMerkle({
-    int? targetHeight,
+  static BuildMerleOutput buildMerkleStatic({
+    required int targetHeight,
+    required ZcashCryptoContext context,
     List<SaplingScannedOutput> saplingOutputs = const [],
     List<OrchardScannedOutput> orchardOutputs = const [],
-  }) async {
+    OrchardShardTree? orchardTree,
+    SaplingShardTree? saplingTree,
+  }) {
     if (saplingOutputs.isEmpty && orchardOutputs.isEmpty) {
-      throw MerkleTreeException.failed(
-        "buildMerkle",
-        reason: "At least one spend required.",
+      return BuildMerleOutput(
+        orchardNotes: [],
+        saplingNotes: [],
+        orchardAnchor: OrchardAnchor.emptyTree(),
+        saplingAnchor: SaplingAnchor.emptyTree(),
       );
     }
     bool hasSapling = saplingOutputs.isNotEmpty;
+    if (hasSapling && saplingTree == null) {
+      throw MerkleBuilderException.failed(
+        "buildMerkle",
+        reason: "Missing sapling shard tree.",
+      );
+    }
     bool hasOrchard = orchardOutputs.isNotEmpty;
+    if (hasOrchard && orchardTree == null) {
+      throw MerkleBuilderException.failed(
+        "buildMerkle",
+        reason: "Missing orchard shard tree.",
+      );
+    }
     saplingOutputs =
         saplingOutputs.clone()..sort(
           (a, b) => a.noteCommitmentTreePosition.position.compareTo(
@@ -172,41 +468,70 @@ class DefaultMerkleBuilder implements MerkleBuilder {
             b.noteCommitmentTreePosition.position,
           ),
         );
-    final height = targetHeight ?? await _currentHeight();
-    final saplingNote = saplingMaxCheckpointHeigt(height);
-    final orchardNote = orchardMaxCheckpointHeight(height);
-    int anchorHeight = () {
-      if (saplingNote != null && orchardNote != null) {
-        return IntUtils.min(saplingNote, orchardNote);
+    final height = targetHeight;
+
+    final saplingCheckpoint = switch (saplingTree) {
+      SaplingShardTree sapling when hasSapling => sapling.findLatestCheckpoint(
+        height,
+      ),
+      _ => null,
+    };
+    final orchardCheckpoint = switch (orchardTree) {
+      OrchardShardTree orchard when hasOrchard => orchard.findLatestCheckpoint(
+        height,
+      ),
+      _ => null,
+    };
+
+    int? anchorHeight = () {
+      if (saplingCheckpoint != null && orchardCheckpoint != null) {
+        return IntUtils.min(saplingCheckpoint, orchardCheckpoint);
       }
-      return saplingNote ?? orchardNote!;
+      return saplingCheckpoint ?? orchardCheckpoint;
     }();
-    final oRoot = _orchardTree.rootAtCheckpointId(anchorHeight);
-    final sRoot = _saplingTree.rootAtCheckpointId(anchorHeight);
+    if (anchorHeight == null) {
+      throw MerkleBuilderException.failed(
+        "buildMerkle",
+        reason: "No valid checkpoint was found.",
+      );
+    }
+    final oRoot = switch (orchardTree) {
+      OrchardShardTree orchard when hasOrchard => orchard.rootAtCheckpointId(
+        anchorHeight,
+      ),
+      _ => null,
+    };
+
+    final sRoot = switch (saplingTree) {
+      SaplingShardTree sapling when hasSapling => sapling.rootAtCheckpointId(
+        anchorHeight,
+      ),
+      _ => null,
+    };
     final List<ScannedOutputWithMerkle<OrchardScannedOutput, OrchardMerklePath>>
     oNotes = [];
     final List<ScannedOutputWithMerkle<SaplingScannedOutput, SaplingMerklePath>>
     sNotes = [];
     if (hasOrchard && oRoot == null) {
-      throw MerkleTreeException.failed(
+      throw MerkleBuilderException.failed(
         "buildMerkle",
         reason: "Missing orchard checkpoint",
       );
     }
     if (hasSapling && sRoot == null) {
-      throw MerkleTreeException.failed(
+      throw MerkleBuilderException.failed(
         "buildMerkle",
         reason: "Missing sapling checkpoint",
       );
     }
 
     for (final output in orchardOutputs) {
-      final oMerkle = _orchardTree.witnessAtCheckpointIdCaching(
+      final oMerkle = orchardTree?.witnessAtCheckpointIdCaching(
         position: output.noteCommitmentTreePosition,
         checkpointId: anchorHeight,
       );
       if (oMerkle == null) {
-        throw MerkleTreeException.failed(
+        throw MerkleBuilderException.failed(
           "buildMerkle",
           reason: "Mising orchard checkpoint",
         );
@@ -219,24 +544,24 @@ class DefaultMerkleBuilder implements MerkleBuilder {
                 hashContext: context.orchardHashable(),
               )
               .inner) {
-        throw MerkleTreeException.failed(
+        throw MerkleBuilderException.failed(
           "buildMerkle",
           reason: "Orchard anchor mismatch.",
           details: {
-            "position": output.noteCommitmentTreePosition.position,
-            "height": anchorHeight,
+            "position": output.noteCommitmentTreePosition.position.toString(),
+            "height": anchorHeight.toString(),
           },
         );
       }
       oNotes.add(ScannedOutputWithMerkle(output: output, merklePath: oMerkle));
     }
     for (final output in saplingOutputs) {
-      final sMerkle = _saplingTree.witnessAtCheckpointIdCaching(
+      final sMerkle = saplingTree?.witnessAtCheckpointIdCaching(
         position: output.noteCommitmentTreePosition,
         checkpointId: anchorHeight,
       );
       if (sMerkle == null) {
-        throw MerkleTreeException.failed(
+        throw MerkleBuilderException.failed(
           "buildMerkle",
           reason: "Mising sapling checkpoint",
         );
@@ -248,16 +573,15 @@ class DefaultMerkleBuilder implements MerkleBuilder {
                 context.saplingHashable(),
               )
               .inner) {
-        throw MerkleTreeException.failed(
+        throw MerkleBuilderException.failed(
           "buildMerkle",
           reason: "Sapling anchor mismatch.",
           details: {
-            "position": output.noteCommitmentTreePosition.position,
-            "height": anchorHeight,
+            "position": output.noteCommitmentTreePosition.position.toString(),
+            "height": anchorHeight.toString(),
           },
         );
       }
-      // assert();
       sNotes.add(ScannedOutputWithMerkle(output: output, merklePath: sMerkle));
     }
 
@@ -270,23 +594,20 @@ class DefaultMerkleBuilder implements MerkleBuilder {
   }
 
   @override
-  int? saplingMaxCheckpointHeigt(int height) {
-    final int maxCheckpoint = height - 1;
-    for (int i = maxCheckpoint; i > 0; i--) {
-      final checkpoint = _saplingTree.store.getCheckpoint(i);
-      if (checkpoint != null) return i;
-    }
-    return null;
-  }
-
-  // ignore: annotate_overrides
-  int? orchardMaxCheckpointHeight(int height) {
-    final int maxCheckpoint = height - 1;
-    for (int i = maxCheckpoint; i > 0; i--) {
-      final checkpoint = _orchardTree.store.getCheckpoint(i);
-      if (checkpoint != null) return i;
-    }
-    return null;
+  Future<BuildMerleOutput> buildMerkle({
+    int? targetHeight,
+    List<SaplingScannedOutput> saplingOutputs = const [],
+    List<OrchardScannedOutput> orchardOutputs = const [],
+  }) async {
+    final height = targetHeight ?? await _currentHeight();
+    return buildMerkleStatic(
+      targetHeight: height,
+      context: context,
+      orchardOutputs: orchardOutputs,
+      saplingOutputs: saplingOutputs,
+      orchardTree: _orchardTree,
+      saplingTree: _saplingTree,
+    );
   }
 
   @override
@@ -300,43 +621,45 @@ class DefaultMerkleBuilder implements MerkleBuilder {
   }
 
   @override
-  List<int> serializeOrchardTree() {
-    return _orchardTree.toSerializeBytes();
-  }
-
-  @override
-  List<int> serializeSaplingTree() {
-    return _saplingTree.toSerializeBytes();
+  ChainMerkleState toSerializableChainShardTree() {
+    return ChainMerkleState(
+      sapling: _saplingTree,
+      orchard: _orchardTree,
+      orchardSabtreeIndex: _orchardSubtreeIndex,
+      saplingSubtreeIndex: _saplingSubtreeIndex,
+    );
   }
 
   static
   /// Ensures that checkpoints exist for the given heights.
   List<MapEntry<int, Checkpoint>>
-  _ensureCheckpoints<H extends LayoutSerializable>(
+  ensureCheckpoints<H extends MerkleNodeValue>(
     Iterable<int> ensureHeights,
     SplayTreeMap<int, LeafPosition>? existingCheckpointPositions,
-    Frontier<H> stateFinalTree,
+    NonEmptyFrontier<H>? stateFinalTree,
   ) {
-    final List<MapEntry<int, Checkpoint>> result = [];
+    final result = <MapEntry<int, Checkpoint>>[];
 
     for (final ensureHeight in ensureHeights) {
-      // Find the last checkpoint <= ensureHeight
-      final previous =
-          existingCheckpointPositions?.entries
-              .where((e) => e.key <= ensureHeight)
-              .toList() ??
-          [];
+      MapEntry<int, LeafPosition>? lastEntry;
 
-      final MapEntry<int, LeafPosition>? lastEntry =
-          previous.isEmpty ? null : previous.last;
+      // 🔑 Efficient ordered lookup (early break)
+      final it = existingCheckpointPositions?.entries.iterator;
+      while (it != null && it.moveNext()) {
+        final entry = it.current;
+        if (entry.key > ensureHeight) break;
+        lastEntry = entry;
+      }
 
       if (lastEntry == null) {
-        final position = stateFinalTree.frontier?.position;
-        // No preceding checkpoint: use stateFinalTree
-        final checkpoint = switch (position) {
-          null => Checkpoint.treeEmpty(),
-          _ => Checkpoint.atPosition(position),
-        };
+        // Equivalent to Rust's:
+        // state_final_tree.value().map_or_else(...)
+        // final frontierValue = stateFinalTree.frontier;
+
+        final checkpoint =
+            stateFinalTree == null
+                ? Checkpoint.treeEmpty()
+                : Checkpoint.atPosition(stateFinalTree.position);
 
         result.add(MapEntry(ensureHeight, checkpoint));
       } else {
@@ -346,97 +669,127 @@ class DefaultMerkleBuilder implements MerkleBuilder {
         if (existingHeight < ensureHeight) {
           result.add(MapEntry(ensureHeight, Checkpoint.atPosition(position)));
         }
+        // else: equal → skip (same as Rust)
       }
     }
 
     return result;
   }
 
-  Future<void> _updateSaplingSubtreeRoots() async {
-    final sapligSubtree = await provider.requestOnce(
-      ZWalletdRequestGetSubtreeRoots(
-        GetSubtreeRootsArg.defaultConfig(ShieldedProtocol.sapling),
+  Future<int> _updateSaplingSubtreeRoots(int startIndex) async {
+    final sapligSubtree = await provider.requestOnceAsync(
+      ZcashGrpcRequestMessage(
+        request: ZWalletdGetSubtreeRoots(
+          getSubtreeRoots: ZWalletdGetSubtreeRootsArg(
+            shieldedProtocol: ZcashProtocol.sapling.toShieldedProtocol(),
+            startIndex: startIndex,
+          ),
+        ),
       ),
     );
-    int index = 0;
+    int index = startIndex;
     for (final i in sapligSubtree) {
-      final roothash = i.rootHash;
-      if (roothash == null) {
-        throw MerkleTreeException.failed(
-          "buildMerkle",
-          reason: "Unexcpected provider response.",
-        );
-      }
+      final roothash = i.getRootHashes();
+      final addr = NodeAddress(level: shardHeight, index: index++);
       _saplingTree.insert(
         value: SaplingNode.fromBytes(roothash),
-        rootAddr: NodeAddress(level: shardHeight, index: index++),
+        rootAddr: addr,
       );
     }
+    return index;
   }
 
-  Future<void> _updateOrchardSubtreeRoots() async {
-    final orchardSubtree = await provider.requestOnce(
-      ZWalletdRequestGetSubtreeRoots(
-        GetSubtreeRootsArg.defaultConfig(ShieldedProtocol.orchard),
+  Future<int> _updateOrchardSubtreeRoots(int startIndex) async {
+    final orchardSubtree = await provider.requestOnceAsync(
+      ZcashGrpcRequestMessage(
+        request: ZWalletdGetSubtreeRoots(
+          getSubtreeRoots: ZWalletdGetSubtreeRootsArg(
+            shieldedProtocol: ZcashProtocol.orchard.toShieldedProtocol(),
+            startIndex: startIndex,
+          ),
+        ),
       ),
     );
-    int index = 0;
+
+    final latest = orchardSubtree.lastOrNull?.completingBlockHeight;
+    if (orchardSubtree.isNotEmpty && latest == null) {
+      throw MerkleBuilderException.failed(
+        "updateOrchardSubtreeRoots",
+        reason: "Unexcpected service response. Invalid subtree block height.",
+      );
+    }
+    int index = startIndex;
     for (final i in orchardSubtree) {
-      final roothash = i.rootHash;
-      if (roothash == null) {
-        throw MerkleTreeException.failed(
-          "buildMerkle",
-          reason: "Unexcpected provider response.",
-        );
-      }
+      final roothash = i.getRootHashes();
       _orchardTree.insert(
         value: OrchardMerkleHash.fromBytes(roothash),
         rootAddr: NodeAddress(level: shardHeight, index: index++),
       );
     }
+    return index;
   }
 
   Future<int> _currentHeight() async {
-    final blockId = await provider.request(ZWalletdRequestGetLatestBlock());
-    final height = blockId.height;
-    if (height == null) {
-      throw MerkleTreeException.failed(
-        "currentHeight",
-        reason: "Unexcpected provider response. Missing block height.",
-      );
-    }
-    return height;
+    final blockId = await provider.request(
+      ZcashGrpcRequestMessage(request: ZWalletdGetLatestBlock()),
+    );
+    return blockId.getHeight();
   }
 
   Future<ChainState> _getChainState(int block) async {
-    final chainStateData =
-        _chainState ??=
-            (await provider.request(
-              ZWalletdRequestGetTreeState(WalletdBlockId(height: block)),
-            )).toChainState();
-    return chainStateData;
+    if (block <= 0) {
+      block = 1;
+    }
+    final chainStateData = await provider.request(
+      ZcashGrpcRequestMessage(
+        request: ZWalletdGetTreeState(
+          getTreeState: ZWalletdBlockID(height: BigInt.from(block)),
+        ),
+      ),
+    );
+    return chainStateData.toChainState();
   }
 
-  Future<ChainState> _updateeChainState({int? block}) async {
-    ChainState? chainState = _chainState;
-    block ??= await _currentHeight();
-    if (chainState == null) {
-      chainState = await _getChainState(block);
-      _orchardTree.insertFrontier(
-        chainState.finalOrchardTree,
-        RetentionCheckpoint(
-          marking: MarkingState.reference,
-          id: chainState.blockHeight,
-        ),
-      );
-      _saplingTree.insertFrontier(
-        chainState.finalSaplingTree,
-        RetentionCheckpoint(
-          marking: MarkingState.reference,
-          id: chainState.blockHeight,
-        ),
-      );
-    }
+  Future<ChainState> updateChainState(
+    int block, {
+    ChainState? chainState,
+  }) async {
+    chainState ??= await _getChainState(block);
+
+    _orchardTree.insertFrontier(
+      Frontier(frontier: chainState.finalOrchardTree),
+      RetentionCheckpoint(
+        marking: MarkingState.reference,
+        id: chainState.blockHeight,
+      ),
+    );
+    _saplingTree.insertFrontier(
+      Frontier(frontier: chainState.finalSaplingTree),
+      RetentionCheckpoint(
+        marking: MarkingState.reference,
+        id: chainState.blockHeight,
+      ),
+    );
     return chainState;
+  }
+}
+
+class MerkleState {
+  final ChainState state;
+  final int saplingFinalTreeSize;
+  final int orchardFinalTreeSize;
+  final int latestBlockId;
+  final int startBlock;
+  const MerkleState({
+    required this.state,
+    required this.saplingFinalTreeSize,
+    required this.orchardFinalTreeSize,
+    required this.latestBlockId,
+    required this.startBlock,
+  });
+
+  @override
+  String toString() {
+    return "MerkleState {saplingFinalTreeSize:$saplingFinalTreeSize, orchardFinalTreeSize:$orchardFinalTreeSize, latestBlockId:$latestBlockId}";
   }
 }

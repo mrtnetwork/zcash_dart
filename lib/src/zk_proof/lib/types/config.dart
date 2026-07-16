@@ -1,81 +1,79 @@
+import 'package:blockchain_utils/exception/exception/blockchain_utils.dart';
 import 'package:blockchain_utils/helper/helper.dart';
 import 'package:blockchain_utils/utils/binary/binary_operation.dart';
 import 'package:zcash_dart/src/zk_proof/lib/exception/exception.dart';
 import 'package:zcash_dart/src/zk_proof/lib/service/service.dart';
 
+class ZKWasmConfig {
+  final String moduleUrl;
+  final String wasmUrl;
+
+  /// Pre-initialized WASM glue module instance.
+  ///
+  /// The object must be created using [importModule], and [initSync]
+  /// must already be called before passing it here.
+  ///
+  /// If omitted, the library will import and initialize the module automatically.
+  final Object? glue;
+
+  /// Optional HTTP method passed to the Fetch API when loading the WASM binary.
+  final String? fetchMethod;
+
+  /// Optional headers passed to the Fetch API when loading the WASM binary.
+  final Map<String, String>? fetchHeaders;
+
+  /// Optional request body passed to the Fetch API when loading the WASM binary.
+  final Object? fetchBody;
+
+  const ZKWasmConfig({
+    required this.moduleUrl,
+    required this.wasmUrl,
+    this.fetchMethod,
+    this.fetchHeaders,
+    this.fetchBody,
+    this.glue,
+  });
+}
+
 /// Configuration for ZKLib, including library paths, web settings, and Sapling parameters.
 class ZKLibConfig {
-  /// Whether to run the library in a separate isolate.
-  final bool useIsolate;
-
   /// URLs for native libraries on each platform.
-  final String? linuxLibraryUrl;
-  final String? windowsLibraryUrl;
-  final String? macosLibraryUrl;
-  final String? iosLibraryUrl;
-  final String? androidLibraryUrl;
+  final String? libUri;
 
   /// URLs for WebAssembly, glue JS, and optional worker module.
-  final String? webWasmUrl;
-  final String? webGlueJsUrl;
-  final String? workerModuleUrl;
+  final ZKWasmConfig? wasm;
 
   /// Whether to initialize the worker inline (for web).
   final bool inlineWorkerInitialization;
 
   /// Optional service to download Sapling parameters.
-  final ZCashDownloadService? saplingParamsDownloader;
+  final ZcashDownloadService? saplingParamsDownloader;
 
   /// URLs for Sapling spend and output parameters.
   final String? saplingSpendParamsUrl;
   final String? saplingOutputParamsUrl;
 
+  /// URLs for Sapling spend and output parameters.
+  final String? saplingSpendParamsFileUri;
+  final String? saplingOutputParamsFileUri;
+
   /// Constructor with optional overrides.
   const ZKLibConfig({
-    this.useIsolate = true,
+    this.libUri,
     this.inlineWorkerInitialization = false,
-    this.linuxLibraryUrl,
-    this.windowsLibraryUrl,
-    this.macosLibraryUrl,
-    this.iosLibraryUrl,
-    this.androidLibraryUrl,
-    this.webGlueJsUrl,
-    this.webWasmUrl,
-    this.workerModuleUrl,
+    this.wasm,
     this.saplingParamsDownloader,
     this.saplingSpendParamsUrl,
     this.saplingOutputParamsUrl,
+    this.saplingSpendParamsFileUri,
+    this.saplingOutputParamsFileUri,
   });
 
   /// Returns Linux library URL or throws if missing.
-  String requireLinuxLibrary() =>
-      _require(linuxLibraryUrl, "Linux library URL is missing.");
-
-  /// Returns Windows library URL or throws if missing.
-  String requireWindowsLibrary() =>
-      _require(windowsLibraryUrl, "Windows library URL is missing.");
-
-  /// Returns macOS library URL or throws if missing.
-  String requireMacosLibrary() =>
-      _require(macosLibraryUrl, "macOS library URL is missing.");
-
-  /// Returns iOS library URL or throws if missing.
-  String requireIosLibrary() =>
-      _require(iosLibraryUrl, "iOS library URL is missing.");
-
-  /// Returns Android library URL or throws if missing.
-  String requireAndroidLibrary() =>
-      _require(androidLibraryUrl, "Android library URL is missing.");
+  String requireIoLibrary() => _require(libUri, "Library URL is missing.");
 
   /// Returns glue JS URL or throws if missing.
-  String requireGlueJs() => _require(webGlueJsUrl, "Glue JS URL is missing.");
-
-  /// Returns WebAssembly URL or throws if missing.
-  String requireWasm() => _require(webWasmUrl, "WASM URL is missing.");
-
-  /// Returns worker module URL or throws if missing.
-  String requireWorkerModule() =>
-      _require(workerModuleUrl, "Worker module URL is missing.");
+  ZKWasmConfig requireWasm() => _require(wasm, "Wasm config is missing.");
 
   /// Returns Sapling spend params URI or null if not set.
   Uri? saplingSpendParamsUri() =>
@@ -86,7 +84,7 @@ class ZKLibConfig {
       _parseOptionalUri(saplingOutputParamsUrl, "Invalid Sapling output URL.");
 
   /// Throws if value is null, otherwise returns it.
-  String _require(String? value, String message) {
+  T _require<T extends Object>(T? value, String message) {
     if (value == null) {
       throw ZKLibException(message);
     }
@@ -105,45 +103,20 @@ class ZKLibConfig {
 }
 
 enum ZKLibResponseCode {
-  ok(0, "Response success."),
-  unexpectedResponse(0, "Unexpected response."),
-
-  // General
-  invalidLength(1, "Invalid request payload length."),
-  invalidPointEncoding(2, "Invalid elliptic curve point encoding."),
-
-  saplingInvalidParameters(3, "Invalid or inconsistent Sapling parameters."),
-  unexpectedError(4, "An unexpected internal error occurred."),
-  saplingSpendNotInitialized(
-      5, "Sapling spend context has not been initialized."),
-  saplingOutputNotInitialized(
-      6, "Sapling output context has not been initialized."),
-  unknowRequestId(7, "Unknown or unsupported request identifier."),
-
-  // Sapling-specific
-  saplingInvalidValue(10, "Invalid Sapling note value."),
-  saplingInvalidRandomness(11, "Invalid Sapling randomness."),
-  saplingInvalidAuthPath(12, "Invalid Sapling authentication path."),
-  saplingInvalidAnchor(13, "Invalid Sapling anchor."),
-  saplingInvalidProof(14, "Invalid Sapling zero-knowledge proof."),
-
-  // Orchard
-  orchardInvalidFvk(20, "Invalid Orchard full viewing key."),
-  orchardInvalidAddress(21, "Invalid Orchard address."),
-  orchardInvalidRho(22, "Invalid Orchard rho value."),
-  orchardInvalidRseed(23, "Invalid Orchard rseed value."),
-  orchardInvalidAuthPath(24, "Invalid Orchard authentication path."),
-  orchardInvalidScalar(25, "Invalid Orchard scalar value."),
-  orchardInvalidNote(26, "Invalid Orchard note."),
-  orchardInvalidCommitment(27, "Invalid Orchard note commitment."),
-  orchardInvalidSpend(28, "Invalid Orchard spend."),
-  orchardInvalidCircuit(29, "Invalid Orchard circuit."),
-  orchardProofCreationFailed(
-      30, "Failed to create Orchard zero-knowledge proof.");
+  keyError(1),
+  encodingError(2),
+  invalidInput(3),
+  proofError(4),
+  witnessError(5),
+  merkleError(6),
+  internal(7),
+  missing(8),
+  hashError(9),
+  unexpectedResponse(-1);
 
   final int code;
-  final String description;
-  const ZKLibResponseCode(this.code, this.description);
+  // final String description;
+  const ZKLibResponseCode(this.code);
 
   static ZKLibResponseCode fromCode(int code) {
     return ZKLibResponseCode.values.firstWhere(
@@ -168,20 +141,39 @@ enum ZKLibRequestId {
 
   final int id;
   const ZKLibRequestId(this.id);
+  bool get isSaplingSetParams =>
+      this == setSpendParams || this == setOutputParams;
 }
 
-enum ZCashSaplingParameter { spend, output }
+enum ZcashSaplingParameter { spend, output }
 
 class ZKLibRequest {
   final ZKLibRequestId code;
   final List<int> payload;
   ZKLibRequest({required this.code, required List<int> payload})
-      : payload = payload.asImmutableBytes;
+    : payload = payload.asImmutableBytes;
 }
 
 class ZKLibResponse {
-  final ZKLibResponseCode code;
+  final ZKLibResponseCode? error;
   final List<int> payload;
-  ZKLibResponse({required this.code, List<int> payload = const []})
-      : payload = payload.asImmutableBytes;
+  ZKLibResponse({required this.error, List<int> payload = const []})
+    : payload = payload.asImmutableBytes;
+}
+
+enum ZKLibLogLevel {
+  debug(1),
+  info(2),
+  error(3),
+  danger(4);
+
+  final int value;
+  const ZKLibLogLevel(this.value);
+
+  static ZKLibLogLevel fromValue(int? value) {
+    return values.firstWhere(
+      (e) => e.value == value,
+      orElse: () => throw ItemNotFoundException(),
+    );
+  }
 }

@@ -2,21 +2,28 @@ import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/exception/exception.dart';
 import 'package:zcash_dart/src/address/src/unified.dart';
+import 'package:zcash_dart/src/transparent/keys/public_key.dart';
 
 /// abstract class for all zcash addreess.
-abstract class ZCashAddress with Equality {
+abstract class ZcashAddress
+    with Equality, CborTagSerializable
+    implements IAddress {
   /// address as string
+  @override
   final String address;
 
   /// type of address
-  final ZCashAddressType addressType;
+  final ZcashAddressType addressType;
 
   /// network of address.
-  final ZCashNetwork network;
+  final ZcashNetwork network;
+
+  /// this show only supported supportedProtocols. (transparent, orchard, sapling)
+  final List<ZcashProtocol> supportedProtocols;
 
   /// Converts this address to another network.
-  ZCashAddress toNetwork(ZCashNetwork network);
-  T cast<T extends ZCashAddress>() {
+  ZcashAddress toNetwork(ZcashNetwork network);
+  T cast<T extends ZcashAddress>() {
     if (this is! T) {
       throw CastFailedException<T>(value: this);
     }
@@ -26,42 +33,95 @@ abstract class ZCashAddress with Equality {
   /// encode address as bytes.
   List<int> toBytes();
 
-  const ZCashAddress.internal(
-      {required this.addressType,
-      required this.network,
-      required this.address});
+  const ZcashAddress.internal({
+    required this.addressType,
+    required this.network,
+    required this.address,
+    required this.supportedProtocols,
+  });
 
-  /// Creates a ZCash address from an encoded string, validating the network and type if provided.
-  factory ZCashAddress(String address,
-      {ZCashNetwork? network, ZCashAddressType? type}) {
+  /// Creates a Zcash address from an encoded string, validating the network and type if provided.
+  factory ZcashAddress(
+    String address, {
+    ZcashNetwork? network,
+    ZcashAddressType? type,
+  }) {
     if (type == null) {
-      final addr = ZCashAddrDecoder().decodeAddr(address);
+      final addr = ZcashAddrDecoder().decodeAddr(address);
 
       if (network != null && network != addr.network) {
-        throw ZCashAddressException.mismatchNetwork(
-            network: addr.network, expected: network);
+        throw ZcashAddressException.mismatchNetwork(
+          network: addr.network,
+          expected: network,
+        );
       }
       type = addr.type;
     }
     return switch (type) {
-      ZCashAddressType.unified =>
-        ZCashUnifiedAddress(address, network: network),
-      ZCashAddressType.sprout => SproutAddress(address, network: network),
-      ZCashAddressType.sapling => SaplingAddress(address, network: network),
-      ZCashAddressType.tex => TexAddress(address, network: network),
-      ZCashAddressType.p2pkh => ZCashP2pkhAddress(address, network: network),
-      ZCashAddressType.p2sh => ZCashP2shAddress(address, network: network),
+      ZcashAddressType.unified => ZcashUnifiedAddress(
+        address,
+        network: network,
+      ),
+      ZcashAddressType.sprout => SproutAddress(address, network: network),
+      ZcashAddressType.sapling => SaplingAddress(address, network: network),
+      ZcashAddressType.tex => TexAddress(address, network: network),
+      ZcashAddressType.p2pkh => ZcashP2pkhAddress(address, network: network),
+      ZcashAddressType.p2sh => ZcashP2shAddress(address, network: network),
+    };
+  }
+
+  factory ZcashAddress.deserializeIAddress({
+    List<int>? bytes,
+    CborObject? object,
+  }) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: BlockchainNetwork.zcash.identifier,
+      cborBytes: bytes,
+      cborObject: object,
+    );
+    final type = ZcashAddressType.fromValue(values.rawValueAt(0));
+    final network = ZcashNetwork.fromValue(values.rawValueAt(1));
+    final List<int> addrBytes = values.rawValueAt(2);
+    return switch (type) {
+      ZcashAddressType.unified => ZcashUnifiedAddress.fromBytes(
+        bytes: addrBytes,
+        network: network,
+      ),
+      ZcashAddressType.sprout => SproutAddress.fromBytes(
+        bytes: addrBytes,
+        network: network,
+      ),
+      ZcashAddressType.sapling => SaplingAddress.fromBytes(
+        bytes: addrBytes,
+        network: network,
+      ),
+      ZcashAddressType.tex => TexAddress.fromBytes(
+        bytes: addrBytes,
+        network: network,
+      ),
+      ZcashAddressType.p2pkh => ZcashP2pkhAddress.fromBytes(
+        bytes: addrBytes,
+        network: network,
+      ),
+      ZcashAddressType.p2sh => ZcashP2shAddress.fromBytes(
+        bytes: addrBytes,
+        network: network,
+        type:
+            BitcoinAddressType.fromTag(
+              values.rawValueAt(3),
+            ).cast<P2shAddressType>(),
+      ),
     };
   }
 
   /// convert address to p2sh if possible.
-  ZCashP2shAddress? tryToP2sh() => null;
+  ZcashP2shAddress? tryToP2sh() => null;
 
   /// convert address to p2pkh if possible.
-  ZCashP2pkhAddress? tryToP2pkh() => null;
+  ZcashP2pkhAddress? tryToP2pkh() => null;
 
   /// convert address to transparent address if possible.
-  ZCashTransparentAddress? tryToTransparentAddreses() => null;
+  ZcashTransparentAddress? tryToTransparentAddreses() => null;
 
   /// convert address to sapling payment address if possible.
   SaplingPaymentAddress? tryToSaplingPaymentAddress() => null;
@@ -72,6 +132,19 @@ abstract class ZCashAddress with Equality {
   /// convert address to orchard address if possible.
   OrchardAddress? tryToOrchardAddress() => null;
 
+  /// return protocol address
+  /// for orchard protocol return unified address only contains orchard receiver.
+  ZcashAddress? toProtocolAddress(ZcashProtocol protocol) {
+    if (!supportedProtocols.contains(protocol)) {
+      return null;
+    }
+    return switch (protocol) {
+      ZcashProtocol.transparent => tryToTransparentAddreses(),
+      ZcashProtocol.sapling => tryToSaplingAddress(),
+      _ => null,
+    };
+  }
+
   @override
   String toString() {
     return address;
@@ -79,69 +152,115 @@ abstract class ZCashAddress with Equality {
 
   @override
   List<dynamic> get variables => [addressType, address];
+
+  @override
+  BlockchainNetwork get blockchainNetwork => BlockchainNetwork.zcash;
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      blockchainNetwork.identifier;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    addressType.value.toCbor(),
+    network.value.toCbor(),
+    CborBytesValue(toBytes()),
+  ];
+
+  @override
+  List<int> encodeAsIAddress() {
+    return toCbor().encode();
+  }
+
+  @override
+  String get viewType => addressType.name;
 }
 
 /// Abstract base for Zcash transparent addresses (P2SH/P2PKH).
-abstract class ZCashTransparentAddress extends ZCashAddress
+abstract class ZcashTransparentAddress extends ZcashAddress
     implements LegacyAddress {
-  const ZCashTransparentAddress._(
-      {required super.address,
-      required super.network,
-      required super.addressType})
-      : super.internal();
+  const ZcashTransparentAddress._({
+    required super.address,
+    required super.network,
+    required super.addressType,
+  }) : super.internal(supportedProtocols: const [ZcashProtocol.transparent]);
 
   /// Creates a Transparent address from an encoded string, validating the network if provided.
-  factory ZCashTransparentAddress(String address, {ZCashNetwork? network}) {
-    final addr = ZCashAddrDecoder().decodeAddr(address, network: network);
+  factory ZcashTransparentAddress(String address, {ZcashNetwork? network}) {
+    final addr = ZcashAddrDecoder().decodeAddr(address, network: network);
     return switch (addr.type) {
-      ZCashAddressType.p2pkh => ZCashP2pkhAddress._(
-          data: addr.addressBytes, network: addr.network, address: address),
-      ZCashAddressType.p2sh => ZCashP2shAddress._(
-          data: addr.addressBytes,
-          network: addr.network,
-          address: address,
-          type: P2shAddressType.p2pkInP2sh),
-      _ => throw ZCashAddressException(
-          "Invalid transparent address encoding bytes.")
+      ZcashAddressType.p2pkh => ZcashP2pkhAddress._(
+        data: addr.addressBytes,
+        network: addr.network,
+        address: address,
+      ),
+      ZcashAddressType.p2sh => ZcashP2shAddress._(
+        data: addr.addressBytes,
+        network: addr.network,
+        address: address,
+        type: P2shAddressType.p2pkInP2sh,
+      ),
+      _ =>
+        throw ZcashAddressException(
+          "Invalid transparent address encoding bytes.",
+        ),
     };
   }
 
   @override
-  ZCashTransparentAddress tryToTransparentAddreses() {
+  ZcashTransparentAddress tryToTransparentAddreses() {
     return this;
   }
 }
 
 /// Represents a Zcash Sprout address.
-class SproutAddress extends ZCashAddress {
+class SproutAddress extends ZcashAddress {
   final List<int> data;
-  SproutAddress._(
-      {required List<int> data, required super.network, required super.address})
-      : data = data
-            .exc(
-              length: ZCashAddressType.sprout.lengthInBytes!,
-              reason: "Invalid SproutAddress address bytes length.",
-              operation: "SproutAddress",
-            )
-            .asImmutableBytes,
-        super.internal(addressType: ZCashAddressType.sprout);
+  SproutAddress._({
+    required List<int> data,
+    required super.network,
+    required super.address,
+  }) : data =
+           data
+               .exc(
+                 length: ZcashAddressType.sprout.lengthInBytes!,
+                 reason: "Invalid SproutAddress address bytes length.",
+                 operation: "SproutAddress",
+               )
+               .asImmutableBytes,
+       super.internal(
+         addressType: ZcashAddressType.sprout,
+         supportedProtocols: const [],
+       );
 
   /// Creates a Sprout address from raw bytes for the specified network.
-  factory SproutAddress.fromBytes(
-      {required List<int> bytes, required ZCashNetwork network}) {
+  factory SproutAddress.fromBytes({
+    required List<int> bytes,
+    required ZcashNetwork network,
+  }) {
     return SproutAddress._(
-        data: bytes,
+      data: bytes,
+      network: network,
+      address: ZcashAddrEncoder().encodeKey(
+        bytes,
+        addrType: ZcashAddressType.sprout,
         network: network,
-        address: ZCashAddrEncoder().encodeKey(bytes,
-            addrType: ZCashAddressType.sprout, network: network));
+      ),
+    );
   }
 
   /// Creates a Sprout address from an encoded string, validating the network if provided.
-  factory SproutAddress(String address, {ZCashNetwork? network}) {
-    final addr = ZCashAddrDecoder()
-        .decodeAddr(address, type: ZCashAddressType.sprout, network: network);
+  factory SproutAddress(String address, {ZcashNetwork? network}) {
+    final addr = ZcashAddrDecoder().decodeAddr(
+      address,
+      type: ZcashAddressType.sprout,
+      network: network,
+    );
     return SproutAddress._(
-        data: addr.addressBytes, network: addr.network, address: address);
+      data: addr.addressBytes,
+      network: addr.network,
+      address: address,
+    );
   }
 
   @override
@@ -151,41 +270,60 @@ class SproutAddress extends ZCashAddress {
 
   /// Converts this address to another network.
   @override
-  SproutAddress toNetwork(ZCashNetwork network) {
+  SproutAddress toNetwork(ZcashNetwork network) {
     if (network == this.network) return this;
     return SproutAddress.fromBytes(bytes: toBytes(), network: network);
   }
 }
 
 /// Represents a Zcash Sapling address.
-class SaplingAddress extends ZCashAddress {
+class SaplingAddress extends ZcashAddress {
   final List<int> data;
-  SaplingAddress._(
-      {required List<int> data, required super.network, required super.address})
-      : data = data
-            .exc(
-                length: ZCashAddressType.sapling.lengthInBytes!,
-                operation: "SaplingAddress",
-                reason: "Invalid sapling address bytes length.")
-            .asImmutableBytes,
-        super.internal(addressType: ZCashAddressType.sapling);
+  SaplingAddress._({
+    required List<int> data,
+    required super.network,
+    required super.address,
+  }) : data =
+           data
+               .exc(
+                 length: ZcashAddressType.sapling.lengthInBytes!,
+                 operation: "SaplingAddress",
+                 reason: "Invalid sapling address bytes length.",
+               )
+               .asImmutableBytes,
+       super.internal(
+         addressType: ZcashAddressType.sapling,
+         supportedProtocols: const [ZcashProtocol.sapling],
+       );
 
   /// Creates a Sapling address from raw bytes for the specified network.
-  factory SaplingAddress.fromBytes(
-      {required List<int> bytes, required ZCashNetwork network}) {
+  factory SaplingAddress.fromBytes({
+    required List<int> bytes,
+    required ZcashNetwork network,
+  }) {
     return SaplingAddress._(
-        data: bytes,
+      data: bytes,
+      network: network,
+      address: ZcashAddrEncoder().encodeKey(
+        bytes,
         network: network,
-        address: ZCashAddrEncoder().encodeKey(bytes,
-            network: network, addrType: ZCashAddressType.sapling));
+        addrType: ZcashAddressType.sapling,
+      ),
+    );
   }
 
   /// Creates a Sapling address from an encoded string, validating the network if provided.
-  factory SaplingAddress(String address, {ZCashNetwork? network}) {
-    final addr = ZCashAddrDecoder()
-        .decodeAddr(address, type: ZCashAddressType.sapling, network: network);
+  factory SaplingAddress(String address, {ZcashNetwork? network}) {
+    final addr = ZcashAddrDecoder().decodeAddr(
+      address,
+      type: ZcashAddressType.sapling,
+      network: network,
+    );
     return SaplingAddress._(
-        data: addr.addressBytes, network: addr.network, address: address);
+      data: addr.addressBytes,
+      network: addr.network,
+      address: address,
+    );
   }
 
   SaplingPaymentAddress toSaplingPaymentAddress() {
@@ -199,7 +337,7 @@ class SaplingAddress extends ZCashAddress {
 
   /// Converts this address to another network.
   @override
-  SaplingAddress toNetwork(ZCashNetwork network) {
+  SaplingAddress toNetwork(ZcashNetwork network) {
     if (network == this.network) return this;
     return SaplingAddress.fromBytes(bytes: toBytes(), network: network);
   }
@@ -216,35 +354,50 @@ class SaplingAddress extends ZCashAddress {
 }
 
 /// Represents a Zcash P2PKH address.
-class ZCashP2pkhAddress extends ZCashTransparentAddress {
+class ZcashP2pkhAddress extends ZcashTransparentAddress {
   final List<int> data;
-  ZCashP2pkhAddress._(
-      {required List<int> data, required super.network, required super.address})
-      : data = data
-            .exc(
-              length: ZCashAddressType.p2pkh.lengthInBytes!,
-              operation: "ZCashP2pkhAddress",
-              reason: "Invalid P2PKH address bytes length.",
-            )
-            .asImmutableBytes,
-        super._(addressType: ZCashAddressType.p2pkh);
+  ZcashP2pkhAddress._({
+    required List<int> data,
+    required super.network,
+    required super.address,
+  }) : data =
+           data
+               .exc(
+                 length: ZcashAddressType.p2pkh.lengthInBytes!,
+                 operation: "ZcashP2pkhAddress",
+                 reason: "Invalid P2PKH address bytes length.",
+               )
+               .asImmutableBytes,
+       super._(addressType: ZcashAddressType.p2pkh);
 
   /// Creates a P2PKH address from raw bytes for the specified network.
-  factory ZCashP2pkhAddress.fromBytes(
-      {required List<int> bytes, required ZCashNetwork network}) {
-    return ZCashP2pkhAddress._(
-        data: bytes,
+  factory ZcashP2pkhAddress.fromBytes({
+    required List<int> bytes,
+    required ZcashNetwork network,
+  }) {
+    return ZcashP2pkhAddress._(
+      data: bytes,
+      network: network,
+      address: ZcashAddrEncoder().encodeKey(
+        bytes,
+        addrType: ZcashAddressType.p2pkh,
         network: network,
-        address: ZCashAddrEncoder().encodeKey(bytes,
-            addrType: ZCashAddressType.p2pkh, network: network));
+      ),
+    );
   }
 
   /// Creates a P2PKH address from an encoded string, validating the network if provided.
-  factory ZCashP2pkhAddress(String address, {ZCashNetwork? network}) {
-    final addr = ZCashAddrDecoder()
-        .decodeAddr(address, type: ZCashAddressType.p2pkh, network: network);
-    return ZCashP2pkhAddress._(
-        data: addr.addressBytes, network: addr.network, address: address);
+  factory ZcashP2pkhAddress(String address, {ZcashNetwork? network}) {
+    final addr = ZcashAddrDecoder().decodeAddr(
+      address,
+      type: ZcashAddressType.p2pkh,
+      network: network,
+    );
+    return ZcashP2pkhAddress._(
+      data: addr.addressBytes,
+      network: addr.network,
+      address: address,
+    );
   }
   @override
   List<int> toBytes() {
@@ -252,26 +405,28 @@ class ZCashP2pkhAddress extends ZCashTransparentAddress {
   }
 
   @override
-  ZCashP2pkhAddress? tryToP2pkh() {
+  ZcashP2pkhAddress? tryToP2pkh() {
     return this;
   }
 
   /// Converts this address to another network.
   @override
-  ZCashP2pkhAddress toNetwork(ZCashNetwork network) {
+  ZcashP2pkhAddress toNetwork(ZcashNetwork network) {
     if (network == this.network) return this;
-    return ZCashP2pkhAddress.fromBytes(bytes: toBytes(), network: network);
+    return ZcashP2pkhAddress.fromBytes(bytes: toBytes(), network: network);
   }
 
   @override
   Script toScriptPubKey() {
-    return Script(script: [
-      BitcoinOpcode.opDup,
-      BitcoinOpcode.opHash160,
-      addressProgram,
-      BitcoinOpcode.opEqualVerify,
-      BitcoinOpcode.opCheckSig
-    ]);
+    return Script(
+      script: [
+        BitcoinOpcode.opDup,
+        BitcoinOpcode.opHash160,
+        addressProgram,
+        BitcoinOpcode.opEqualVerify,
+        BitcoinOpcode.opCheckSig,
+      ],
+    );
   }
 
   @override
@@ -298,67 +453,109 @@ class ZCashP2pkhAddress extends ZCashTransparentAddress {
 }
 
 /// Represents a Zcash P2SH address.
-class ZCashP2shAddress extends ZCashTransparentAddress {
+class ZcashP2shAddress extends ZcashTransparentAddress {
   final List<int> data;
-  ZCashP2shAddress._(
-      {required List<int> data,
-      required super.network,
-      required super.address,
-      required this.type})
-      : data = data
-            .exc(
-                length: ZCashAddressType.p2sh.lengthInBytes!,
-                reason: "Invalid P2SH address bytes length.",
-                operation: "ZCashP2shAddress")
-            .asImmutableBytes,
-        super._(addressType: ZCashAddressType.p2sh);
+  ZcashP2shAddress._({
+    required List<int> data,
+    required super.network,
+    required super.address,
+    required this.type,
+  }) : data =
+           data
+               .exc(
+                 length: ZcashAddressType.p2sh.lengthInBytes!,
+                 reason: "Invalid P2SH address bytes length.",
+                 operation: "ZcashP2shAddress",
+               )
+               .asImmutableBytes,
+       super._(addressType: ZcashAddressType.p2sh);
 
   /// Creates a P2SH address from raw bytes for the specified network.
-  factory ZCashP2shAddress.fromBytes(
-      {required List<int> bytes,
-      required ZCashNetwork network,
-      P2shAddressType type = P2shAddressType.p2pkInP2sh}) {
-    if (type.isP2sh32 || type.withToken) {
-      throw ZCashAddressException("Invalid p2sh address type.");
+  factory ZcashP2shAddress.fromBytes({
+    required List<int> bytes,
+    required ZcashNetwork network,
+    P2shAddressType type = P2shAddressType.p2pkInP2sh,
+  }) {
+    switch (type) {
+      case P2shAddressType.p2pkhInP2sh:
+      case P2shAddressType.p2pkInP2sh:
+        break;
+      default:
+        throw ZcashAddressException("Invalid p2sh address type.");
     }
-    return ZCashP2shAddress._(
-        data: bytes,
+    return ZcashP2shAddress._(
+      data: bytes,
+      network: network,
+      address: ZcashAddrEncoder().encodeKey(
+        bytes,
+        addrType: ZcashAddressType.p2sh,
         network: network,
-        address: ZCashAddrEncoder().encodeKey(bytes,
-            addrType: ZCashAddressType.p2sh, network: network),
-        type: type);
+      ),
+      type: type,
+    );
   }
-  factory ZCashP2shAddress.fromScript(
-      {required Script script,
-      required ZCashNetwork network,
-      P2shAddressType type = P2shAddressType.p2pkInP2sh}) {
-    if (type.isP2sh32 || type.withToken) {
-      throw ZCashAddressException("Invalid p2sh address type.");
+
+  /// Creates a P2SH address from raw bytes for the specified network.
+  factory ZcashP2shAddress.fromPublicKey({
+    required List<int> publicKey,
+    required ZcashNetwork network,
+    P2shAddressType type = P2shAddressType.p2pkInP2sh,
+  }) {
+    final pk = ZECPublic.fromBytes(publicKey);
+    switch (type) {
+      case P2shAddressType.p2pkhInP2sh:
+        return pk.toP2pkhInP2sh();
+      case P2shAddressType.p2pkInP2sh:
+        return pk.toP2pkInP2sh();
+      default:
+        throw ZcashAddressException("Invalid p2sh address type.");
     }
-    final scriptBytes = script.toBytes();
-    final bytes = QuickCrypto.hash160(scriptBytes);
-    return ZCashP2shAddress._(
-        data: bytes,
+  }
+  factory ZcashP2shAddress.fromScript({
+    required Script script,
+    required ZcashNetwork network,
+    P2shAddressType type = P2shAddressType.p2pkInP2sh,
+  }) {
+    switch (type) {
+      case P2shAddressType.p2pkhInP2sh:
+      case P2shAddressType.p2pkInP2sh:
+        break;
+      default:
+        throw ZcashAddressException("Unsupported p2sh address type.");
+    }
+    final bytes = BitcoinAddressUtils.scriptToHash160Bytes(script);
+    return ZcashP2shAddress._(
+      data: bytes,
+      network: network,
+      address: ZcashAddrEncoder().encodeKey(
+        bytes,
+        addrType: ZcashAddressType.p2sh,
         network: network,
-        address: ZCashAddrEncoder().encodeKey(bytes,
-            addrType: ZCashAddressType.p2sh, network: network),
-        type: type);
+      ),
+      type: type,
+    );
   }
 
   /// Creates a P2SH address from an encoded string, validating the network if provided.
-  factory ZCashP2shAddress(String address,
-      {ZCashNetwork? network,
-      P2shAddressType type = P2shAddressType.p2pkInP2sh}) {
+  factory ZcashP2shAddress(
+    String address, {
+    ZcashNetwork? network,
+    P2shAddressType type = P2shAddressType.p2pkInP2sh,
+  }) {
     if (type.isP2sh32 || type.withToken) {
-      throw ZCashAddressException("Invalid p2sh address type.");
+      throw ZcashAddressException("Invalid p2sh address type.");
     }
-    final addr = ZCashAddrDecoder()
-        .decodeAddr(address, type: ZCashAddressType.p2sh, network: network);
-    return ZCashP2shAddress._(
-        data: addr.addressBytes,
-        network: addr.network,
-        address: address,
-        type: type);
+    final addr = ZcashAddrDecoder().decodeAddr(
+      address,
+      type: ZcashAddressType.p2sh,
+      network: network,
+    );
+    return ZcashP2shAddress._(
+      data: addr.addressBytes,
+      network: addr.network,
+      address: address,
+      type: type,
+    );
   }
   @override
   List<int> toBytes() {
@@ -366,24 +563,26 @@ class ZCashP2shAddress extends ZCashTransparentAddress {
   }
 
   @override
-  ZCashP2shAddress tryToP2sh() {
+  ZcashP2shAddress tryToP2sh() {
     return this;
   }
 
   /// Converts this address to another network.
   @override
-  ZCashP2shAddress toNetwork(ZCashNetwork network) {
+  ZcashP2shAddress toNetwork(ZcashNetwork network) {
     if (network == this.network) return this;
-    return ZCashP2shAddress.fromBytes(bytes: toBytes(), network: network);
+    return ZcashP2shAddress.fromBytes(bytes: toBytes(), network: network);
   }
 
   @override
   Script toScriptPubKey() {
-    return Script(script: [
-      BitcoinOpcode.opHash160,
-      BytesUtils.toHexString(data),
-      BitcoinOpcode.opEqual
-    ]);
+    return Script(
+      script: [
+        BitcoinOpcode.opHash160,
+        BytesUtils.toHexString(data),
+        BitcoinOpcode.opEqual,
+      ],
+    );
   }
 
   @override
@@ -407,42 +606,69 @@ class ZCashP2shAddress extends ZCashTransparentAddress {
 
   @override
   final P2shAddressType type;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    addressType.value.toCbor(),
+    network.value.toCbor(),
+    CborBytesValue(toBytes()),
+    type.id.toCbor(),
+  ];
 }
 
 /// Represents a Zcash Tex address.
-class TexAddress extends ZCashAddress {
+class TexAddress extends ZcashAddress {
   final List<int> data;
-  TexAddress._(
-      {required List<int> data, required super.network, required super.address})
-      : data = data
-            .exc(
-                length: ZCashAddressType.tex.lengthInBytes!,
-                operation: "TexAddress",
-                reason: "Invalid TexAddress bytes length.")
-            .asImmutableBytes,
-        super.internal(addressType: ZCashAddressType.tex);
+  TexAddress._({
+    required List<int> data,
+    required super.network,
+    required super.address,
+  }) : data =
+           data
+               .exc(
+                 length: ZcashAddressType.tex.lengthInBytes!,
+                 operation: "TexAddress",
+                 reason: "Invalid TexAddress bytes length.",
+               )
+               .asImmutableBytes,
+       super.internal(
+         addressType: ZcashAddressType.tex,
+         supportedProtocols: const [],
+       );
 
   /// Creates a Tex address from raw bytes for the specified network.
-  factory TexAddress.fromBytes(
-      {required List<int> bytes, required ZCashNetwork network}) {
+  factory TexAddress.fromBytes({
+    required List<int> bytes,
+    required ZcashNetwork network,
+  }) {
     return TexAddress._(
-        data: bytes,
+      data: bytes,
+      network: network,
+      address: ZcashAddrEncoder().encodeKey(
+        bytes,
+        addrType: ZcashAddressType.tex,
         network: network,
-        address: ZCashAddrEncoder().encodeKey(bytes,
-            addrType: ZCashAddressType.tex, network: network));
+      ),
+    );
   }
 
   /// Creates a Tex address from an encoded string, validating the network if provided.
-  factory TexAddress(String address, {ZCashNetwork? network}) {
-    final addr = ZCashAddrDecoder()
-        .decodeAddr(address, type: ZCashAddressType.tex, network: network);
+  factory TexAddress(String address, {ZcashNetwork? network}) {
+    final addr = ZcashAddrDecoder().decodeAddr(
+      address,
+      type: ZcashAddressType.tex,
+      network: network,
+    );
     return TexAddress._(
-        data: addr.addressBytes, network: addr.network, address: address);
+      data: addr.addressBytes,
+      network: addr.network,
+      address: address,
+    );
   }
 
   /// Converts this address to another network.
   @override
-  TexAddress toNetwork(ZCashNetwork network) {
+  TexAddress toNetwork(ZcashNetwork network) {
     if (network == this.network) return this;
     return TexAddress.fromBytes(bytes: toBytes(), network: network);
   }

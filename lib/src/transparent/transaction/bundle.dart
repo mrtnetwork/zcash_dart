@@ -12,15 +12,16 @@ class TransparentBundle
   TransparentBundle({
     List<TransparentTxInput> vin = const [],
     List<TransparentTxOutput> vout = const [],
-  })  : vin = vin.immutable,
-        vout = vout.immutable;
+  }) : vin = vin.immutable,
+       vout = vout.immutable;
 
   factory TransparentBundle.deserializeJson(Map<String, dynamic> json) {
     final vin = json.valueEnsureAsList<Map<String, dynamic>>("vin");
     final vout = json.valueEnsureAsList<Map<String, dynamic>>("vout");
     return TransparentBundle(
-        vin: vin.map((e) => TransparentTxInput.deserializeJson(e)).toList(),
-        vout: vout.map((e) => TransparentTxOutput.deserializeJson(e)).toList());
+      vin: vin.map((e) => TransparentTxInput.deserializeJson(e)).toList(),
+      vout: vout.map((e) => TransparentTxOutput.deserializeJson(e)).toList(),
+    );
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -34,7 +35,7 @@ class TransparentBundle
   Map<String, dynamic> toSerializeJson() {
     return {
       "vout": vout.map((e) => e.toSerializeJson()).toList(),
-      "vin": vin.map((e) => e.toSerializeJson()).toList()
+      "vin": vin.map((e) => e.toSerializeJson()).toList(),
     };
   }
 

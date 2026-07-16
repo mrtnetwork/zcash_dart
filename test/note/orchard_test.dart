@@ -3,21 +3,26 @@ import 'package:test/expect.dart';
 import 'package:test/scaffolding.dart';
 import 'package:zcash_dart/zcash.dart';
 
+import '../utils.dart';
+
 void main() {
-  _test();
+  _test(null);
 }
 
-void _test() {
+void _test(DefaultZcashCryptoContext? context) {
   test("Orchard Note encrypt/decrypt", () {
-    final domain = OrchardDomainNative(DefaultZCashCryptoContext.lazy());
-    for (final json in _tVector) {
+    final domain = OrchardDomainNative(
+      context ?? DefaultZcashCryptoContext.lazy(),
+    );
+    for (final json in _tVector.takeShuffle()) {
       final tv = _TestVector.fromJson(json);
       final ivk = OrchardIncomingViewingKey.fromBytes(tv.incomingViewingKey);
       final ovk = OrchardOutgoingViewingKey(tv.ovk);
       final d = Diversifier(tv.defaultD);
       final pkD = OrchardDiversifiedTransmissionKey.fromBytes(tv.defaultPkd);
-      final cvNet =
-          OrchardValueCommitment(PallasNativePoint.fromBytes(tv.cvNet));
+      final cvNet = OrchardValueCommitment(
+        PallasNativePoint.fromBytes(tv.cvNet),
+      );
       final rho = OrchardRho.fromBytes(tv.nfOld);
       final cmx = OrchardExtractedNoteCommitment.fromBytes(tv.cmx);
       final esk = tv.esk;
@@ -25,7 +30,9 @@ void _test() {
       final value = ZAmount(BigInt.parse(tv.v));
       final rSeed = tv.rseed;
       final sharedSecret = OrchardUtils.kaOrchardNative(
-          base: pkD.point, sk: VestaNativeFq.fromBytes(esk));
+        base: pkD.toPoint(),
+        sk: VestaNativeFq.fromBytes(esk),
+      );
       // domain.kaAgreeDec(VestaNativeFq.fromBytes(esk), pkD.point);
       expect(sharedSecret.toBytes(), tv.sharedSecret);
       final kEnc = domain.kdf(sharedSecret, ephemeralKey);
@@ -34,40 +41,53 @@ void _test() {
       expect(ock, tv.ock);
       final recipient = OrchardAddress(transmissionKey: pkD, diversifier: d);
       final note = OrchardNote.unchecked(
-          recipient: recipient,
-          value: value,
-          rseed: OrchardNoteRandomSeed(rSeed),
-          rho: rho);
+        recipient: recipient,
+        value: value,
+        rseed: OrchardNoteRandomSeed(rSeed),
+        rho: rho,
+      );
       expect(domain.cmstar(note), cmx);
       final action = OrchardAction(
-          nf: OrchardNullifier(rho.inner),
-          rk: OrchardSpendVerificationKey(PallasNativePoint.random()),
-          cmx: cmx,
-          encryptedNote: OrchardTransmittedNoteCiphertext(
-              epkBytes: ephemeralKey.inner,
-              encCiphertext: tv.cEnc,
-              outCiphertext: tv.cOut),
-          cvNet: cvNet);
+        nf: OrchardNullifier(rho.inner),
+        rk: OrchardSpendVerificationKey(PallasNativePoint.random()),
+        cmx: cmx,
+        encryptedNote: OrchardTransmittedNoteCiphertext(
+          epkBytes: ephemeralKey.inner,
+          encCiphertext: tv.cEnc,
+          outCiphertext: tv.cOut,
+        ),
+        cvNet: cvNet,
+      );
       final decrypt = domain.tryNoteDecryption(ivk: ivk.ivk, output: action);
       expect(decrypt?.$3, tv.memo);
       expect(decrypt?.$1, note);
       expect(decrypt?.$2, recipient);
-      final decryptCompact =
-          domain.tryCompactNoteDecryption(ivk: ivk.ivk, output: action);
+      final decryptCompact = domain.tryCompactNoteDecryption(
+        ivk: ivk.ivk,
+        output: action,
+      );
       expect(decryptCompact?.$1, note);
       expect(decryptCompact?.$2, recipient);
       final decryptWithOvk = domain.tryOutputRecoveryWithOvk(
-          ovk: ovk, output: action, outCiphertext: tv.cOut, cv: cvNet);
+        ovk: ovk,
+        output: action,
+        outCiphertext: tv.cOut,
+        cv: cvNet,
+      );
       expect(decryptWithOvk?.$3, tv.memo);
       expect(decryptWithOvk?.$1, note);
       expect(decryptWithOvk?.$2, recipient);
       final ne = domain.createNoteWithEsk(
-          note: note, memo: tv.memo, ovk: ovk, esk: esk);
+        note: note,
+        memo: tv.memo,
+        ovk: ovk,
+        esk: esk,
+      );
       expect(domain.encryptNotePlaintext(ne), tv.cEnc);
       expect(
-          domain.encryptOutgoingPlaintext(
-              cv: cvNet, cm: cmx, encryotedNote: ne),
-          tv.cOut);
+        domain.encryptOutgoingPlaintext(cv: cvNet, cm: cmx, encryotedNote: ne),
+        tv.cOut,
+      );
     }
   });
 }
@@ -101,7 +121,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "63f7125df4836fd2816b024ee70efe09fb9a7b3863c6eacdf95e03894950692c56669d643f780b6ad8b3d35ad7468aaa732766575f84a95d20a625ff3877ea3f",
     "cOut":
-        "cbdf68a57fb4a46f3460ff227bc618dae1122945b380c7e549cf4a6e8bf37549bae1891fd8d1a4944fdf410f0702eda5442f0ea01a5df012a0ae4d84ed79803328bd1fd5fac719216a776de64fd167db"
+        "cbdf68a57fb4a46f3460ff227bc618dae1122945b380c7e549cf4a6e8bf37549bae1891fd8d1a4944fdf410f0702eda5442f0ea01a5df012a0ae4d84ed79803328bd1fd5fac719216a776de64fd167db",
   },
   {
     "incomingViewingKey":
@@ -131,7 +151,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "b4cac56f062bfb2e2715eaf9c8fcdbc20c86793f2357ddd04aad39f94ad7c784686587ce53c339f9cecf4d804a1709392b6ab108ea2c5779921cd5da8a6e1a08",
     "cOut":
-        "4df8da22ec17f416e0591aacc16b6dd2bbbf47be04303dc885d35ac3f9923eea41f36b3a4a5c5e733e326e96dbe55ef9e7e842270cbf467cdc160ebf4f109ad6920a6aed4a0171d906e3e81332e6c561"
+        "4df8da22ec17f416e0591aacc16b6dd2bbbf47be04303dc885d35ac3f9923eea41f36b3a4a5c5e733e326e96dbe55ef9e7e842270cbf467cdc160ebf4f109ad6920a6aed4a0171d906e3e81332e6c561",
   },
   {
     "incomingViewingKey":
@@ -161,7 +181,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "82fef643dbf42dca5156fb51d4c4ee008a72f0dbc3f31efab075f2751537140d59d10a5b94158a3f3a78b35da9c627bedf7cfb847e3e5986ec8ad7f74cd9b21b",
     "cOut":
-        "a95e1a224565295e9b553adde8b014475c687b5d1349c1df8ad4b7cfd3dfc1006c7c37de676d6fde318e2fdfcc2e2e232cc5f8852839e7efab8b200ebc6a4df82a7521ce0f384fe27a0dec59e9d2c0e3"
+        "a95e1a224565295e9b553adde8b014475c687b5d1349c1df8ad4b7cfd3dfc1006c7c37de676d6fde318e2fdfcc2e2e232cc5f8852839e7efab8b200ebc6a4df82a7521ce0f384fe27a0dec59e9d2c0e3",
   },
   {
     "incomingViewingKey":
@@ -191,7 +211,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "78a4e33988d71d718e595555284c249a62b7128806a54c3b36a3aa571493163634392252c9cc9f454b542cf1b888b3ab02e605a8da26107d9802f1536a9e9f2b",
     "cOut":
-        "e6eb2247c933e24c9df128b1e04e8bc05c65eb3197df9ba870d8a0a18d9c24b7c978c34d3c7bbd21e87b2239218754d9673a56a273580f6b41c691e5fd309cd5d1d26d5763a9e8d271c977050e05dc96"
+        "e6eb2247c933e24c9df128b1e04e8bc05c65eb3197df9ba870d8a0a18d9c24b7c978c34d3c7bbd21e87b2239218754d9673a56a273580f6b41c691e5fd309cd5d1d26d5763a9e8d271c977050e05dc96",
   },
   {
     "incomingViewingKey":
@@ -221,7 +241,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "3b3e883e958cd6e0754d74caae1e5a4398abeb7d10ee5f75a4ab8ef7038e3db30fba6876b3765dff4f4c40af893e4bd1343a534cdf5020156b5ed1f6bf62be3c",
     "cOut":
-        "d0659a03c53e15dc1101a66ea80df4144d5ee01c3dbf202ce6087e96a85ae139dd46fc82a1c37d0605f84998531316f1f0cbc04ea20aa404b3d5b042960149816d9b8f062afcc1938943827a1b43fcbd"
+        "d0659a03c53e15dc1101a66ea80df4144d5ee01c3dbf202ce6087e96a85ae139dd46fc82a1c37d0605f84998531316f1f0cbc04ea20aa404b3d5b042960149816d9b8f062afcc1938943827a1b43fcbd",
   },
   {
     "incomingViewingKey":
@@ -251,7 +271,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "3feb345aecd3429a16e10f3d1320bc9971b59e639d62b6961aea781567a8609e2475305c35cf37ebd277823516585afa06057852171e0ce4b052d5b42041d81c",
     "cOut":
-        "e01b5c1e01900ff79bf727f537c4ac36f8067a0cc5c8e9c820442843693530918aea672c4cd8fa3f6f2cb68b871722e778f6e25e78ae00a84328c4c2bf1c79b2c9d8697260cd447e2eff315d74b5b1fd"
+        "e01b5c1e01900ff79bf727f537c4ac36f8067a0cc5c8e9c820442843693530918aea672c4cd8fa3f6f2cb68b871722e778f6e25e78ae00a84328c4c2bf1c79b2c9d8697260cd447e2eff315d74b5b1fd",
   },
   {
     "incomingViewingKey":
@@ -281,7 +301,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "aeeea50c6bb02e5e224dc2959c229d0e3bb879c4ab00aa0ab25a40106b80bbb7ec99eb6f671d0a9e845abfb78aece932eb13f5aed64f20a777c946e9cd7a2423",
     "cOut":
-        "289d00d462780bdbb6cd6cec936be65e630d4a3c2af76e104b174e3d5b716639b068b38500d80400ee642f8e08c8db29ffd5a9dade84a5495d577b2f56d32b0796ca23f00f0f8ef993074f880d6aebcb"
+        "289d00d462780bdbb6cd6cec936be65e630d4a3c2af76e104b174e3d5b716639b068b38500d80400ee642f8e08c8db29ffd5a9dade84a5495d577b2f56d32b0796ca23f00f0f8ef993074f880d6aebcb",
   },
   {
     "incomingViewingKey":
@@ -311,7 +331,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "8e66b792ecb156ef685ee8ea35d382758ba41597a33a93baf381d63c175ba98b01a3661ea9aab8f43253420effd7a483c279d41818bcb3ee919001f866a8e92c",
     "cOut":
-        "df6bb62e3b64f7e937c1de38aac5e6b16135ba2f9dbeedb07a45b6f09df3ebecac046c6192fbe895d2310277b3e03a90fdc853484a015c88d6632e97ba98adca9e49f538c3a7cb6d7723bdcc9c03ae88"
+        "df6bb62e3b64f7e937c1de38aac5e6b16135ba2f9dbeedb07a45b6f09df3ebecac046c6192fbe895d2310277b3e03a90fdc853484a015c88d6632e97ba98adca9e49f538c3a7cb6d7723bdcc9c03ae88",
   },
   {
     "incomingViewingKey":
@@ -341,7 +361,7 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "55db7290073ba00666e87d2561b8883c662c5678ff27302a82e20a720170891a1db679079acdefe9fc1e59a133f37b6d1ffbed788cce3b0cdd63e06283054708",
     "cOut":
-        "0b2cc0a22d06fc36a08a7d82338d4ad095a393a1c24a788d452435944acce6381ecc6937f2c38c89a5f51aa60ca658fe71371c2a83f496ca2e6249792e09eb79ea3a13803218ff20889d8c59c85e9099"
+        "0b2cc0a22d06fc36a08a7d82338d4ad095a393a1c24a788d452435944acce6381ecc6937f2c38c89a5f51aa60ca658fe71371c2a83f496ca2e6249792e09eb79ea3a13803218ff20889d8c59c85e9099",
   },
   {
     "incomingViewingKey":
@@ -371,8 +391,8 @@ const List<Map<String, dynamic>> _tVector = [
     "op":
         "653d07c907946ac3020ebde1b4f610210c30c450e4271265a05d6ece446df439aeec0db90e55833c8baf526d6654a1745ba44cad3cf9a62cfbee5de399ca3126",
     "cOut":
-        "cab78dd183f3e16af76e9a903dd42a9667bfe708ce8879b8386e62ac9f6674f493595da506e9ef06bba24a938060e5d382cc75dfab97e0f8494b476adf4ffd96ff7f1b4f16f8594b7c5a219c7a00ad15"
-  }
+        "cab78dd183f3e16af76e9a903dd42a9667bfe708ce8879b8386e62ac9f6674f493595da506e9ef06bba24a938060e5d382cc75dfab97e0f8494b476adf4ffd96ff7f1b4f16f8594b7c5a219c7a00ad15",
+  },
 ];
 
 class _TestVector {
@@ -397,25 +417,26 @@ class _TestVector {
   final List<int> cOut;
   factory _TestVector.fromJson(Map<String, dynamic> json) {
     return _TestVector(
-        incomingViewingKey: json.valueAsBytes("incomingViewingKey"),
-        ovk: json.valueAsBytes("ovk"),
-        defaultD: json.valueAsBytes("defaultD"),
-        defaultPkd: json.valueAsBytes("defaultPkd"),
-        v: json.valueAs("v"),
-        rseed: json.valueAsBytes("rseed"),
-        memo: json.valueAsBytes("memo"),
-        cvNet: json.valueAsBytes("cvNet"),
-        nfOld: json.valueAsBytes("nfOld"),
-        cmx: json.valueAsBytes("cmx"),
-        esk: json.valueAsBytes("esk"),
-        ephemeralKey: json.valueAsBytes("ephemeralKey"),
-        sharedSecret: json.valueAsBytes("sharedSecret"),
-        kEnc: json.valueAsBytes("kEnc"),
-        pEnc: json.valueAsBytes("pEnc"),
-        cEnc: json.valueAsBytes("cEnc"),
-        ock: json.valueAsBytes("ock"),
-        op: json.valueAsBytes("op"),
-        cOut: json.valueAsBytes("cOut"));
+      incomingViewingKey: json.valueAsBytes("incomingViewingKey"),
+      ovk: json.valueAsBytes("ovk"),
+      defaultD: json.valueAsBytes("defaultD"),
+      defaultPkd: json.valueAsBytes("defaultPkd"),
+      v: json.valueAs("v"),
+      rseed: json.valueAsBytes("rseed"),
+      memo: json.valueAsBytes("memo"),
+      cvNet: json.valueAsBytes("cvNet"),
+      nfOld: json.valueAsBytes("nfOld"),
+      cmx: json.valueAsBytes("cmx"),
+      esk: json.valueAsBytes("esk"),
+      ephemeralKey: json.valueAsBytes("ephemeralKey"),
+      sharedSecret: json.valueAsBytes("sharedSecret"),
+      kEnc: json.valueAsBytes("kEnc"),
+      pEnc: json.valueAsBytes("pEnc"),
+      cEnc: json.valueAsBytes("cEnc"),
+      ock: json.valueAsBytes("ock"),
+      op: json.valueAsBytes("op"),
+      cOut: json.valueAsBytes("cOut"),
+    );
   }
   Map<String, dynamic> toJson() {
     return {
@@ -437,28 +458,29 @@ class _TestVector {
       "cEnc": BytesUtils.toHexString(cEnc),
       "ock": BytesUtils.toHexString(ock),
       "op": BytesUtils.toHexString(op),
-      "cOut": BytesUtils.toHexString(cOut)
+      "cOut": BytesUtils.toHexString(cOut),
     };
   }
 
-  _TestVector(
-      {required this.incomingViewingKey,
-      required this.ovk,
-      required this.defaultD,
-      required this.defaultPkd,
-      required this.v,
-      required this.rseed,
-      required this.memo,
-      required this.cvNet,
-      required this.nfOld,
-      required this.cmx,
-      required this.esk,
-      required this.ephemeralKey,
-      required this.sharedSecret,
-      required this.kEnc,
-      required this.pEnc,
-      required this.cEnc,
-      required this.ock,
-      required this.op,
-      required this.cOut});
+  _TestVector({
+    required this.incomingViewingKey,
+    required this.ovk,
+    required this.defaultD,
+    required this.defaultPkd,
+    required this.v,
+    required this.rseed,
+    required this.memo,
+    required this.cvNet,
+    required this.nfOld,
+    required this.cmx,
+    required this.esk,
+    required this.ephemeralKey,
+    required this.sharedSecret,
+    required this.kEnc,
+    required this.pEnc,
+    required this.cEnc,
+    required this.ock,
+    required this.op,
+    required this.cOut,
+  });
 }

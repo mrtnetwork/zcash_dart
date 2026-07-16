@@ -1,31 +1,82 @@
+import 'package:blockchain_utils/service/models/params.dart';
+import 'package:blockchain_utils/utils/json/extension/json.dart';
 import 'package:zcash_dart/src/provider/walletd/core/request.dart';
-import 'package:zcash_dart/src/provider/walletd/service/service.dart';
 
-class ZCashWalletdProvider {
-  final ZCashWalletdServiceProvider rpc;
+class ZcashWalletdProvider<SERVICE extends IServiceProvider>
+    implements
+        IGrpcProvider<
+          SERVICE,
+          ZcashWalletdRequestDetails,
+          ZcashWalletdRequestDetails
+        > {
+  @override
+  final SERVICE service;
 
-  ZCashWalletdProvider(this.rpc);
-  Future<List<int>> requestBuffer<RESULT>(ZCashWalletdRequest<RESULT> request,
-      {Duration? timeout}) async {
-    final r = await rpc.doRequest(request.buildRequest(), timeout: timeout);
-    return r;
-  }
+  ZcashWalletdProvider(this.service);
 
-  Future<RESULT> request<RESULT>(ZCashWalletdRequest<RESULT> request,
-      {Duration? timeout}) async {
-    final r = await rpc.doRequest(request.buildRequest(), timeout: timeout);
+  @override
+  Future<RESULT> request<RESULT, SERVICERESPONSE>(
+    IServiceRequest<RESULT, SERVICERESPONSE, ZcashWalletdRequestDetails>
+    request, {
+    Duration? timeout,
+  }) async {
+    final r = await requestDynamic<RESULT, SERVICERESPONSE>(
+      request,
+      timeout: timeout,
+    );
     return request.onResonse(r);
   }
 
-  Stream<RESULT> requestStream<RESULT>(ZCashWalletdRequest<RESULT> request,
-      {Duration? timeout}) {
-    final r = rpc.doRequestStream(request.buildRequest(), timeout: timeout);
-    return r.map((e) => request.onResonse(e));
+  @override
+  Future<SERVICERESPONSE> requestDynamic<RESULT, SERVICERESPONSE>(
+    IServiceRequest<RESULT, SERVICERESPONSE, ZcashWalletdRequestDetails>
+    request, {
+    Duration? timeout,
+  }) async {
+    final params = request.buildRequest(0);
+    final response = await service.doGrpcRequest(params, timeout: timeout);
+    return JsonParser.valueAs<SERVICERESPONSE>(response);
   }
 
-  Future<List<RESULT>> requestOnce<RESULT>(ZCashWalletdRequest<RESULT> request,
-      {Duration? timeout}) async {
-    final r = requestStream<RESULT>(request, timeout: timeout);
-    return await r.toList();
+  @override
+  Stream<RESULT> requestStream<RESULT>(
+    IGRPCServiceRequest<RESULT, ZcashWalletdRequestDetails> request, {
+    Duration? timeout,
+  }) {
+    final result = service.doGrpcRequestStream(
+      request.buildRequest(0),
+      timeout: timeout,
+    );
+    return result.map((e) => request.onResonse(e));
+  }
+
+  @override
+  Future<List<RESULT>> requestOnce<RESULT>(
+    IGRPCServiceRequest<RESULT, ZcashWalletdRequestDetails> request, {
+    Duration? timeout,
+  }) async {
+    final result = requestStream<RESULT>(request, timeout: timeout);
+    return await result.toList();
+  }
+
+  @override
+  Future<Stream<RESULT>> requestStreamAsync<RESULT>(
+    IGRPCServiceRequest<RESULT, ZcashWalletdRequestDetails> request, {
+    Duration? timeout,
+  }) async {
+    final result = await service.doGrpcRequestStreamAsync(
+      request.buildRequest(0),
+      timeout: timeout,
+    );
+    return result.map((e) => request.onResonse(e));
+  }
+
+  @override
+  Future<List<RESULT>> requestOnceAsync<RESULT>(
+    IGRPCServiceRequest<RESULT, ZcashWalletdRequestDetails> request, {
+    Duration? timeout,
+  }) async {
+    final result = await requestStreamAsync<RESULT>(request, timeout: timeout);
+    return await result.toList();
   }
 }

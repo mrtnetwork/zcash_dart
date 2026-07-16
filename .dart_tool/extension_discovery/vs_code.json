@@ -1,1 +1,1 @@
-{"version":2,"entries":[{"package":"zcash_dart","rootUri":"../","packageUri":"lib/"}]}
+{"version":2,"entries":[{"package":"bitcoin_base","rootUri":"../../bitcoin_base/","packageUri":"lib/"},{"package":"blockchain_utils","rootUri":"../../blockchain_utils/","packageUri":"lib/"},{"package":"zcash_dart","rootUri":"../","packageUri":"lib/"}]}

@@ -17,6 +17,9 @@ class OrchardNullifier extends Nullifier<PallasNativeFp> {
 
   @override
   List<int> toBytes() => inner.toBytes();
+
+  @override
+  ZcashProtocol get protocol => ZcashProtocol.orchard;
 }
 
 class OrchardNoteCommitment with Equality {
@@ -39,7 +42,8 @@ class OrchardExtractedNoteCommitment with Equality, LayoutSerializable {
   final PallasNativeFp inner;
   OrchardExtractedNoteCommitment(this.inner);
   factory OrchardExtractedNoteCommitment.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return OrchardExtractedNoteCommitment.fromBytes(json.valueAsBytes("inner"));
   }
   factory OrchardExtractedNoteCommitment.fromBytes(List<int> bytes) =>
@@ -74,7 +78,8 @@ class OrchardValueCommitTrapdoor with Equality, LayoutSerializable {
   const OrchardValueCommitTrapdoor(this.inner);
 
   factory OrchardValueCommitTrapdoor.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return OrchardValueCommitTrapdoor.fromBytes(json.valueAsBytes("inner"));
   }
 
@@ -128,14 +133,18 @@ class OrchardValueCommitment with Equality, LayoutSerializable {
     return OrchardValueCommitment.fromBytes(json.valueAsBytes("inner"));
   }
 
-  factory OrchardValueCommitment.derive(
-      {required ZAmount value, required OrchardValueCommitTrapdoor rcv}) {
+  factory OrchardValueCommitment.derive({
+    required ZAmount value,
+    required OrchardValueCommitTrapdoor rcv,
+  }) {
     final vP = PallasNativePoint.hashToCurve(
-        domainPrefix: OrchardUtils.valueCommitmentPersonalization,
-        message: OrchardUtils.valueCommitmentVBytes);
+      domainPrefix: OrchardUtils.valueCommitmentPersonalization,
+      message: OrchardUtils.valueCommitmentVBytes,
+    );
     final rP = PallasNativePoint.hashToCurve(
-        domainPrefix: OrchardUtils.valueCommitmentPersonalization,
-        message: OrchardUtils.valueCommitmentRBytes);
+      domainPrefix: OrchardUtils.valueCommitmentPersonalization,
+      message: OrchardUtils.valueCommitmentRBytes,
+    );
     final absValue = value.value.abs().asU64;
     VestaNativeFq v = VestaNativeFq.nP(absValue);
     if (value.value.isNegative) {

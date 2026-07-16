@@ -5,9 +5,6 @@ import 'package:zcash_dart/src/orchard/orchard.dart';
 import 'package:zcash_dart/src/pczt/pczt.dart';
 import 'package:zcash_dart/src/provider/provider.dart';
 import 'package:zcash_dart/src/sapling/sapling.dart';
-import 'package:zcash_dart/src/transaction/builders/exception.dart';
-import 'package:zcash_dart/src/orchard/builder/builder.dart';
-import 'package:zcash_dart/src/sapling/builder/builder.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
 import 'package:zcash_dart/src/transparent/transparent.dart';
 import 'package:zcash_dart/src/value/value.dart';
@@ -39,12 +36,12 @@ class TransactionBuilder extends BaseTransactionBuilder
   @override
   final int expiryHeight;
   @override
-  final ZCashCryptoContext context;
+  final ZcashCryptoContext context;
   @override
-  final ZCashNetwork network;
+  final ZcashNetwork network;
 
   @override
-  final Zip317FeeRole feeBuilder;
+  final ZFeeRole feeBuilder;
 
   TransactionBuilder._({
     required this.buildConfig,
@@ -60,10 +57,17 @@ class TransactionBuilder extends BaseTransactionBuilder
   factory TransactionBuilder({
     required int targetHeight,
     required TransactionBuildConfig config,
-    required ZCashCryptoContext context,
-    ZCashNetwork network = ZCashNetwork.mainnet,
-    Zip317FeeRole feeBuilder = const Zip317FeeRole.standard(),
+    required ZcashCryptoContext context,
+    int? expiryHeight,
+    ZcashNetwork network = ZcashNetwork.mainnet,
+    ZFeeRole feeBuilder = const Zip317FeeRole.standard(),
   }) {
+    if (expiryHeight != null && expiryHeight >= targetHeight) {
+      throw TransactionBuilderException.failed(
+        "TransactionBuilder",
+        reason: "Invalid expiry height.",
+      );
+    }
     final orchard = OrchardBuilder(
       bundleType: config.orchardConfig(),
       anchor: config.orchardAnchor(),
@@ -77,7 +81,7 @@ class TransactionBuilder extends BaseTransactionBuilder
     return TransactionBuilder._(
       buildConfig: config,
       context: context,
-      expiryHeight: targetHeight + 40,
+      expiryHeight: expiryHeight ?? targetHeight + 40,
       targetHeight: targetHeight,
       network: network,
       feeBuilder: feeBuilder,

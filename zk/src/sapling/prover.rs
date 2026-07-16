@@ -82,7 +82,7 @@ impl SpendProver for SpendParameters {
 
     fn parse_proof(&self, proof_bytes: [u8; GROTH_PROOF_SIZE]) -> Result<Self::Proof, Error> {
         let mut cursor = Cursor::new(&proof_bytes[..]);
-        Proof::read(&mut cursor).map_err(|_| Error::SaplingInvalidProof)
+        Proof::read(&mut cursor).map_err(|_| Error::InvalidInput)
     }
 }
 
@@ -108,6 +108,6 @@ impl OutputProver for OutputParameters {
 
     fn parse_proof(&self, proof_bytes: [u8; GROTH_PROOF_SIZE]) -> Result<Self::Proof, Error> {
         let mut cursor = Cursor::new(&proof_bytes[..]);
-        Proof::read(&mut cursor).map_err(|_| Error::SaplingInvalidProof)
+        Proof::read(&mut cursor).map_err(|_| Error::InvalidInput)
     }
 }

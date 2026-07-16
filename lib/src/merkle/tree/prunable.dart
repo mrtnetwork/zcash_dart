@@ -2,73 +2,66 @@ import 'dart:collection';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/merkle/exception/exception.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
+import 'package:zcash_dart/src/serialization/tags/tags.dart';
 
-class PrunableTree<H extends Object>
-    extends Tree<H?, PrunableValue<H>, PrunableTree<H>> with Equality {
+class PrunableTree<H extends MerkleNodeValue>
+    extends Tree<H?, PrunableValue<H>, PrunableTree<H>>
+    with Equality, CborTagSerializable {
+  final Hashable<H> hashContext;
+
   const PrunableTree({
     required Node<H?, PrunableValue<H>, PrunableTree<H>> node,
     required this.hashContext,
   }) : super(node);
 
-  factory PrunableTree.deserializeJson(
-      {required Map<String, dynamic> json,
-      required Hashable<H> hashContext,
-      required H Function(Map<String, dynamic> json) onParseNode}) {
-    final decode = VariantLayoutSerializable.toVariantDecodeResult(json);
-    final type = NodeType.fromName(decode.variantName);
-    final value = decode.value;
+  factory PrunableTree.deserialize({
+    required Hashable<H> hashContext,
+    required H Function(List<int> bytes) fromBytes,
+    List<int>? bytes,
+    CborObject? object,
+  }) {
+    final CborListValue values = CborTagSerializable.decodeTaggedValue(
+      cborBytes: bytes,
+      cborObject: object,
+      identifier: ZcashSerializationIdentifier.prunalbeTree,
+    );
+    final type = NodeType.fromValue(values.rawValueAt(0));
+    Node<H?, PrunableValue<H>, PrunableTree<H>> encodeParent() {
+      final v = values.objectAt<CborListValue>(1);
+      return NodeParent(
+        ann: v.maybeRawValueAt<H, List<int>>(0, fromBytes),
+        left: PrunableTree.deserialize(
+          hashContext: hashContext,
+          fromBytes: fromBytes,
+          object: v.objectAt(1),
+        ),
+        right: PrunableTree.deserialize(
+          hashContext: hashContext,
+          fromBytes: fromBytes,
+          object: v.objectAt(2),
+        ),
+      );
+    }
+
+    Node<H?, PrunableValue<H>, PrunableTree<H>> encodeLeaf() {
+      final v = values.objectAt<CborListValue>(1);
+      return NodeLeaf(
+        value: PrunableValue<H>(
+          value: fromBytes(v.rawValueAt(0)),
+          flags: RetentionFlags(v.rawValueAt(1)),
+        ),
+      );
+    }
+
     return PrunableTree<H>(
-        hashContext: hashContext,
-        node: switch (type) {
-          NodeType.nil => NodeNil<H?, PrunableValue<H>, PrunableTree<H>>(),
-          NodeType.leaf => NodeLeaf<H?, PrunableValue<H>, PrunableTree<H>>(
-              value: PrunableValue(
-                  value: onParseNode(value.valueAs("value")),
-                  flags: RetentionFlags(value.valueAs("flags")))),
-          NodeType.parent => NodeParent<H?, PrunableValue<H>, PrunableTree<H>>(
-              ann: value.valueTo<H?, Map<String, dynamic>>(
-                  key: "ann", parse: onParseNode),
-              left: PrunableTree.deserializeJson(
-                  json: value.valueAs("left"),
-                  onParseNode: onParseNode,
-                  hashContext: hashContext),
-              right: PrunableTree.deserializeJson(
-                  json: value.valueAs("right"),
-                  onParseNode: onParseNode,
-                  hashContext: hashContext))
-        });
-  }
+      hashContext: hashContext,
 
-  final Hashable<H> hashContext;
-
-  static Layout<Map<String, dynamic>> layout(Layout node, {String? property}) {
-    return LayoutConst.lazyEnum([
-      LazyVariantModel(
-          layout: ({property}) {
-            return LayoutConst.struct([
-              LayoutConst.optional(node, property: "ann"),
-              layout(node, property: "left"),
-              layout(node, property: "right")
-            ], property: property);
-          },
-          property: NodeType.parent.name,
-          index: NodeType.parent.value),
-      LazyVariantModel(
-          layout: ({property}) {
-            return LayoutConst.struct([
-              LayoutConst.wrap(node, property: "value"),
-              LayoutConst.u8(property: "flags")
-            ], property: property);
-          },
-          property: NodeType.leaf.name,
-          index: NodeType.leaf.value),
-      LazyVariantModel(
-          layout: ({property}) {
-            return LayoutConst.noArgs(property: property);
-          },
-          property: NodeType.nil.name,
-          index: NodeType.nil.value)
-    ], property: property);
+      node: switch (type) {
+        NodeType.parent => encodeParent(),
+        NodeType.leaf => encodeLeaf(),
+        NodeType.nil => NodeNil(),
+      },
+    );
   }
 
   factory PrunableTree.parent({
@@ -77,8 +70,9 @@ class PrunableTree<H extends Object>
     H? ann,
   }) {
     return PrunableTree(
-        node: NodeParent(ann: ann, left: left, right: right),
-        hashContext: left.hashContext);
+      node: NodeParent(ann: ann, left: left, right: right),
+      hashContext: left.hashContext,
+    );
   }
   factory PrunableTree.empty(Hashable<H> hashContext) {
     return PrunableTree(node: NodeNil(), hashContext: hashContext);
@@ -104,21 +98,30 @@ class PrunableTree<H extends Object>
           (rFlag & (RetentionFlags.marked | RetentionFlags.reference)) ==
               RetentionFlags.ephemeral) {
         return PrunableTree(
-            node: NodeLeaf(
-                value: PrunableValue(
-                    value: hashContext.combine(
-                        level: level, a: lV.value, b: rV.value),
-                    flags: rFlag)),
-            hashContext: hashContext);
+          node: NodeLeaf(
+            value: PrunableValue(
+              value: hashContext.combine(
+                level: level,
+                a: lV.value,
+                b: rV.value,
+              ),
+              flags: rFlag,
+            ),
+          ),
+          hashContext: hashContext,
+        );
       }
     }
     return PrunableTree(
-        node: NodeParent(ann: ann, left: left, right: right),
-        hashContext: hashContext);
+      node: NodeParent(ann: ann, left: left, right: right),
+      hashContext: hashContext,
+    );
   }
 
-  factory PrunableTree.leaf(
-      {required PrunableValue<H> value, required Hashable<H> hashContext}) {
+  factory PrunableTree.leaf({
+    required PrunableValue<H> value,
+    required Hashable<H> hashContext,
+  }) {
     return PrunableTree(node: NodeLeaf(value: value), hashContext: hashContext);
   }
 
@@ -136,57 +139,75 @@ class PrunableTree<H extends Object>
 
   bool hasComputableRoot() {
     return node.fold(
-        onParent: (left, right, ann) =>
-            ann != null ||
-            (left.hasComputableRoot() && right.hasComputableRoot()),
-        onLeaf: (v) => true,
-        onNil: () => false);
+      onParent:
+          (left, right, ann) =>
+              ann != null ||
+              (left.hasComputableRoot() && right.hasComputableRoot()),
+      onLeaf: (v) => true,
+      onNil: () => false,
+    );
   }
 
   bool isFull() {
     return node.fold(
-        onParent: (_, right, ann) => ann != null || right.isFull(),
-        onLeaf: (v) => true,
-        onNil: () => false);
+      onParent: (_, right, ann) => ann != null || right.isFull(),
+      onLeaf: (v) => true,
+      onNil: () => false,
+    );
   }
 
   bool containsMarked() {
     return node.fold(
-      onParent: (left, right, _) =>
-          left.containsMarked() || right.containsMarked(),
+      onParent:
+          (left, right, _) => left.containsMarked() || right.containsMarked(),
       onLeaf: (v) => v.flags.isMarket(),
       onNil: () => false,
     );
   }
 
-  H rootHash(
-      {required NodeAddress rootAddr, required LeafPosition truncateAt}) {
+  Result<H, List<NodeAddress>> rootHash({
+    required NodeAddress rootAddr,
+    required LeafPosition truncateAt,
+  }) {
     if (truncateAt <= rootAddr.positionRangeStart()) {
-      return hashContext.emptyRoot(rootAddr.level);
+      return Ok(hashContext.emptyRoot(rootAddr.level));
     }
     return node.fold(
-        onParent: (left, right, ann) {
-          if (ann != null && truncateAt >= rootAddr.positionRangeEnd()) {
-            return ann;
-          }
-          // Compute the roots of the left and right children and hash them together
-          final (lAddr, rAddr) = rootAddr.children();
+      onParent: (left, right, ann) {
+        if (ann != null && truncateAt >= rootAddr.positionRangeEnd()) {
+          return Ok(ann);
+        }
+        // Compute the roots of the left and right children and hash them together
+        final (lAddr, rAddr) = rootAddr.children();
 
-          final leftRoot =
-              left.rootHash(rootAddr: lAddr, truncateAt: truncateAt);
-          final rightRoot =
-              right.rootHash(rootAddr: rAddr, truncateAt: truncateAt);
-          return hashContext.combine(
-              level: lAddr.level, a: leftRoot, b: rightRoot);
-        },
-        onLeaf: (v) {
-          if (truncateAt >= rootAddr.positionRangeEnd()) {
-            return v.value;
-          }
-          throw MerkleTreeException("rootHash", details: {"address": rootAddr});
-        },
-        onNil: () => throw MerkleTreeException("rootHash",
-            details: {"address": rootAddr}));
+        final leftRoot = left.rootHash(rootAddr: lAddr, truncateAt: truncateAt);
+        final rightRoot = right.rootHash(
+          rootAddr: rAddr,
+          truncateAt: truncateAt,
+        );
+        if (leftRoot.isErr && rightRoot.isErr) {
+          return Err([...leftRoot.unwrapErr(), ...rightRoot.unwrapErr()]);
+        }
+        return leftRoot.andThen((leftRoot) {
+          return rightRoot.andThen((rightRoot) {
+            return Ok(
+              hashContext.combine(
+                level: lAddr.level,
+                a: leftRoot,
+                b: rightRoot,
+              ),
+            );
+          });
+        });
+      },
+      onLeaf: (v) {
+        if (truncateAt >= rootAddr.positionRangeEnd()) {
+          return Ok(v.value);
+        }
+        return Err([rootAddr]);
+      },
+      onNil: () => Err([rootAddr]),
+    );
   }
 
   SplayTreeSet<LeafPosition> markedPositions(NodeAddress rootAddr) {
@@ -195,8 +216,10 @@ class PrunableTree<H extends Object>
       onParent: (left, right, an) {
         assert(!(left.node.isNil() && !right.node.isNil()));
         final (lAddr, rAddr) = rootAddr.children();
-        result.addAll(
-            {...left.markedPositions(lAddr), ...right.markedPositions(rAddr)});
+        result.addAll({
+          ...left.markedPositions(lAddr),
+          ...right.markedPositions(rAddr),
+        });
       },
       onLeaf: (v) {
         if (rootAddr.level == TreeLevel.zero && v.flags.isMarket()) {
@@ -214,23 +237,28 @@ class PrunableTree<H extends Object>
 
   PrunableTree<H> prune(TreeLevel level) {
     return node.fold(
-        onParent: (left, right, ann) {
-          return PrunableTree.unite(
-              level: level,
-              left: left.prune(level - 1),
-              right: right.prune(level - 1),
-              ann: ann);
-        },
-        onLeaf: (v) => this,
-        onNil: () => this);
+      onParent: (left, right, ann) {
+        return PrunableTree.unite(
+          level: level,
+          left: left.prune(level - 1),
+          right: right.prune(level - 1),
+          ann: ann,
+        );
+      },
+      onLeaf: (v) => this,
+      onNil: () => this,
+    );
   }
 
-  PrunableTree<H> mergeChecked(
-      {required NodeAddress rootAddr, required PrunableTree<H> other}) {
-    PrunableTree<H> fn(
-        {required NodeAddress addr,
-        required PrunableTree<H> t0,
-        required PrunableTree<H> t1}) {
+  PrunableTree<H> mergeChecked({
+    required NodeAddress rootAddr,
+    required PrunableTree<H> other,
+  }) {
+    PrunableTree<H> fn({
+      required NodeAddress addr,
+      required PrunableTree<H> t0,
+      required PrunableTree<H> t1,
+    }) {
       final noDefaultFill = addr.positionRangeEnd();
       if (t0.node.isNil()) {
         return t1;
@@ -243,44 +271,39 @@ class PrunableTree<H extends Object>
       if (t0Leaf != null && t1Leaf != null) {
         if (t0Leaf.value.value == t1Leaf.value.value) {
           return PrunableTree<H>(
-              hashContext: hashContext,
-              node: NodeLeaf(
-                  value: PrunableValue<H>(
-                      value: t0Leaf.value.value,
-                      flags: RetentionFlags(
-                          t0Leaf.value.flags.flag | t1Leaf.value.flags.flag))));
+            hashContext: hashContext,
+            node: NodeLeaf(
+              value: PrunableValue<H>(
+                value: t0Leaf.value.value,
+                flags: RetentionFlags(
+                  t0Leaf.value.flags.flag | t1Leaf.value.flags.flag,
+                ),
+              ),
+            ),
+          );
         }
-        throw MerkleTreeException.failed("mergeChecked",
-            reason:
-                "Inserted root conflicts with existing root at address $addr",
-            details: {"rootAddr": addr});
+        throw MerkleMergeError.conflict(name: "mergeChecked", address: addr);
       }
-      final leaf = t0.node.tryAsleef() ?? t1.node.tryAsleef();
-      final parent = t0.node.isParent()
-          ? t0
-          : t1.node.isParent()
+      final leaf = t0Leaf ?? t1Leaf;
+      final parent =
+          t0.node.isParent()
+              ? t0
+              : t1.node.isParent()
               ? t1
               : null;
+
       if (leaf != null && parent != null) {
         final parentHash =
-            parent.rootHash(rootAddr: addr, truncateAt: noDefaultFill);
-        if (parentHash == leaf.value.value) {
+            parent.rootHash(rootAddr: addr, truncateAt: noDefaultFill).ok();
+        if (parentHash == null || parentHash == leaf.value.value) {
           return parent.reannotateRoot(leaf.value.value);
         }
-        throw MerkleTreeException.failed("mergeChecked",
-            reason:
-                "Inserted root conflicts with existing root at address $addr",
-            details: {"rootAddr": addr});
+        throw MerkleMergeError.conflict(name: "mergeChecked", address: addr);
       }
-      H? lRoot;
-      H? rRoot;
-      try {
-        lRoot = t0.rootHash(rootAddr: addr, truncateAt: noDefaultFill);
-      } on MerkleTreeException catch (_) {}
-      try {
-        rRoot = t1.rootHash(rootAddr: addr, truncateAt: noDefaultFill);
-      } on MerkleTreeException catch (_) {}
-      if (lRoot == rRoot) {
+      H? lRoot = t0.rootHash(rootAddr: addr, truncateAt: noDefaultFill).ok();
+      H? rRoot = t1.rootHash(rootAddr: addr, truncateAt: noDefaultFill).ok();
+      final rootsMatch = (lRoot == null || rRoot == null) || (lRoot == rRoot);
+      if (rootsMatch) {
         final lParent = t0.node.tryAsPrent();
         final rParent = t1.node.tryAsPrent();
         if (lParent != null && rParent != null) {
@@ -288,15 +311,14 @@ class PrunableTree<H extends Object>
           final left = fn(addr: lAddr, t0: lParent.left, t1: rParent.left);
           final right = fn(addr: rAddr, t0: lParent.right, t1: rParent.right);
           return PrunableTree.unite(
-              level: addr.level - 1,
-              left: left,
-              right: right,
-              ann: lParent.ann ?? rParent.ann);
+            level: addr.level - 1,
+            left: left,
+            right: right,
+            ann: lParent.ann ?? rParent.ann,
+          );
         }
       }
-      throw MerkleTreeException.failed("mergeChecked",
-          reason: "Merge input malformed at address $addr",
-          details: {"rootAddr": addr});
+      throw MerkleMergeError.conflict(name: "mergeChecked", address: addr);
     }
 
     return fn(addr: rootAddr, t0: this, t1: other);
@@ -304,45 +326,130 @@ class PrunableTree<H extends Object>
 
   @override
   List<dynamic> get variables => [node];
+
+  // @override
+  // CborListValue toCbor() {
+  // final node = this.node.fold<CborObject?>(
+  //   onParent:
+  //       (left, right, ann) => CborListValue.definite([
+  //         CborTagSerializable.bytesToCbor(ann?.toBytes()),
+  //         left.toCbor(),
+  //         right.toCbor(),
+  //       ]),
+  //   onLeaf:
+  //       (value) => CborListValue<CborObject>.definite([
+  //         CborBytesValue(value.value.toBytes()),
+  //         CborIntValue(value.flags.flag),
+  //       ]),
+  //   onNil: () => null,
+  // );
+  //   return CborListValue.definite([
+  //     CborIntValue(this.node.type.value),
+  //     if (node != null) node,
+  //   ]);
+  // }
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      ZcashSerializationIdentifier.prunalbeTree;
+
+  @override
+  List<CborObject?> get serializationItems {
+    final node = this.node.fold<CborObject?>(
+      onParent:
+          (left, right, ann) => CborTagSerializable.listFromDynamic([
+            ann?.toBytes().toCborBytes(),
+            left.toCbor(),
+            right.toCbor(),
+          ]),
+      onLeaf:
+          (value) => CborTagSerializable.listFromDynamic([
+            CborBytesValue(value.value.toBytes()),
+            CborIntValue(value.flags.flag),
+          ]),
+      onNil: () => CborTagSerializable.listFromDynamic([]),
+    );
+    return [this.node.type.value.toCbor(), node];
+  }
+
+  PrunableTree<H> clone({Hashable<H>? hashContext}) {
+    if (hashContext == null) return this;
+    return PrunableTree(node: node, hashContext: hashContext);
+  }
 }
 
-class LocatedPrunableTree<H extends Object>
-    extends LocatedTree<H?, PrunableValue<H>, PrunableTree<H>> {
+class LocatedPrunableTree<H extends MerkleNodeValue>
+    extends LocatedTree<H?, PrunableValue<H>, PrunableTree<H>>
+    with CborTagSerializable {
   const LocatedPrunableTree({required super.root, required super.rootAddr});
-  Hashable<H> get hashContext => root.hashContext;
 
-  factory LocatedPrunableTree.unit(
-      {required LocatedPrunableTree<H> lroot,
-      required LocatedPrunableTree<H> rroot,
-      required TreeLevel pruneLevel}) {
+  Hashable<H> get hashContext => root.hashContext;
+  factory LocatedPrunableTree.deserialize({
+    required Hashable<H> hashContext,
+    required H Function(List<int> bytes) fromBytes,
+    List<int>? bytes,
+    CborObject? object,
+  }) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: ZcashSerializationIdentifier.locatedPrunalbeTree,
+      cborBytes: bytes,
+      cborObject: object,
+    );
+    return LocatedPrunableTree<H>(
+      root: PrunableTree<H>.deserialize(
+        fromBytes: fromBytes,
+        hashContext: hashContext,
+        object: values.objectAt(0),
+      ),
+      rootAddr: NodeAddress.deserialize(object: values.objectAt(1)),
+    );
+  }
+  factory LocatedPrunableTree.unit({
+    required LocatedPrunableTree<H> lroot,
+    required LocatedPrunableTree<H> rroot,
+    required TreeLevel pruneLevel,
+  }) {
     assert(lroot.rootAddr.parent() == rroot.rootAddr.parent());
     return LocatedPrunableTree<H>(
-        rootAddr: lroot.rootAddr.parent(),
-        root: lroot.rootAddr.level < pruneLevel
-            ? PrunableTree.unite(
+      rootAddr: lroot.rootAddr.parent(),
+      root:
+          lroot.rootAddr.level < pruneLevel
+              ? PrunableTree.unite(
                 level: lroot.rootAddr.level,
                 left: lroot.root,
                 right: rroot.root,
-                ann: null)
-            : PrunableTree.parent(left: lroot.root, right: rroot.root));
+                ann: null,
+              )
+              : PrunableTree.parent(left: lroot.root, right: rroot.root),
+    );
   }
+
   LeafPosition? maxPosition() {
     LeafPosition? fn(NodeAddress addr, PrunableTree<H> root) {
       return root.node.fold(
-          onParent: (left, right, ann) {
-            if (ann != null) return addr.maxPosition();
-            final (lAddr, rAddr) = addr.children();
-            return fn(rAddr, right) ?? fn(lAddr, left);
-          },
-          onLeaf: (v) => addr.positionRangeEnd() - 1,
-          onNil: () => null);
+        onParent: (left, right, ann) {
+          if (ann != null) return addr.maxPosition();
+          final (lAddr, rAddr) = addr.children();
+          return fn(rAddr, right) ?? fn(lAddr, left);
+        },
+        onLeaf: (v) => addr.positionRangeEnd() - 1,
+        onNil: () => null,
+      );
     }
 
     return fn(rootAddr, root);
   }
 
   H rootHash(LeafPosition truncateAt) {
-    return root.rootHash(rootAddr: rootAddr, truncateAt: truncateAt);
+    return root.rootHash(rootAddr: rootAddr, truncateAt: truncateAt).mapErr((
+      addresses,
+    ) {
+      throw MerkleTreeException.failed(
+        "rootHash",
+        reason: "Unable to compute root.",
+        details: {"addresses": addresses.join(",")},
+      );
+    }).unwrap();
   }
 
   H rightFilledRoot() {
@@ -351,23 +458,25 @@ class LocatedPrunableTree<H extends Object>
   }
 
   Set<LeafPosition> markedPositions() {
-    void fn(
-        {required NodeAddress rootAddr,
-        required PrunableTree<H> root,
-        required Set<LeafPosition> acc}) {
+    void fn({
+      required NodeAddress rootAddr,
+      required PrunableTree<H> root,
+      required Set<LeafPosition> acc,
+    }) {
       root.node.fold(
-          onParent: (left, right, _) {
-            final (lAddr, rAddr) = rootAddr.children();
+        onParent: (left, right, _) {
+          final (lAddr, rAddr) = rootAddr.children();
 
-            fn(rootAddr: lAddr, root: left, acc: acc);
-            fn(rootAddr: rAddr, root: right, acc: acc);
-          },
-          onLeaf: (v) {
-            if (v.flags.isMarket() && rootAddr.level.isZero()) {
-              acc.add(LeafPosition(rootAddr.index));
-            }
-          },
-          onNil: () => {});
+          fn(rootAddr: lAddr, root: left, acc: acc);
+          fn(rootAddr: rAddr, root: right, acc: acc);
+        },
+        onLeaf: (v) {
+          if (v.flags.isMarket() && rootAddr.level.isZero()) {
+            acc.add(LeafPosition(rootAddr.index));
+          }
+        },
+        onNil: () => {},
+      );
     }
 
     final acc = <LeafPosition>{};
@@ -375,86 +484,93 @@ class LocatedPrunableTree<H extends Object>
     return acc;
   }
 
-  List<H> witness(
-      {required LeafPosition position, required LeafPosition truncateAt}) {
-    List<H> fn(
-        {required PrunableTree<H> root,
-        required NodeAddress rootAddr,
-        required LeafPosition position,
-        required LeafPosition truncateAt}) {
+  List<H> witness({
+    required LeafPosition position,
+    required LeafPosition truncateAt,
+  }) {
+    Result<List<H>, List<NodeAddress>> fn({
+      required PrunableTree<H> root,
+      required NodeAddress rootAddr,
+      required LeafPosition position,
+      required LeafPosition truncateAt,
+    }) {
       return root.node.fold(
         onParent: (left, right, ann) {
           final (lAddr, rAddr) = rootAddr.children();
           if (rootAddr.level.value > 1) {
             final rStart = rAddr.positionRangeStart();
             if (position < rStart) {
-              return [
-                ...fn(
-                    rootAddr: lAddr,
-                    truncateAt: truncateAt,
-                    root: left,
-                    position: position),
-                right.rootHash(rootAddr: rAddr, truncateAt: truncateAt)
-              ];
+              return _combineResult(
+                a: fn(
+                  rootAddr: lAddr,
+                  truncateAt: truncateAt,
+                  root: left,
+                  position: position,
+                ),
+                b: right.rootHash(rootAddr: rAddr, truncateAt: truncateAt),
+                onSuccess: (a, b) => [...a, b],
+              );
             } else {
-              return [
-                ...fn(
-                    rootAddr: rAddr,
-                    truncateAt: truncateAt,
-                    root: right,
-                    position: position),
-                left.rootHash(rootAddr: lAddr, truncateAt: rStart)
-              ];
+              return _combineResult(
+                a: fn(
+                  rootAddr: rAddr,
+                  truncateAt: truncateAt,
+                  root: right,
+                  position: position,
+                ),
+                b: left.rootHash(rootAddr: lAddr, truncateAt: rStart),
+                onSuccess: (a, b) => [...a, b],
+              );
             }
           } else {
             if (position.isRightChild()) {
               if (right.isMarkedLeaf()) {
                 final n = left.leafValue();
-                if (n != null) return [n];
+                if (n != null) return Ok([n]);
               }
 
-              throw MerkleTreeException.failed("witness",
-                  details: {"address": lAddr});
+              return Err([lAddr]);
             } else if (left.isMarkedLeaf()) {
               if (truncateAt <= (position + 1)) {
-                return [root.hashContext.emptyLeaf()];
+                return Ok([root.hashContext.emptyLeaf()]);
               }
               final n = right.leafValue();
-              if (n != null) return [n];
+              if (n != null) return Ok([n]);
             }
-            throw MerkleTreeException.failed("witness",
-                details: {"address": rAddr});
+            return Err([rAddr]);
           }
         },
-        onLeaf: (v) => throw MerkleTreeException.failed("witness",
-            details: {"address": rootAddr}),
-        onNil: () => throw MerkleTreeException.failed("witness",
-            details: {"address": rootAddr}),
+        onLeaf: (v) => Err([rootAddr]),
+        onNil: () => Err([rootAddr]),
       );
     }
 
     if (rootAddr.positionRange().containsPosition(position)) {
-      try {
-        return fn(
-            root: root,
-            rootAddr: rootAddr,
-            position: position,
-            truncateAt: truncateAt);
-      } on MerkleTreeException catch (e) {
-        throw MerkleTreeException.failed("witness",
-            reason: "Unable to compute root. missing values for nodes.",
-            details: e.details);
-      }
+      final result = fn(
+        root: root,
+        rootAddr: rootAddr,
+        position: position,
+        truncateAt: truncateAt,
+      );
+      return result.mapErr((addresses) {
+        throw MerkleWitnessError.incompleteTree(
+          name: "witness",
+          addresses: addresses,
+        );
+      }).unwrap();
     }
-    throw MerkleTreeException.failed("witness",
-        reason: "Tree does not contain a root at address");
+    throw MerkleWitnessError.addressNotFound(
+      name: "witness",
+      address: rootAddr,
+    );
   }
 
   LocatedPrunableTree<H>? truncateToPosition(LeafPosition position) {
-    PrunableTree<H>? fn(
-        {required LeafPosition position,
-        required NodeAddress rootAddr,
-        required PrunableTree<H> root}) {
+    PrunableTree<H>? fn({
+      required LeafPosition position,
+      required NodeAddress rootAddr,
+      required PrunableTree<H> root,
+    }) {
       return root.node.fold(
         onParent: (left, right, ann) {
           final (lAddr, rAddr) = rootAddr.children();
@@ -462,15 +578,20 @@ class LocatedPrunableTree<H extends Object>
             final n = fn(position: position, rootAddr: lAddr, root: left);
             if (n == null) return null;
             return PrunableTree.unite(
-                level: lAddr.level,
-                left: n,
-                right: PrunableTree.empty(hashContext),
-                ann: ann);
+              level: lAddr.level,
+              left: n,
+              right: PrunableTree.empty(hashContext),
+              ann: ann,
+            );
           }
           final n = fn(position: position, rootAddr: rAddr, root: right);
           if (n == null) return null;
           return PrunableTree.unite(
-              level: rAddr.level, left: left, right: n, ann: ann);
+            level: rAddr.level,
+            left: left,
+            right: n,
+            ann: ann,
+          );
         },
         onLeaf: (v) {
           if (rootAddr.maxPosition() <= position) {
@@ -490,13 +611,16 @@ class LocatedPrunableTree<H extends Object>
     return null;
   }
 
-  TreeInsertReport<H> insertSubtree(
-      {required LocatedPrunableTree<H> subtree, required bool containsMarked}) {
-    (PrunableTree<H>, List<IncompleteNodeInfo>) fn(
-        {required NodeAddress rootAddr,
-        required PrunableTree<H> into,
-        required LocatedPrunableTree<H> subtree,
-        required bool containsMarked}) {
+  TreeInsertReport<H> insertSubtree({
+    required LocatedPrunableTree<H> subtree,
+    required bool containsMarked,
+  }) {
+    (PrunableTree<H>, List<IncompleteNodeInfo>) fn({
+      required NodeAddress rootAddr,
+      required PrunableTree<H> into,
+      required LocatedPrunableTree<H> subtree,
+      required bool containsMarked,
+    }) {
       if (subtree.root.node.isNil()) {
         return (into, []);
       }
@@ -505,60 +629,76 @@ class LocatedPrunableTree<H extends Object>
         LocatedPrunableTree<H> node,
       ) {
         final incomplete = <IncompleteNodeInfo>[];
-        var current = node;
         final empty = PrunableTree.empty(hashContext);
 
-        while (current.rootAddr.level < rootAddr.level) {
+        while (node.rootAddr.level < rootAddr.level) {
           incomplete.add(
             IncompleteNodeInfo(
-                address: current.rootAddr.sibling(),
-                requiredForWitness: containsMarked),
+              address: node.rootAddr.sibling(),
+              requiredForWitness: containsMarked,
+            ),
           );
-          final full = current.root;
-          current = LocatedPrunableTree(
-            rootAddr: current.rootAddr.parent(),
-            root: current.rootAddr.isRightChild()
-                ? PrunableTree.parent(left: empty, right: full)
-                : PrunableTree.parent(left: full, right: empty),
+          final full = node.root;
+          node = LocatedPrunableTree(
+            rootAddr: node.rootAddr.parent(),
+            root:
+                node.rootAddr.isRightChild()
+                    ? PrunableTree.parent(left: empty, right: full)
+                    : PrunableTree.parent(left: full, right: empty),
           );
         }
-        return (current.root.reannotateRoot(ann), incomplete);
+        return (node.root.reannotateRoot(ann), incomplete);
       }
 
       return into.node.fold(
         onParent: (left, right, ann) {
           if (rootAddr == subtree.rootAddr) {
-            return (
-              into.mergeChecked(rootAddr: rootAddr, other: subtree.root),
-              []
-            );
+            try {
+              return (
+                into.mergeChecked(rootAddr: rootAddr, other: subtree.root),
+                [],
+              );
+            } on MerkleMergeError catch (e) {
+              throw MerkleInsertionError.subtreeInsertionFailed(
+                name: "insertSubtree",
+                address: e.address,
+                reason: e.details?["reason"],
+              );
+            }
           }
           final (lAddr, rAddr) = rootAddr.children();
 
           if (lAddr.contains(subtree.rootAddr)) {
             final r = fn(
-                rootAddr: lAddr,
-                into: left,
-                subtree: subtree,
-                containsMarked: containsMarked);
+              rootAddr: lAddr,
+              into: left,
+              subtree: subtree,
+              containsMarked: containsMarked,
+            );
             return (
               PrunableTree.unite(
-                  level: rootAddr.level - 1,
-                  left: r.$1,
-                  ann: ann,
-                  right: right),
-              r.$2
+                level: rootAddr.level - 1,
+                left: r.$1,
+                ann: ann,
+                right: right,
+              ),
+              r.$2,
             );
           }
           final r = fn(
-              rootAddr: rAddr,
-              into: right,
-              subtree: subtree,
-              containsMarked: containsMarked);
+            rootAddr: rAddr,
+            into: right,
+            subtree: subtree,
+            containsMarked: containsMarked,
+          );
           return (
             PrunableTree.unite(
-                ann: ann, level: rootAddr.level - 1, right: r.$1, left: left),
-            r.$2
+              ann: ann,
+              level: rootAddr.level - 1,
+              right: r.$1,
+              left: left,
+            ),
+            r.$2,
           );
         },
         onLeaf: (leaf) {
@@ -573,31 +713,41 @@ class LocatedPrunableTree<H extends Object>
                 final v0 = leaf.value.value;
                 final ret0 = leaf.value.flags;
                 if (v0 != value) {
-                  throw MerkleTreeException.failed("insertSubtree",
-                      reason:
-                          "Inserted root conflicts with existing root at address $rootAddr.",
-                      details: {"addr": rootAddr});
+                  throw MerkleInsertionError.subtreeInsertionFailed(
+                    name: "insertSubtree",
+                    address: rootAddr,
+                    reason:
+                        "Inserted root conflicts with existing root at address $rootAddr.",
+                  );
                 }
                 final mergedRetention =
                     ((retention | ret0) - RetentionFlags.reference) |
-                        (RetentionFlags.reference & retention & ret0);
+                    (RetentionFlags.reference & retention & ret0);
                 return (
                   PrunableTree<H>(
-                      hashContext: root.hashContext,
-                      node: NodeLeaf(
-                          value: PrunableValue(
-                              value: value, flags: mergedRetention))),
-                  []
+                    hashContext: root.hashContext,
+                    node: NodeLeaf(
+                      value: PrunableValue(
+                        value: value,
+                        flags: mergedRetention,
+                      ),
+                    ),
+                  ),
+                  [],
                 );
               }
               return (subtree.root, <IncompleteNodeInfo>[]);
-            } else if (subtree.root.nodeValue() == value) {
+            }
+            final rValue = subtree.root.nodeValue();
+            if (rValue == null || rValue == value) {
               return (subtree.root.reannotateRoot(value), []);
             } else {
-              throw MerkleTreeException.failed("insertSubtree",
-                  reason:
-                      "Inserted root conflicts with existing root at address $rootAddr.",
-                  details: {"addr": rootAddr});
+              throw MerkleInsertionError.subtreeInsertionFailed(
+                name: "insertSubtree",
+                address: rootAddr,
+                reason:
+                    "Inserted root conflicts with existing root at address $rootAddr.",
+              );
             }
           }
 
@@ -610,28 +760,33 @@ class LocatedPrunableTree<H extends Object>
     final maxPosition = this.maxPosition() ?? LeafPosition(0);
     if (rootAddr.contains(subtree.rootAddr)) {
       final r = fn(
-          rootAddr: rootAddr,
-          into: root,
-          subtree: subtree,
-          containsMarked: containsMarked);
+        rootAddr: rootAddr,
+        into: root,
+        subtree: subtree,
+        containsMarked: containsMarked,
+      );
       final newTree = LocatedPrunableTree(root: r.$1, rootAddr: rootAddr);
       final nPosition = newTree.maxPosition() ?? LeafPosition(0);
 
       assert(nPosition >= maxPosition);
       return TreeInsertReport(subtree: newTree, incomplete: r.$2);
     }
-    throw MerkleTreeException.failed("insertSubtree",
-        reason: "Tree does not contain a root at address ${subtree.rootAddr}",
-        details: {"addr": rootAddr});
+    throw MerkleInsertionError.subtreeInsertionFailed(
+      name: "insertSubtree",
+      reason: "Tree does not contain a root at address ${subtree.rootAddr}",
+      address: subtree.rootAddr,
+    );
   }
 
   LocatedPrunableTree<H> clearFlags(
-      Map<LeafPosition, RetentionFlags> toClearMap) {
+    Map<LeafPosition, RetentionFlags> toClearMap,
+  ) {
     final toClear = toClearMap.entries.toList();
-    PrunableTree<H> go(
-        {required List<MapEntry<LeafPosition, RetentionFlags>> flagsToClear,
-        required NodeAddress addr,
-        required PrunableTree<H> tree}) {
+    PrunableTree<H> go({
+      required List<MapEntry<LeafPosition, RetentionFlags>> flagsToClear,
+      required NodeAddress addr,
+      required PrunableTree<H> tree,
+    }) {
       if (flagsToClear.isEmpty) {
         return tree;
       }
@@ -641,32 +796,42 @@ class LocatedPrunableTree<H extends Object>
         onParent: (left, right, ann) {
           final (lAddr, rAddr) = addr.children();
           int partition = flagsToClear.indexWhere(
-              (e) => e.key.compareTo(lAddr.positionRangeEnd()) >= 0);
+            (e) => e.key.compareTo(lAddr.positionRangeEnd()) >= 0,
+          );
           if (partition == -1) partition = flagsToClear.length;
           final leftSubtree = go(
-              flagsToClear: flagsToClear.sublist(0, partition),
-              addr: lAddr,
-              tree: left);
+            flagsToClear: flagsToClear.sublist(0, partition),
+            addr: lAddr,
+            tree: left,
+          );
           final rightSubtree = go(
-              flagsToClear: flagsToClear.sublist(partition),
-              addr: rAddr,
-              tree: right);
+            flagsToClear: flagsToClear.sublist(partition),
+            addr: rAddr,
+            tree: right,
+          );
           return PrunableTree.unite(
-              level: lAddr.level,
-              left: leftSubtree,
-              right: rightSubtree,
-              ann: ann);
+            level: lAddr.level,
+            left: leftSubtree,
+            right: rightSubtree,
+            ann: ann,
+          );
         },
         onLeaf: (v) {
           if (flagsToClear.length == 1) {
-            final newFlags =
-                RetentionFlags(v.flags.flag & ~flagsToClear[0].value.flag);
+            final newFlags = RetentionFlags(
+              v.flags.flag & ~flagsToClear[0].value.flag,
+            );
             return PrunableTree<H>(
-                hashContext: tree.hashContext,
-                node: NodeLeaf(
-                    value: PrunableValue(value: v.value, flags: newFlags)));
+              hashContext: tree.hashContext,
+              node: NodeLeaf(
+                value: PrunableValue(value: v.value, flags: newFlags),
+              ),
+            );
           } else {
-            throw StateError('Tree state inconsistent with checkpoints.');
+            throw MerkleTreeException.failed(
+              "clearFlags",
+              reason: 'Tree state inconsistent with checkpoints.',
+            );
           }
         },
         onNil: () {
@@ -676,8 +841,9 @@ class LocatedPrunableTree<H extends Object>
     }
 
     return LocatedPrunableTree<H>(
-        root: go(flagsToClear: toClear, addr: rootAddr, tree: root),
-        rootAddr: rootAddr);
+      root: go(flagsToClear: toClear, addr: rootAddr, tree: root),
+      rootAddr: rootAddr,
+    );
   }
 
   PrunableValue<H>? valueAtPosition(LeafPosition position) {
@@ -712,10 +878,11 @@ class LocatedPrunableTree<H extends Object>
   }
 
   LocatedPrunableTree<H>? subtree(NodeAddress addr) {
-    LocatedPrunableTree<H>? fn(
-        {required NodeAddress rootAddr,
-        required PrunableTree<H> root,
-        required NodeAddress addr}) {
+    LocatedPrunableTree<H>? fn({
+      required NodeAddress rootAddr,
+      required PrunableTree<H> root,
+      required NodeAddress addr,
+    }) {
       if (rootAddr == addr) {
         return LocatedPrunableTree(root: root, rootAddr: rootAddr);
       }
@@ -740,11 +907,12 @@ class LocatedPrunableTree<H extends Object>
   }
 
   static TreeBatchInsertReport<H, C>?
-      fromIter<C extends Object, H extends Object>(
-          {required LeafPositionRange positionRange,
-          required TreeLevel pruneLevel,
-          required Iterator<(H, Retention<C>)> values,
-          required Hashable<H> hashContext}) {
+  fromIter<C extends Object, H extends MerkleNodeValue>({
+    required LeafPositionRange positionRange,
+    required TreeLevel pruneLevel,
+    required Iterator<(H, Retention<C>)> values,
+    required Hashable<H> hashContext,
+  }) {
     List<(LocatedPrunableTree<H>, bool)> framgments = [];
     LeafPosition position = positionRange.start;
     final SplayTreeMap<C, LeafPosition> checkpoints = SplayTreeMap();
@@ -757,17 +925,21 @@ class LocatedPrunableTree<H extends Object>
         }
         final rFlags = RetentionFlags.fromRetention(id);
         LocatedPrunableTree<H> subtree = LocatedPrunableTree<H>(
-            root: PrunableTree(
-                node:
-                    NodeLeaf(value: PrunableValue(value: value, flags: rFlags)),
-                hashContext: hashContext),
-            rootAddr: NodeAddress.fromPosition(position));
+          root: PrunableTree(
+            node: NodeLeaf(value: PrunableValue(value: value, flags: rFlags)),
+            hashContext: hashContext,
+          ),
+          rootAddr: NodeAddress.fromPosition(position),
+        );
         if (position.isRightChild()) {
           while (framgments.isNotEmpty) {
             final (sibling, marked) = framgments.removeLast();
             if (sibling.rootAddr.parent() == subtree.rootAddr.parent()) {
               subtree = LocatedPrunableTree.unit(
-                  lroot: sibling, rroot: subtree, pruneLevel: pruneLevel);
+                lroot: sibling,
+                rroot: subtree,
+                pruneLevel: pruneLevel,
+              );
             } else {
               framgments.add((sibling, marked));
               break;
@@ -783,19 +955,24 @@ class LocatedPrunableTree<H extends Object>
     }
     if (position > positionRange.start) {
       final lastPosition = position - 1;
-      final minimalRootAddr = NodeAddress.fromPosition(positionRange.start)
-          .commonAncestor(NodeAddress.fromPosition(lastPosition));
-      final (result) =
-          _buildMinimalTree(framgments, minimalRootAddr, pruneLevel);
+      final minimalRootAddr = NodeAddress.fromPosition(
+        positionRange.start,
+      ).commonAncestor(NodeAddress.fromPosition(lastPosition));
+      final (result) = _buildMinimalTree(
+        framgments,
+        minimalRootAddr,
+        pruneLevel,
+      );
 
       if (result != null) {
         return TreeBatchInsertReport(
-            subtree: result.toInsert,
-            containsMarked: result.marked,
-            incomplete: result.incomplete,
-            maxInsertPosition: lastPosition,
-            checkpoints: checkpoints,
-            remainder: iter);
+          subtree: result.toInsert,
+          containsMarked: result.marked,
+          incomplete: result.incomplete,
+          maxInsertPosition: lastPosition,
+          checkpoints: checkpoints,
+          remainder: iter,
+        );
       }
     }
     return null;
@@ -810,18 +987,22 @@ class LocatedPrunableTree<H extends Object>
       checkpointId = id;
     }
     final result = _batchAppend([(value, retention)].iterator);
-    if (result == null) throw MerkleTreeException.failed("append");
+    if (result == null) {
+      throw MerkleInsertionError.insertionFailed(name: "append", reason: null);
+    }
     final remainder = result.remainder;
     if (remainder != null && remainder.moveNext()) {
-      throw MerkleTreeException.failed("append",
-          reason: "Note commitment tree is full.");
+      throw MerkleInsertionError.insertionFailed(
+        name: "append",
+        reason: "Note commitment tree is full.",
+      );
     }
     return (result.subtree, result.maxInsertPosition, checkpointId);
-    // final checkpointId = retention case
   }
 
   TreeBatchInsertReport<H, CHECKPOINT>? _batchAppend<CHECKPOINT extends Object>(
-      Iterator<(H, Retention<CHECKPOINT>)> values) {
+    Iterator<(H, Retention<CHECKPOINT>)> values,
+  ) {
     LeafPosition? appendPosition = maxPosition();
     if (appendPosition != null) {
       appendPosition += 1;
@@ -830,160 +1011,71 @@ class LocatedPrunableTree<H extends Object>
     return batchInsert(start: appendPosition, values: values);
   }
 
-  TreeBatchInsertReport<H, CHECKPOINT>? batchInsert<CHECKPOINT extends Object>(
-      {required LeafPosition start,
-      required Iterator<(H, Retention<CHECKPOINT>)> values}) {
+  TreeBatchInsertReport<H, CHECKPOINT>? batchInsert<CHECKPOINT extends Object>({
+    required LeafPosition start,
+    required Iterator<(H, Retention<CHECKPOINT>)> values,
+  }) {
     final subtreeRange = rootAddr.positionRange();
     final bool containsStart = subtreeRange.containsPosition(start);
     if (containsStart) {
-      final positionRange =
-          LeafPositionRange(start: start, end: subtreeRange.end);
+      final positionRange = LeafPositionRange(
+        start: start,
+        end: subtreeRange.end,
+      );
 
       final n = fromIter(
-          positionRange: positionRange,
-          pruneLevel: rootAddr.level,
-          values: values,
-          hashContext: hashContext);
+        positionRange: positionRange,
+        pruneLevel: rootAddr.level,
+        values: values,
+        hashContext: hashContext,
+      );
       if (n != null) {
-        final result =
-            insertSubtree(subtree: n.subtree, containsMarked: n.containsMarked);
+        final result = insertSubtree(
+          subtree: n.subtree,
+          containsMarked: n.containsMarked,
+        );
         return TreeBatchInsertReport(
-            subtree: result.subtree,
-            containsMarked: n.containsMarked,
-            incomplete: [...n.incomplete, ...result.incomplete],
-            maxInsertPosition: n.maxInsertPosition,
-            checkpoints: n.checkpoints,
-            remainder: n.remainder);
+          subtree: result.subtree,
+          containsMarked: n.containsMarked,
+          incomplete: [...n.incomplete, ...result.incomplete],
+          maxInsertPosition: n.maxInsertPosition,
+          checkpoints: n.checkpoints,
+          remainder: n.remainder,
+        );
       }
     }
     return null;
   }
 
-  static ({
-    LocatedPrunableTree<H> toInsert,
-    bool marked,
-    List<IncompleteNodeInfo> incomplete
-  })? _buildMinimalTree<H extends Object>(
-    List<(LocatedPrunableTree<H>, bool)> xs,
-    NodeAddress rootAddr,
-    TreeLevel pruneBelow,
-  ) {
-    if (xs.isEmpty) return null;
-    List<IncompleteNodeInfo> incomplete = [];
-    var (cur, containsMarked) = xs.removeLast();
-    while (xs.isNotEmpty) {
-      final (top, topMarked) = xs.removeLast();
-      while (cur.rootAddr.level < top.rootAddr.level) {
-        cur = _combineWithEmpty(cur, true, incomplete, topMarked, pruneBelow);
-      }
-      if (cur.rootAddr.level == top.rootAddr.level) {
-        containsMarked = containsMarked || topMarked;
-        if (cur.rootAddr.isRightChild()) {
-          cur = LocatedPrunableTree.unit(
-              lroot: top, rroot: cur, pruneLevel: pruneBelow);
-        } else {
-          xs.add((top, topMarked));
-          cur = _combineWithEmpty(cur, true, incomplete, topMarked, pruneBelow);
-          break;
-        }
-      } else {
-        xs.add((top, topMarked));
-        break;
-      }
-    }
-    while (cur.rootAddr.level + 1 < rootAddr.level) {
-      cur =
-          _combineWithEmpty(cur, true, incomplete, containsMarked, pruneBelow);
-    }
-    xs.add((cur, containsMarked));
-    final res = xs.fold<LocatedPrunableTree<H>?>(null, (acc, c) {
-      final nextTree = c.$1;
-      final nextMarked = c.$2;
-      if (acc == null) {
-        return nextTree;
-      }
-      LocatedPrunableTree<H> p = acc;
-      while (p.rootAddr.level < nextTree.rootAddr.level) {
-        containsMarked = containsMarked || nextMarked;
-        p = _combineWithEmpty(p, false, incomplete, nextMarked, pruneBelow);
-      }
-      return LocatedPrunableTree.unit(
-          lroot: p, rroot: nextTree, pruneLevel: pruneBelow);
-    });
-    if (res == null) return null;
-    return (toInsert: res, marked: containsMarked, incomplete: incomplete);
-  }
-
-  SplayTreeMap<LeafPosition, RetentionFlags> flagPositions() {
-    void fn(
-        {required PrunableTree<H> root,
-        required NodeAddress rootAddr,
-        required SplayTreeMap<LeafPosition, RetentionFlags> acc}) {
-      root.node.fold(
-          onParent: (left, right, _) {
-            final (lAddr, rAddr) = rootAddr.children();
-            fn(root: left, rootAddr: lAddr, acc: acc);
-            fn(root: right, rootAddr: rAddr, acc: acc);
-          },
-          onLeaf: (value) {
-            if (value.flags != RetentionFlags.ephemeral) {
-              acc[rootAddr.maxPosition()] = value.flags;
-            }
-          },
-          onNil: () {});
-    }
-
-    final SplayTreeMap<LeafPosition, RetentionFlags> reuslt = SplayTreeMap();
-    fn(root: root, rootAddr: rootAddr, acc: reuslt);
-    return reuslt;
-  }
-
-  static LocatedPrunableTree<H> _combineWithEmpty<H extends Object>(
-    LocatedPrunableTree<H> root,
-    bool expectLeftChild,
-    List<IncompleteNodeInfo> incomplete,
-    bool containsMarked,
-    TreeLevel pruneBelow,
-  ) {
-    final siblingAddr = root.rootAddr.sibling();
-    incomplete.add(IncompleteNodeInfo(
-        address: siblingAddr, requiredForWitness: containsMarked));
-    final sibling = LocatedPrunableTree<H>(
-      rootAddr: siblingAddr,
-      root: PrunableTree.empty(root.hashContext),
-    );
-    if (root.rootAddr.isLeftChild()) {
-      return LocatedPrunableTree.unit(
-          lroot: root, rroot: sibling, pruneLevel: pruneBelow);
-    }
-    return LocatedPrunableTree.unit(
-        lroot: sibling, rroot: root, pruneLevel: pruneBelow);
-  }
-
-  (LocatedPrunableTree<H>, LocatedPrunableTree<H>?)
-      insertFrontierNodes<C extends Object>(
-          NonEmptyFrontier<H> frontier, Retention<C> leafRetention) {
+  (LocatedPrunableTree<H>, LocatedPrunableTree<H>?) insertFrontierNodes<
+    C extends Object
+  >(NonEmptyFrontier<H> frontier, Retention<C> leafRetention) {
     final subtreeRange = rootAddr.positionRange();
 
     if (subtreeRange.containsPosition(frontier.position)) {
       final leafIsMarked = leafRetention.isMarked;
-
       final (subtree, supertree) = fromFrontier(
-          frontier: frontier,
-          leafRetention: leafRetention,
-          splitAt: rootAddr.level);
-      final inserted =
-          insertSubtree(subtree: subtree, containsMarked: leafIsMarked);
+        frontier: frontier,
+        leafRetention: leafRetention,
+        splitAt: rootAddr.level,
+      );
+      final inserted = insertSubtree(
+        subtree: subtree,
+        containsMarked: leafIsMarked,
+      );
       final updatedSubtree = inserted.subtree;
       return ((updatedSubtree, supertree));
     } else {
-      throw MerkleTreeException.failed("insertFrontierNodes",
-          reason: "point out of range.");
+      throw MerkleInsertionError.frontierInsertionFailed(
+        name: "insertFrontierNodes",
+        reason:
+            "Attempted insertion point ${frontier.position} is not in range $subtreeRange",
+      );
     }
   }
 
   (LocatedPrunableTree<H>, LocatedPrunableTree<H>?)
-      fromFrontier<C extends Object>({
+  fromFrontier<C extends Object>({
     required NonEmptyFrontier<H> frontier,
     required Retention<C> leafRetention,
     required TreeLevel splitAt,
@@ -993,9 +1085,12 @@ class LocatedPrunableTree<H extends Object>
     final ommers = frontier.ommers.iterator;
     NodeAddress addr = NodeAddress.fromPosition(position);
     PrunableTree<H> subtree = PrunableTree.leaf(
-        value: PrunableValue(
-            value: leaf, flags: RetentionFlags.fromRetention(leafRetention)),
-        hashContext: hashContext);
+      value: PrunableValue(
+        value: leaf,
+        flags: RetentionFlags.fromRetention(leafRetention),
+      ),
+      hashContext: hashContext,
+    );
 
     // Build subtree bottom-up until we reach splitAt
     while (addr.level < splitAt) {
@@ -1011,9 +1106,9 @@ class LocatedPrunableTree<H extends Object>
         final left = ommers.current;
         subtree = PrunableTree.parent(
           left: PrunableTree.leaf(
-              value:
-                  PrunableValue(value: left, flags: RetentionFlags.ephemeral),
-              hashContext: hashContext),
+            value: PrunableValue(value: left, flags: RetentionFlags.ephemeral),
+            hashContext: hashContext,
+          ),
           right: subtree,
         );
       } else {
@@ -1022,6 +1117,7 @@ class LocatedPrunableTree<H extends Object>
 
       addr = addr.parent();
     }
+
     final locatedSubtree = LocatedPrunableTree(rootAddr: addr, root: subtree);
     LocatedPrunableTree<H>? locatedSupertree;
     if (locatedSubtree.rootAddr.level == splitAt) {
@@ -1033,27 +1129,30 @@ class LocatedPrunableTree<H extends Object>
 
         // Climb while we are a left child
         while (superAddr.isLeftChild()) {
-          supertree = supertree == null
-              ? PrunableTree.parent(left: empty, right: empty)
-              : PrunableTree.parent(left: supertree, right: empty);
+          if (supertree != null) {
+            supertree = PrunableTree.parent(left: supertree, right: empty);
+          }
 
           superAddr = superAddr.parent();
         }
 
         // Now attach the left sibling
         supertree = PrunableTree.parent(
-            left: PrunableTree.leaf(
-                value:
-                    PrunableValue(value: left, flags: RetentionFlags.ephemeral),
-                hashContext: hashContext),
-            right: supertree ?? empty);
+          left: PrunableTree.leaf(
+            value: PrunableValue(value: left, flags: RetentionFlags.ephemeral),
+            hashContext: hashContext,
+          ),
+          right: supertree ?? empty,
+        );
 
         superAddr = superAddr.parent();
       }
 
       if (supertree != null) {
-        locatedSupertree =
-            LocatedPrunableTree(rootAddr: superAddr, root: supertree);
+        locatedSupertree = LocatedPrunableTree(
+          rootAddr: superAddr,
+          root: supertree,
+        );
       }
     } else {
       // Not enough ommers → no cap contribution
@@ -1073,15 +1172,16 @@ class LocatedPrunableTree<H extends Object>
         return [LocatedPrunableTree<H>(rootAddr: rootAddr, root: root)];
       } else {
         return root.node.fold(
-            onParent: (left, right, ann) {
-              final (lAddr, rAddr) = rootAddr.children();
-              final lDecomposed = go(level, lAddr, left);
-              final rDecomposed = go(level, rAddr, right);
-              lDecomposed.addAll(rDecomposed);
-              return lDecomposed;
-            },
-            onLeaf: (value) => [],
-            onNil: () => []);
+          onParent: (left, right, ann) {
+            final (lAddr, rAddr) = rootAddr.children();
+            final lDecomposed = go(level, lAddr, left);
+            final rDecomposed = go(level, rAddr, right);
+            lDecomposed.addAll(rDecomposed);
+            return lDecomposed;
+          },
+          onLeaf: (value) => [],
+          onNil: () => [],
+        );
       }
     }
 
@@ -1091,25 +1191,232 @@ class LocatedPrunableTree<H extends Object>
       return go(level, rootAddr, root);
     }
   }
+
+  ({LeafPosition position, H leaf, List<H> ommers})? frontierOmmers() {
+    ({LeafPosition position, H leaf, List<H> ommers}) fn({
+      required NodeAddress address,
+      required PrunableTree<H> root,
+    }) {
+      return root.node.fold(
+        onParent: (left, right, ann) {
+          final (lAddr, rAddr) = address.children(
+            error: MerkleFrontierError.failed(
+              name: "frontierOmmers",
+              reason: "Invalid tree data.",
+            ),
+          );
+          if (right.node.isNil()) {
+            return fn(address: lAddr, root: left);
+          }
+          final result = fn(address: rAddr, root: right);
+          List<H> ommers = result.ommers;
+          final leftHash = left.rootHash(
+            rootAddr: lAddr,
+            truncateAt: rAddr.positionRangeStart(),
+          );
+          ommers.add(
+            leftHash.mapErr((addresses) {
+              throw MerkleFrontierError.incompleteTree(
+                name: "frontierOmmers",
+                addresses: [lAddr],
+              );
+            }).unwrap(),
+          );
+          return (position: result.position, ommers: ommers, leaf: result.leaf);
+        },
+        onLeaf: (value) {
+          if (address.level.isZero()) {
+            return (
+              position: LeafPosition(address.index),
+              leaf: value.value,
+              ommers: [],
+            );
+          }
+          throw MerkleFrontierError.incompleteTree(
+            name: "frontierOmmers",
+            addresses: [address],
+          );
+        },
+        onNil: () {
+          throw MerkleFrontierError.incompleteTree(
+            name: "frontierOmmers",
+            addresses: [address],
+          );
+        },
+      );
+    }
+
+    if (root.node.isNil()) return null;
+    return fn(address: rootAddr, root: root);
+  }
+
+  NonEmptyFrontier<H>? frontier() {
+    final ommers = frontierOmmers();
+    if (ommers == null) return null;
+    return NonEmptyFrontier.fromParts(
+      ommers.position,
+      ommers.leaf,
+      ommers.ommers,
+    );
+  }
+
+  static ({
+    LocatedPrunableTree<H> toInsert,
+    bool marked,
+    List<IncompleteNodeInfo> incomplete,
+  })?
+  _buildMinimalTree<H extends MerkleNodeValue>(
+    List<(LocatedPrunableTree<H>, bool)> xs,
+    NodeAddress rootAddr,
+    TreeLevel pruneBelow,
+  ) {
+    if (xs.isEmpty) return null;
+    List<IncompleteNodeInfo> incomplete = [];
+    var (cur, containsMarked) = xs.removeLast();
+    while (xs.isNotEmpty) {
+      final (top, topMarked) = xs.removeLast();
+      while (cur.rootAddr.level < top.rootAddr.level) {
+        cur = _combineWithEmpty(cur, true, incomplete, topMarked, pruneBelow);
+      }
+      if (cur.rootAddr.level == top.rootAddr.level) {
+        containsMarked = containsMarked || topMarked;
+        if (cur.rootAddr.isRightChild()) {
+          cur = LocatedPrunableTree.unit(
+            lroot: top,
+            rroot: cur,
+            pruneLevel: pruneBelow,
+          );
+        } else {
+          xs.add((top, topMarked));
+          cur = _combineWithEmpty(cur, true, incomplete, topMarked, pruneBelow);
+          break;
+        }
+      } else {
+        xs.add((top, topMarked));
+        break;
+      }
+    }
+    while (cur.rootAddr.level + 1 < rootAddr.level) {
+      cur = _combineWithEmpty(
+        cur,
+        true,
+        incomplete,
+        containsMarked,
+        pruneBelow,
+      );
+    }
+    xs.add((cur, containsMarked));
+    final res = xs.fold<LocatedPrunableTree<H>?>(null, (acc, c) {
+      final nextTree = c.$1;
+      final nextMarked = c.$2;
+      if (acc == null) {
+        return nextTree;
+      }
+      LocatedPrunableTree<H> p = acc;
+      while (p.rootAddr.level < nextTree.rootAddr.level) {
+        containsMarked = containsMarked || nextMarked;
+        p = _combineWithEmpty(p, false, incomplete, nextMarked, pruneBelow);
+      }
+      return LocatedPrunableTree.unit(
+        lroot: p,
+        rroot: nextTree,
+        pruneLevel: pruneBelow,
+      );
+    });
+    if (res == null) return null;
+    return (toInsert: res, marked: containsMarked, incomplete: incomplete);
+  }
+
+  SplayTreeMap<LeafPosition, RetentionFlags> flagPositions() {
+    void fn({
+      required PrunableTree<H> root,
+      required NodeAddress rootAddr,
+      required SplayTreeMap<LeafPosition, RetentionFlags> acc,
+    }) {
+      root.node.fold(
+        onParent: (left, right, _) {
+          final (lAddr, rAddr) = rootAddr.children();
+          fn(root: left, rootAddr: lAddr, acc: acc);
+          fn(root: right, rootAddr: rAddr, acc: acc);
+        },
+        onLeaf: (value) {
+          if (value.flags != RetentionFlags.ephemeral) {
+            acc[rootAddr.maxPosition()] = value.flags;
+          }
+        },
+        onNil: () {},
+      );
+    }
+
+    final SplayTreeMap<LeafPosition, RetentionFlags> reuslt = SplayTreeMap();
+    fn(root: root, rootAddr: rootAddr, acc: reuslt);
+    return reuslt;
+  }
+
+  static LocatedPrunableTree<H> _combineWithEmpty<H extends MerkleNodeValue>(
+    LocatedPrunableTree<H> root,
+    bool expectLeftChild,
+    List<IncompleteNodeInfo> incomplete,
+    bool containsMarked,
+    TreeLevel pruneBelow,
+  ) {
+    final siblingAddr = root.rootAddr.sibling();
+    incomplete.add(
+      IncompleteNodeInfo(
+        address: siblingAddr,
+        requiredForWitness: containsMarked,
+      ),
+    );
+    final sibling = LocatedPrunableTree<H>(
+      rootAddr: siblingAddr,
+      root: PrunableTree.empty(root.hashContext),
+    );
+    if (root.rootAddr.isLeftChild()) {
+      return LocatedPrunableTree.unit(
+        lroot: root,
+        rroot: sibling,
+        pruneLevel: pruneBelow,
+      );
+    }
+    return LocatedPrunableTree.unit(
+      lroot: sibling,
+      rroot: root,
+      pruneLevel: pruneBelow,
+    );
+  }
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      ZcashSerializationIdentifier.locatedPrunalbeTree;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    root.toCbor(),
+    rootAddr.toCbor(),
+  ];
+
+  LocatedPrunableTree<H> clone({Hashable<H>? hashContext}) {
+    if (hashContext == null) return this;
+    return LocatedPrunableTree(
+      root: root.clone(hashContext: hashContext),
+      rootAddr: rootAddr,
+    );
+  }
 }
 
-extension PrunableSerializable<H extends LayoutSerializable>
-    on PrunableTree<H> {
-  Map<String, dynamic> toSerializeJson() {
-    return {
-      node.type.name: node.fold(
-          onParent: (left, right, ann) {
-            return {
-              "ann": ann?.toSerializeJson(),
-              "left": left.toSerializeJson(),
-              "right": right.toSerializeJson()
-            };
-          },
-          onLeaf: (value) => {
-                "value": value.value.toSerializeJson(),
-                "flags": value.flags.flag
-              },
-          onNil: () => <String, dynamic>{})
-    };
+Result<C, List<NodeAddress>> _combineResult<A, B, C>({
+  required Result<A, List<NodeAddress>> a,
+  required Result<B, List<NodeAddress>> b,
+  required C Function(A a, B b) onSuccess,
+}) {
+  if (a.isOk && b.isOk) {
+    return Ok<C, List<NodeAddress>>(onSuccess(a.unwrap(), b.unwrap()));
   }
+  if (a.isErr && b.isErr) {
+    return Err([...a.unwrapErr(), ...b.unwrapErr()]);
+  }
+  if (a.isErr) {
+    return Err(a.unwrapErr());
+  }
+  return Err(b.unwrapErr());
 }

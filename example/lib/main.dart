@@ -1,122 +1,241 @@
-import 'package:flutter/material.dart';
+// ignore_for_file: avoid_print
 
-void main() {
-  runApp(const MyApp());
+import 'package:example/examples/transfer/clinet/grpc_provider_example.dart';
+import 'package:example/examples/transfer/context.dart';
+import 'package:example/examples/transfer/utils.dart';
+import 'package:example/examples/transfer/test_account.dart';
+import 'package:zcash_dart/zcash.dart';
+
+/// Entry point for the full transfer example.
+/// - Initializes cryptographic context
+/// - Creates a walletd provider client
+/// - Executes a full Zcash transfer flow
+void main() async {
+  final zklib = await ZKLib.init(
+    ZKLibConfig(
+      libUri: "../zk/target/release/libzk.so",
+      saplingSpendParamsFileUri:
+          "/home/mrhaydari/dev/packages/zcash_dart/example/lib/examples/transfer/sapling-spend.params.part.1",
+      saplingOutputParamsFileUri:
+          "/home/mrhaydari/dev/packages/zcash_dart/example/lib/examples/transfer/sapling-output.params.part.1",
+    ),
+  );
+  final context = await getContext(lib: zklib);
+
+  final provider = createGrpcClient(url: "localhost", port: 9067);
+  await fullTransferExample(lib: zklib, context: context, provider: provider);
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+/// Demonstrates a full Zcash transaction flow:
+/// - Collect transparent UTXOs
+/// - Scan Sapling & Orchard notes
+/// - Build Merkle anchors
+/// - Create, prove, sign, and send a transaction
+Future<void> fullTransferExample({
+  required ZcashCryptoContext context,
+  required ZcashWalletdProvider provider,
+  required ZKLib lib,
+}) async {
+  /// Create three test accounts using hardened BIP32 indices
+  final accounts = [
+    ZcashTestAccount.fromSeed(context, accountIndex: Bip32KeyIndex.hardenIndex(102)),
+    ZcashTestAccount.fromSeed(context, accountIndex: Bip32KeyIndex.hardenIndex(103)),
+    ZcashTestAccount.fromSeed(context, accountIndex: Bip32KeyIndex.hardenIndex(101)),
+  ];
 
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
+  /// Map transparent addresses to their owning account and BIP44 change path
+  final Map<TransparentDerivedAddress, (ZcashTestAccount, Bip44Changes)>
+  transparentAccounts = {
+    accounts[0].uivk.defaultTransparentAddress(): (accounts[0], Bip44Changes.chainExt),
+    accounts[1].uivk.defaultTransparentAddress(): (accounts[1], Bip44Changes.chainExt),
+    accounts[2].uivk.defaultAddress().transparent!: (accounts[2], Bip44Changes.chainExt),
+  };
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  /// Fetch all transparent UTXOs for the known addresses
+  final utxos = await getAccountsConfrimedUtxos(
+    provider,
+    transparentAccounts.keys.toList(),
+  );
+  // print("utxos ${utxos.length}");
+  // return;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
+  /// Resolve the target block height for transaction anchoring
+  final target = await getLatestBlockId(provider);
 
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+  /// Scan blockchain for Sapling and Orchard notes
+  /// using full viewing keys (FVKs) and incoming viewing keys (IVKs)
+  final saplingKeys = accounts
+      .map(
+        (e) => ZcashBlockProcessorScanKey(
+          fvk: e.saplingFvk.fvk,
+          viewKeys: e.saplingIvks.map((e) => IVKWithActivationHeight(ivk: e)).toList(),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
-    );
+      )
+      .toList();
+  final orchardKeys = accounts
+      .map(
+        (e) => ZcashBlockProcessorScanKey(
+          fvk: e.orchardFvk,
+          viewKeys: e.orchardIvks.map((e) => IVKWithActivationHeight(ivk: e)).toList(),
+        ),
+      )
+      .toList();
+  final myNotes = await getNotes(
+    provider: provider,
+    context: context,
+    startHeight: 1,
+    sapling: saplingKeys,
+    orchard: orchardKeys,
+    endHeight: target,
+  );
+  final Map<ScannedOutput, IncomingViewingKey> mapOutputIvks = {};
+
+  for (final output in myNotes.outputs) {
+    mapOutputIvks[output.output] = output.ivk;
   }
+  List<ScannedOutput<Note>> scannedOutput = mapOutputIvks.keys.toList();
+
+  /// Extract all Orchard and Sapling outputs from scanned transactions
+  final orchards = scannedOutput.whereType<OrchardScannedOutput>().toList();
+  final saplings = scannedOutput.whereType<SaplingScannedOutput>().toList();
+
+  /// Build Merkle trees and anchors for Sapling and Orchard
+  final merkle = NativeMerkleController(
+    context: context,
+    provider: provider,
+    liberary: lib,
+  );
+  await merkle.updateState(myNotes.scannedBlocks);
+
+  final outputs = await merkle.buildMerkle(
+    orchardOutputs: orchards,
+    saplingOutputs: saplings,
+    targetHeight: target,
+  );
+
+  /// Initialize transaction builder with Sapling and Orchard anchors
+  final builder = TransactionBuilder(
+    targetHeight: target,
+    config: TransactionBuildConfigStandard(
+      orchard: outputs.orchardAnchor,
+      sapling: outputs.saplingAnchor,
+    ),
+    context: context,
+  );
+
+  /// Add all transparent UTXOs as transaction inputs
+  for (final i in utxos) {
+    await builder.addTransparentSpend(TransparentSigningInput(input: i));
+  }
+
+  /// Add Sapling spends with their corresponding Merkle paths
+  if (outputs.saplingNotes.isNotEmpty) {
+    for (final i in outputs.saplingNotes) {
+      final noteIvk = mapOutputIvks[i.output]!;
+      final fvk = accounts
+          .firstWhere((e) => e.saplingIvks.contains(noteIvk))
+          .saplingFvk
+          .fvk;
+
+      await builder.addSaplingSpend(
+        fvk: fvk,
+        note: i.output.note,
+        merklePath: i.merklePath,
+      );
+    }
+  }
+
+  /// Add Orchard spends with their corresponding Merkle paths
+  if (outputs.orchardNotes.isNotEmpty) {
+    for (final i in outputs.orchardNotes) {
+      final noteIvk = mapOutputIvks[i.output]!;
+      final fvk = accounts.firstWhere((e) => e.orchardIvks.contains(noteIvk)).orchardFvk;
+
+      await builder.addOrchardSpend(
+        fvk: fvk,
+        note: i.output.note,
+        merklePath: i.merklePath,
+      );
+    }
+  }
+
+  /// Ensure we actually have funds to spend
+  final total = utxos.fold<BigInt>(BigInt.zero, (p, c) => p + c.utxo.amount.value);
+  assert(total != BigInt.zero);
+  if (total == BigInt.zero) return;
+  print("total utxos amount: $total");
+
+  /// Add three transparent outputs
+  await builder.addOutput(
+    target: TransactionOutputTarget.transparent(
+      address: accounts[0].uivk.defaultAddress().address,
+    ),
+    amount: ZAmount.from(1000),
+  );
+  await builder.addOutput(
+    target: TransactionOutputTarget.orchard(
+      address: accounts[1].uivk.defaultAddress().address,
+    ),
+    amount: ZAmount.from(1000),
+  );
+  await builder.addOutput(
+    target: TransactionOutputTarget.sapling(
+      address: accounts[2].uivk.defaultAddress().address,
+    ),
+    amount: ZAmount.from(1000),
+  );
+
+  /// Add transparent change output (fee is calculated internally)
+  final fee = await builder.addChange(
+    target: TransactionOutputTarget.transparent(
+      address: accounts[0].uivkInternal.defaultAddress().address,
+    ),
+  );
+  print("transaction fee $fee");
+
+  /// Generate proofs and signatures for Sapling spends
+  if (outputs.saplingNotes.isNotEmpty) {
+    for (final i in outputs.saplingNotes.indexed) {
+      final noteIvk = mapOutputIvks[i.$2.output]!;
+      final account = accounts.firstWhere((e) => e.saplingIvks.contains(noteIvk));
+      await builder.setSaplingProofGenerationKey(index: i.$1, expsk: account.saplingSk);
+    }
+  }
+  await builder.proofSapling();
+
+  for (final i in outputs.saplingNotes.indexed) {
+    final noteIvk = mapOutputIvks[i.$2.output]!;
+    final account = accounts.firstWhere((e) => e.saplingIvks.contains(noteIvk));
+    await builder.signSapling(index: i.$1, ask: account.saplingSk.ask);
+  }
+
+  /// Generate proofs and signatures for Orchard spends
+  if (outputs.orchardNotes.isNotEmpty) {
+    for (final i in outputs.orchardNotes.indexed) {
+      final noteIvk = mapOutputIvks[i.$2.output]!;
+      final account = accounts.firstWhere((e) => e.orchardIvks.contains(noteIvk));
+      await builder.signOrchard(
+        index: i.$1,
+        ask: OrchardSpendAuthorizingKey.fromSpendingKey(account.orchardSk),
+      );
+    }
+  }
+  await builder.proofOrchard();
+
+  /// Sign all transparent inputs
+  for (final i in utxos.indexed) {
+    final acc = transparentAccounts.entries.firstWhere(
+      (e) => e.key.address == i.$2.ownerDetails.address.address,
+    );
+
+    final sk = acc.value.$1.transparentSk
+        .childKey(Bip32KeyIndex(acc.value.$2.value))
+        .childKey(acc.key.bip32Index);
+
+    await builder.signTransparent(index: i.$1, sk: ZECPrivate.fromBip32(sk.privateKey));
+  }
+
+  /// Finalize and broadcast the transaction
+  final txId = await builder.extractAndSendTransaction(provider);
+  print("tx $txId");
 }

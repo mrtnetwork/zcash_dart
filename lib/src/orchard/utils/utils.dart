@@ -5,12 +5,14 @@ import 'package:zcash_dart/src/orchard/transaction/commitment.dart';
 
 class OrchardUtils {
   static ({OrchardSpendingKey sk, OrchardFullViewingKey fvk})
-      createDummySpendKey() {
+  createDummySpendKey() {
     final sk = OrchardSpendingKey(QuickCrypto.generateRandom());
     final f = VestaNativeFq.fromBytes64(PrfExpand.orchardAsk.apply(sk.sk));
     if (f.isZero()) {
-      throw OrchardException.operationFailed("createDummySpendKey",
-          reason: "zero scalar.");
+      throw OrchardException.operationFailed(
+        "createDummySpendKey",
+        reason: "zero scalar.",
+      );
     }
     final generator = OrchardKeyUtils.orchardSpendAuthSigBasepointNative;
     var pk = generator * f;
@@ -19,28 +21,35 @@ class OrchardUtils {
     }
     final ak = OrchardSpendVerificationKey(pk);
     final fvk = OrchardFullViewingKey(
-        ak: OrchardSpendValidatingKey(ak),
-        nk: OrchardNullifierDerivingKey.fromSpendKey(sk),
-        rivk: OrchardCommitIvkRandomness.fromSpendKey(sk));
+      ak: OrchardSpendValidatingKey(ak),
+      nk: OrchardNullifierDerivingKey.fromSpendKey(sk),
+      rivk: OrchardCommitIvkRandomness.fromSpendKey(sk),
+    );
     return (sk: sk, fvk: fvk);
   }
 
   static VestaNativeFq toNonZeroScalar(List<int> scalarBytes) {
     final scalar = VestaNativeFq.fromBytes64(scalarBytes);
     if (scalar.isZero()) {
-      throw OrchardException.operationFailed("toNonZeroScalar",
-          reason: "zero scalar.");
+      throw OrchardException.operationFailed(
+        "toNonZeroScalar",
+        reason: "zero scalar.",
+      );
     }
     return scalar;
   }
 
-  static PallasNativePoint kaOrchardNative(
-      {required PallasNativePoint base, required VestaNativeFq sk}) {
+  static PallasNativePoint kaOrchardNative({
+    required PallasNativePoint base,
+    required VestaNativeFq sk,
+  }) {
     assert(!sk.isZero());
     final PallasNativePoint p = base * sk;
     if (p.isIdentity()) {
-      throw OrchardException.operationFailed("toNonZeroScalar",
-          reason: "Scalar multiplication resulted in the identity point.");
+      throw OrchardException.operationFailed(
+        "toNonZeroScalar",
+        reason: "Scalar multiplication resulted in the identity point.",
+      );
     }
     return p;
   }
@@ -50,14 +59,18 @@ class OrchardUtils {
     required PallasNativeFp rho,
     required PallasNativeFp psi,
     required OrchardNoteCommitment cm,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
   }) {
     final k = PallasNativePoint.hashToCurve(
-        domainPrefix: "z.cash:Orchard", message: "K".codeUnits);
-    final s = (k *
-            VestaNativeFq.fromBytes(
-                (nk.prfNf(rho: rho, context: context) + psi).toBytes()) +
-        cm.inner);
+      domainPrefix: "z.cash:Orchard",
+      message: "K".codeUnits,
+    );
+    final s =
+        (k *
+                VestaNativeFq.fromBytes(
+                  (nk.prfNf(rho: rho, context: context) + psi).toBytes(),
+                ) +
+            cm.inner);
     return s.toAffine().x;
   }
 

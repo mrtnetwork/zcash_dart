@@ -1,13 +1,14 @@
 import 'dart:collection';
-
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/merkle/exception/exception.dart';
+import 'package:zcash_dart/src/merkle/store/store.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
+import 'package:zcash_dart/src/serialization/tags/tags.dart';
 
 /// Represents a leaf position in a tree, supporting equality and ordering.
 class LeafPosition with Equality implements Comparable<LeafPosition> {
   final int position;
-  LeafPosition(int position) : position = position.asU32;
+  LeafPosition(int position) : position = position.asPositive;
 
   bool isRightChild() => (position & 1) == 1;
 
@@ -106,8 +107,10 @@ class TreeLevel with Equality implements Comparable<TreeLevel> {
   TreeLevel operator +(int other) {
     var result = value + other;
     if (result > BinaryOps.mask8) {
-      throw MerkleTreeException.failed("Addition",
-          reason: 'Addition level failed. overflow.');
+      throw MerkleTreeException.failed(
+        "TreeLevel.Addition",
+        reason: 'Addition level failed. overflow.',
+      );
     }
     return TreeLevel(result);
   }
@@ -115,8 +118,10 @@ class TreeLevel with Equality implements Comparable<TreeLevel> {
   // Subtraction operator
   TreeLevel operator -(int other) {
     if (value < other) {
-      throw MerkleTreeException.failed("Addition",
-          reason: 'Subtraction level failed. overflow.');
+      throw MerkleTreeException.failed(
+        "TreeLevel.Subtraction",
+        reason: 'Subtraction level failed. overflow.',
+      );
     }
     return TreeLevel(value - other);
   }
@@ -133,29 +138,37 @@ class TreeLevel with Equality implements Comparable<TreeLevel> {
 }
 
 /// Represents the address of a node with value-based equality.
-class NodeAddress with Equality {
+class NodeAddress with Equality, LayoutSerializable, CborTagSerializable {
   final TreeLevel level;
   final int index;
   NodeAddress({required this.level, required int index})
-      : index = index.asPositive;
+    : index = index.asPositive;
   factory NodeAddress.fromPosition(LeafPosition p) {
     return NodeAddress(level: TreeLevel.zero, index: p.position);
+  }
+
+  factory NodeAddress.deserialize({List<int>? bytes, CborObject? object}) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: ZcashSerializationIdentifier.nodeAddress,
+      cborBytes: bytes,
+      cborObject: object,
+    );
+    return NodeAddress(
+      level: TreeLevel(values.rawValueAt(0)),
+      index: values.rawValueAt(1),
+    );
   }
 
   /// Returns the minimum value among the range of leaf positions
   LeafPosition positionRangeStart() {
     return LeafPosition(
-        index << level.value); // level.0 in Rust → level.value in Dart
+      index << level.value,
+    ); // level.0 in Rust → level.value in Dart
   }
 
   /// Returns the (exclusive) end of the range of leaf positions
   LeafPosition positionRangeEnd() {
-    try {
-      return LeafPosition((index + 1) << level.value);
-    } catch (e) {
-      print("valuee $index ${(index + 1) << level.value}");
-      rethrow;
-    }
+    return LeafPosition((index + 1) << level.value);
   }
 
   /// Returns the maximum value among the range of leaf positions
@@ -163,21 +176,26 @@ class NodeAddress with Equality {
     return positionRangeEnd() - 1;
   }
 
-  (NodeAddress, NodeAddress) children() {
-    if (level == TreeLevel.zero) {
-      throw MerkleTreeException.failed("children",
-          reason: 'Zero level does not have any children.');
+  (NodeAddress, NodeAddress) children({MerkleTreeException? error}) {
+    if (this.level == TreeLevel.zero) {
+      throw error ??
+          MerkleTreeException.failed(
+            "NodeAddress.children",
+            reason: 'Zero level does not have any children.',
+          );
     }
-    final left =
-        NodeAddress(level: TreeLevel(level.value - 1), index: index << 1);
-    final right =
-        NodeAddress(level: TreeLevel(level.value - 1), index: (index << 1) + 1);
+    final level = TreeLevel(this.level.value - 1);
+    final index = this.index << 1;
+    final left = NodeAddress(level: level, index: index);
+    final right = NodeAddress(level: level, index: index + 1);
     return (left, right);
   }
 
   LeafPositionRange positionRange() {
     return LeafPositionRange(
-        start: positionRangeStart(), end: positionRangeEnd());
+      start: positionRangeStart(),
+      end: positionRangeEnd(),
+    );
   }
 
   NodeAddress sibling() {
@@ -192,11 +210,19 @@ class NodeAddress with Equality {
     return NodeAddress(level: TreeLevel(level.value + 1), index: index >> 1);
   }
 
-  factory NodeAddress.abovePosition(
-      {required TreeLevel level, required LeafPosition position}) {
+  factory NodeAddress.abovePosition({
+    required TreeLevel level,
+    required LeafPosition position,
+  }) {
     return NodeAddress(level: level, index: position.position >> level.value);
   }
 
+  factory NodeAddress.deserializeJson(Map<String, dynamic> json) {
+    return NodeAddress(
+      level: TreeLevel(json.valueAsInt("level")),
+      index: json.valueAsInt("index"),
+    );
+  }
   bool isRightChild() {
     return (index & 1) == 1;
   }
@@ -231,11 +257,13 @@ class NodeAddress with Equality {
     final levelDelta = indexDelta == 0 ? 0 : indexDelta.bitLength;
 
     return NodeAddress(
-        level: higher.level + levelDelta,
-        index: (higher.index > lowerAncestorIndex
-                ? higher.index
-                : lowerAncestorIndex) >>
-            levelDelta);
+      level: higher.level + levelDelta,
+      index:
+          (higher.index > lowerAncestorIndex
+              ? higher.index
+              : lowerAncestorIndex) >>
+          levelDelta,
+    );
   }
 
   T getContext<T extends Object?>({
@@ -244,13 +272,20 @@ class NodeAddress with Equality {
     required T Function(LeafPositionRange position) right,
   }) {
     if (level >= this.level) {
-      return left(NodeAddress(
-          level: level, index: index >> (level - this.level.value).value));
+      return left(
+        NodeAddress(
+          level: level,
+          index: index >> (level - this.level.value).value,
+        ),
+      );
     }
     final int shift = this.level.value - level.value;
-    return right(LeafPositionRange(
+    return right(
+      LeafPositionRange(
         start: LeafPosition(index << shift),
-        end: LeafPosition((index + 1) << shift)));
+        end: LeafPosition((index + 1) << shift),
+      ),
+    );
   }
 
   @override
@@ -260,10 +295,37 @@ class NodeAddress with Equality {
 
   @override
   List<dynamic> get variables => [level, index];
+
+  static Layout<Map<String, dynamic>> layout({String? property}) {
+    return LayoutConst.struct([
+      LayoutConst.lebU32(property: "level"),
+      LayoutConst.lebU64(property: "index"),
+    ], property: property);
+  }
+
+  @override
+  Layout<Map<String, dynamic>> toLayout({String? property}) {
+    return layout(property: property);
+  }
+
+  @override
+  Map<String, dynamic> toSerializeJson() {
+    return {"level": level.value, "index": BigInt.from(index)};
+  }
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      ZcashSerializationIdentifier.nodeAddress;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    level.value.toCbor(),
+    index.toCbor(),
+  ];
 }
 
 /// Abstract base for a Merkle path, supporting value-based equality.
-abstract class MerklePath<H extends Object> with Equality {
+abstract class MerklePath<H extends MerkleNodeValue> with Equality {
   final List<H> authPath;
   final LeafPosition position;
   const MerklePath({required this.authPath, required this.position});
@@ -279,9 +341,10 @@ enum MarkingState {
 
   final int value;
   const MarkingState(this.value);
-  static MarkingState fromValue(int? value) =>
-      values.firstWhere((e) => e.value == value,
-          orElse: () => throw ItemNotFoundException(value: value));
+  static MarkingState fromValue(int? value) => values.firstWhere(
+    (e) => e.value == value,
+    orElse: () => throw ItemNotFoundException(value: value),
+  );
 }
 
 enum RetentionType {
@@ -293,9 +356,9 @@ enum RetentionType {
   final int value;
   const RetentionType(this.value);
   static RetentionType fromValue(int? value) => values.firstWhere(
-        (e) => e.value == value,
-        orElse: () => throw ItemNotFoundException(value: value),
-      );
+    (e) => e.value == value,
+    orElse: () => throw ItemNotFoundException(value: value),
+  );
 }
 
 sealed class Retention<C extends Object> with Equality {
@@ -321,7 +384,7 @@ class RetentionCheckpoint<C extends Object> extends Retention<C> {
   final C id;
   final MarkingState marking;
   const RetentionCheckpoint({required this.marking, required this.id})
-      : super(RetentionType.checkpoint);
+    : super(RetentionType.checkpoint);
   @override
   bool get isCheckpoint => true;
   @override
@@ -331,7 +394,7 @@ class RetentionCheckpoint<C extends Object> extends Retention<C> {
   List<dynamic> get variables => [type, id, marking];
   @override
   String toString() {
-    return "RetentionCheckpoint<$C>($id, ${marking.name})";
+    return "RetentionCheckpoint<$C>($id, marking:${marking.name})";
   }
 }
 
@@ -353,7 +416,12 @@ class RetentionReference<C extends Object> extends Retention<C> {
   }
 }
 
-abstract mixin class Hashable<HASH extends Object> {
+abstract class MerkleNodeValue with LayoutSerializable, Equality {
+  const MerkleNodeValue();
+  List<int> toBytes();
+}
+
+abstract mixin class Hashable<HASH extends MerkleNodeValue> {
   HASH emptyLeaf();
 
   /// Combines two child nodes at the given level, producing a new node at level + 1.
@@ -378,7 +446,7 @@ class LeafPositionRange with Iterable<int>, Equality {
     return switch (element) {
       final int p => p >= start.position && p <= end.position,
       final LeafPosition l => containsPosition(l),
-      _ => false
+      _ => false,
     };
   }
 
@@ -386,11 +454,9 @@ class LeafPositionRange with Iterable<int>, Equality {
     return element >= start && element <= end;
   }
 
-  // late final List<int> _items = [
-  //   for (int i = start.position; i < end.position; i++) i
-  // ];
   @override
-  Iterator<int> get iterator => Iterable<int>.generate(
+  Iterator<int> get iterator =>
+      Iterable<int>.generate(
         end.position - start.position,
         (i) => start.position + i,
       ).iterator;
@@ -419,14 +485,14 @@ class RetentionFlags with Equality {
     return switch (retention) {
       final RetentionEphemeral _ => RetentionFlags.ephemeral,
       final RetentionCheckpoint c => switch (c.marking) {
-          MarkingState.marked =>
-            RetentionFlags.checkpoint | RetentionFlags.marked,
-          MarkingState.reference =>
-            RetentionFlags.checkpoint | RetentionFlags.reference,
-          _ => checkpoint
-        },
+        MarkingState.marked =>
+          RetentionFlags.checkpoint | RetentionFlags.marked,
+        MarkingState.reference =>
+          RetentionFlags.checkpoint | RetentionFlags.reference,
+        _ => checkpoint,
+      },
       final RetentionMarked _ => marked,
-      final RetentionReference _ => reference
+      final RetentionReference _ => reference,
     };
   }
   bool get isEmpty => flag == 0;
@@ -457,7 +523,7 @@ class RetentionFlags with Equality {
       0x01 => "checkpoint",
       0x02 => "marked",
       0x04 => "reference",
-      _ => flag.toHexaDecimal
+      _ => flag.toHexaDecimal,
     }})";
   }
 
@@ -488,8 +554,12 @@ enum NodeType {
 }
 
 /// Abstract Node class with generic types A (annotation) and V (value)
-sealed class Node<A extends Object?, V extends Object?,
-    TREE extends Tree<A, V, TREE>> with Equality {
+sealed class Node<
+  A extends Object?,
+  V extends Object?,
+  TREE extends Tree<A, V, TREE>
+>
+    with Equality {
   const Node();
   bool isNil() => tryAsNil() != null;
   bool isParent() => tryAsPrent() != null;
@@ -512,20 +582,27 @@ sealed class Node<A extends Object?, V extends Object?,
     return switch (this) {
       final NodeParent<A, V, TREE> r => onParent(r.left, r.right, r.ann),
       final NodeLeaf<A, V, TREE> r => onLeaf(r.value),
-      final NodeNil<A, V, TREE> _ => onNil()
+      final NodeNil<A, V, TREE> _ => onNil(),
     };
   }
 }
 
 /// A parent node in the tree, with annotation `ann` and left/right children
-class NodeParent<A extends Object?, V extends Object?,
-    TREE extends Tree<A, V, TREE>> extends Node<A, V, TREE> {
+class NodeParent<
+  A extends Object?,
+  V extends Object?,
+  TREE extends Tree<A, V, TREE>
+>
+    extends Node<A, V, TREE> {
   final A ann;
   final TREE left;
   final TREE right;
 
-  const NodeParent(
-      {required this.ann, required this.left, required this.right});
+  const NodeParent({
+    required this.ann,
+    required this.left,
+    required this.right,
+  });
 
   @override
   NodeParent<A, V, TREE> tryAsPrent() {
@@ -550,8 +627,12 @@ class NodeParent<A extends Object?, V extends Object?,
 }
 
 /// A leaf node, containing a value
-class NodeLeaf<A extends Object?, V extends Object?,
-    TREE extends Tree<A, V, TREE>> extends Node<A, V, TREE> {
+class NodeLeaf<
+  A extends Object?,
+  V extends Object?,
+  TREE extends Tree<A, V, TREE>
+>
+    extends Node<A, V, TREE> {
   final V value;
 
   const NodeLeaf({required this.value});
@@ -574,8 +655,12 @@ class NodeLeaf<A extends Object?, V extends Object?,
 }
 
 /// An empty node
-class NodeNil<A extends Object?, V extends Object?,
-    TREE extends Tree<A, V, TREE>> extends Node<A, V, TREE> {
+class NodeNil<
+  A extends Object?,
+  V extends Object?,
+  TREE extends Tree<A, V, TREE>
+>
+    extends Node<A, V, TREE> {
   const NodeNil();
 
   @override
@@ -595,8 +680,12 @@ class NodeNil<A extends Object?, V extends Object?,
 }
 
 /// An immutable binary tree wrapping a Node
-abstract class Tree<A extends Object?, V extends Object?,
-    TREE extends Tree<A, V, TREE>> with Equality {
+abstract class Tree<
+  A extends Object?,
+  V extends Object?,
+  TREE extends Tree<A, V, TREE>
+>
+    with Equality {
   final Node<A, V, TREE> node;
 
   const Tree(this.node);
@@ -606,8 +695,12 @@ abstract class Tree<A extends Object?, V extends Object?,
   }
 }
 
-class LocatedTree<A extends Object?, V extends Object?,
-    TREE extends Tree<A, V, TREE>> with Equality {
+class LocatedTree<
+  A extends Object?,
+  V extends Object?,
+  TREE extends Tree<A, V, TREE>
+>
+    with Equality {
   final NodeAddress rootAddr;
   final TREE root;
   const LocatedTree({required this.root, required this.rootAddr});
@@ -623,8 +716,10 @@ class LocatedTree<A extends Object?, V extends Object?,
 class IncompleteNodeInfo with Equality {
   final NodeAddress address;
   final bool requiredForWitness;
-  const IncompleteNodeInfo(
-      {required this.address, required this.requiredForWitness});
+  const IncompleteNodeInfo({
+    required this.address,
+    required this.requiredForWitness,
+  });
 
   @override
   String toString() {
@@ -635,26 +730,30 @@ class IncompleteNodeInfo with Equality {
   List<dynamic> get variables => [address, requiredForWitness];
 }
 
-class TreeInsertReport<H extends Object> {
+class TreeInsertReport<H extends MerkleNodeValue> {
   final LocatedPrunableTree<H> subtree;
   final List<IncompleteNodeInfo> incomplete;
   const TreeInsertReport({required this.subtree, required this.incomplete});
 }
 
-class TreeBatchInsertReport<H extends Object, CHECKPOINT extends Object> {
+class TreeBatchInsertReport<
+  H extends MerkleNodeValue,
+  CHECKPOINT extends Object
+> {
   final LocatedPrunableTree<H> subtree;
   final bool containsMarked;
   final List<IncompleteNodeInfo> incomplete;
   final LeafPosition maxInsertPosition;
   final SplayTreeMap<CHECKPOINT, LeafPosition> checkpoints;
   final Iterator<(H, Retention<CHECKPOINT>)>? remainder;
-  const TreeBatchInsertReport(
-      {required this.subtree,
-      required this.containsMarked,
-      required this.incomplete,
-      required this.maxInsertPosition,
-      required this.checkpoints,
-      required this.remainder});
+  const TreeBatchInsertReport({
+    required this.subtree,
+    required this.containsMarked,
+    required this.incomplete,
+    required this.maxInsertPosition,
+    required this.checkpoints,
+    required this.remainder,
+  });
 }
 
 class TreeBatchResult {
@@ -663,7 +762,7 @@ class TreeBatchResult {
   const TreeBatchResult({required this.maxInsert, required this.incomplete});
 }
 
-class PrunableValue<H extends Object?> with Equality {
+class PrunableValue<H extends MerkleNodeValue> with Equality {
   final H value;
   final RetentionFlags flags;
   const PrunableValue({required this.value, required this.flags});
@@ -676,44 +775,117 @@ class PrunableValue<H extends Object?> with Equality {
   List<dynamic> get variables => [value, flags];
 }
 
-class NonEmptyFrontier<H extends Object> {
+class NonEmptyFrontier<H extends MerkleNodeValue>
+    with LayoutSerializable, CborTagSerializable {
   final LeafPosition position;
   final H leaf;
   final List<H> ommers;
-  NonEmptyFrontier(
-      {required this.position, required this.leaf, List<H> ommers = const []})
-      : ommers = ommers.immutable;
+  NonEmptyFrontier({
+    required this.position,
+    required this.leaf,
+    List<H> ommers = const [],
+  }) : ommers = ommers.immutable;
+  factory NonEmptyFrontier.deserialize({
+    required H Function(List<int>) fromBytes,
+    List<int>? bytes,
+    CborObject? object,
+  }) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: ZcashSerializationIdentifier.nonEmptyFrontier,
+      cborBytes: bytes,
+      cborObject: object,
+    );
+    return NonEmptyFrontier(
+      position: LeafPosition(values.rawValueAt(0)),
+      leaf: fromBytes(values.rawValueAt(1)),
+      ommers:
+          values
+              .listAt<CborBytesValue>(2)
+              .map((e) => fromBytes(e.value))
+              .toList(),
+    );
+  }
 
   /// Constructs a new frontier from its constituent parts.
   factory NonEmptyFrontier.fromParts(
-      LeafPosition position, H leaf, List<H> ommers) {
+    LeafPosition position,
+    H leaf,
+    List<H> ommers,
+  ) {
     final expectedOmmers = position.pastOmmerCount();
-
     if (ommers.length == expectedOmmers) {
-      return NonEmptyFrontier(
-        position: position,
-        leaf: leaf,
-        ommers: ommers,
-      );
+      return NonEmptyFrontier(position: position, leaf: leaf, ommers: ommers);
     } else {
-      throw MerkleTreeException.failed("fromParts",
-          reason: "position mismatch.");
+      throw MerkleFrontierError.failed(
+        name: "NonEmptyFrontier.fromParts",
+        reason: "Position mismatch.",
+      );
     }
   }
+
+  factory NonEmptyFrontier.deserializeJson({
+    required Map<String, dynamic> json,
+    required H Function(List<int>) fromBytes,
+  }) {
+    return NonEmptyFrontier(
+      position: LeafPosition(json.valueAsInt("position")),
+      leaf: fromBytes(json.valueAsBytes("leaf")),
+      ommers:
+          json.valueEnsureAsList<List<int>>("ommers").map(fromBytes).toList(),
+    );
+  }
+
+  static Layout<Map<String, dynamic>> layout({String? property}) {
+    return LayoutConst.struct([
+      LayoutConst.lebU64(property: "position"),
+      LayoutConst.bcsBytes(property: "leaf"),
+      LayoutConst.bcsVector(LayoutConst.bcsBytes(), property: "ommers"),
+    ], property: property);
+  }
+
+  @override
+  Layout<Map<String, dynamic>> toLayout({String? property}) {
+    return layout(property: property);
+  }
+
+  @override
+  Map<String, dynamic> toSerializeJson() {
+    return {
+      "position": BigInt.from(position.position),
+      "leaf": leaf.toBytes(),
+      "ommers": ommers.map((e) => e.toBytes()).toList(),
+    };
+  }
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      ZcashSerializationIdentifier.nonEmptyFrontier;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    position.position.toCbor(),
+    CborBytesValue(leaf.toBytes()),
+    CborTagSerializable.listFromDynamic(
+      ommers.map((e) => CborBytesValue(e.toBytes())).toList(),
+    ),
+  ];
 }
 
-class Frontier<H extends Object> {
+class Frontier<H extends MerkleNodeValue> {
   final NonEmptyFrontier<H>? frontier;
   const Frontier({this.frontier});
 }
 
-abstract class CommitmentTree<H extends Object> with LayoutSerializable {
+abstract class CommitmentTree<H extends MerkleNodeValue>
+    with LayoutSerializable {
   final H? left;
   final H? right;
   final List<H?> parents;
-  CommitmentTree(
-      {required this.left, required this.right, List<H?> parents = const []})
-      : parents = parents.immutable;
+  CommitmentTree({
+    required this.left,
+    required this.right,
+    List<H?> parents = const [],
+  }) : parents = parents.immutable;
   int get depth;
 
   /// Returns the number of leaf nodes in the tree.
@@ -726,9 +898,10 @@ abstract class CommitmentTree<H extends Object> with LayoutSerializable {
     } else if (left != null && right != null) {
       acc = 2;
     } else {
-      // (left == null && right != null) should be unreachable
-      throw MerkleTreeException.failed("size",
-          reason: 'Unreachable state in CommitmentTree.size');
+      throw MerkleFrontierError.failed(
+        name: "CommitmentTree.size",
+        reason: 'Unreachable state.',
+      );
     }
 
     for (var i = 0; i < parents.length; i++) {
@@ -760,24 +933,162 @@ abstract class CommitmentTree<H extends Object> with LayoutSerializable {
         finalOmmers = ommers;
       } else if (left != null && right != null) {
         leaf = right as H;
-        finalOmmers = [
-          left as H,
-          ...ommers,
-        ];
+        finalOmmers = [left as H, ...ommers];
       } else {
-        throw MerkleTreeException.failed("toFrontier",
-            reason: 'Unreachable state in CommitmentTree.toFrontier');
+        throw MerkleFrontierError.failed(
+          name: "toFrontier",
+          reason: 'Unreachable state.',
+        );
       }
 
       final frontier = NonEmptyFrontier.fromParts(
-          LeafPosition(size() - 1), leaf, finalOmmers);
+        LeafPosition(size() - 1),
+        leaf,
+        finalOmmers,
+      );
       if (frontier.position.rootLevel() > TreeLevel(depth)) {
-        throw MerkleTreeException.failed("toFrontier",
-            reason: "max depth exceeded");
+        throw MerkleFrontierError.failed(
+          name: "toFrontier",
+          reason: "max depth exceeded",
+        );
       }
       // If a frontier cannot be successfully constructed from the
       // parts of a commitment tree, it is a programming error.
       return Frontier<H>(frontier: frontier);
     }
+  }
+}
+
+class SerializableTreeShard<H extends MerkleNodeValue>
+    with CborTagSerializable {
+  final int index;
+  final PrunableTree<H> tree;
+  const SerializableTreeShard({required this.index, required this.tree});
+  factory SerializableTreeShard.deserialize({
+    required H Function(List<int> bytes) fromBytes,
+    required Hashable<H> hashable,
+    List<int>? bytes,
+    CborObject? object,
+  }) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: ZcashSerializationIdentifier.serialzableTreeShard,
+      cborBytes: bytes,
+      cborObject: object,
+    );
+    return SerializableTreeShard(
+      index: values.rawValueAt(0),
+      tree: PrunableTree<H>.deserialize(
+        hashContext: hashable,
+        fromBytes: fromBytes,
+        object: values.objectAt(1),
+      ),
+    );
+  }
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      ZcashSerializationIdentifier.serialzableTreeShard;
+
+  @override
+  List<CborObject?> get serializationItems => [index.toCbor(), tree.toCbor()];
+}
+
+class SerializableShardTree<H extends MerkleNodeValue>
+    with CborTagSerializable {
+  final PrunableTree<H> cap;
+  final List<SerializableTreeShard<H>> shards;
+  final List<SerializableTreeCheckpoint> checkpionts;
+  const SerializableShardTree({
+    required this.cap,
+    required this.shards,
+    required this.checkpionts,
+  });
+  factory SerializableShardTree.deserialize({
+    required Hashable<H> hashContext,
+    required H Function(List<int> bytes) fromBytes,
+    List<int>? bytes,
+    CborObject? object,
+  }) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: ZcashSerializationIdentifier.serialzableTree,
+      cborBytes: bytes,
+      cborObject: object,
+    );
+    return SerializableShardTree(
+      cap: PrunableTree.deserialize(
+        hashContext: hashContext,
+        fromBytes: fromBytes,
+        object: values.objectAt(0),
+      ),
+      shards:
+          values
+              .listAt<CborTagValue>(1)
+              .map(
+                (e) => SerializableTreeShard.deserialize(
+                  hashable: hashContext,
+                  object: e,
+                  fromBytes: fromBytes,
+                ),
+              )
+              .toList(),
+      checkpionts:
+          values
+              .listAt<CborTagValue>(2)
+              .map((e) => SerializableTreeCheckpoint.deserialize(object: e))
+              .toList(),
+    );
+  }
+
+  @override
+  SerializationIdentifier get serializationIdentifier =>
+      ZcashSerializationIdentifier.serialzableTree;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    cap.toCbor(),
+    CborTagSerializable.listFromDynamic(shards.map((e) => e.toCbor()).toList()),
+    CborTagSerializable.listFromDynamic(
+      checkpionts.map((e) => e.toCbor()).toList(),
+    ),
+  ];
+}
+
+extension ExtRetentionEncoding on Retention<int> {
+  static Retention<int> deserialize({List<int>? bytes, CborObject? obj}) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: ZcashSerializationIdentifier.retention,
+      cborBytes: bytes,
+      cborObject: obj,
+    );
+    final type = RetentionType.fromValue(values.rawValueAt(0));
+    return switch (type) {
+      RetentionType.ephemeral => RetentionEphemeral(),
+      RetentionType.checkpoint => () {
+        final checkpoint = values.objectAt<CborListValue>(1);
+        return RetentionCheckpoint(
+          id: checkpoint.rawValueAt<int>(0),
+          marking: MarkingState.fromValue(checkpoint.rawValueAt<int>(1)),
+        );
+      }(),
+      RetentionType.marked => RetentionMarked(),
+      RetentionType.reference => RetentionReference(),
+    };
+  }
+
+  CborTagValue toCbor() {
+    return CborTagValue(
+      CborListValue.definite(<CborObject>[
+        CborIntValue(type.value),
+        switch (this) {
+          RetentionCheckpoint<int>(:final id, :final marking) =>
+            CborListValue.definite([
+              CborIntValue(id),
+              CborIntValue(marking.value),
+            ]),
+          _ => CborListValue.definite(<CborObject>[]),
+        },
+      ]),
+      [ZcashSerializationIdentifier.retention.id],
+    );
   }
 }

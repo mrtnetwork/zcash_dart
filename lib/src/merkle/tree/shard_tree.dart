@@ -3,8 +3,12 @@ import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
 
-abstract class ShardTree<H extends Object, C extends Comparable,
-    S extends ShardStore<H, C>, MERKLEPATH extends MerklePath<H>> {
+abstract class ShardTree<
+  H extends MerkleNodeValue,
+  C extends Comparable,
+  S extends ShardStore<H, C>,
+  MERKLEPATH extends MerklePath<H>
+> {
   final S store;
   final int maxCheckpoints;
   int get depth => rootAddr.level.value;
@@ -12,16 +16,18 @@ abstract class ShardTree<H extends Object, C extends Comparable,
   final NodeAddress rootAddr;
   final TreeLevel subtreeLevel;
   final int maxSubtreeIndex;
-  late final PrunableTree<H> emptyTree =
-      PrunableTree(node: NodeNil(), hashContext: store.hashContext);
-  ShardTree(
-      {required this.store,
-      required this.maxCheckpoints,
-      required int depth,
-      required int shardHeight})
-      : rootAddr = NodeAddress(level: TreeLevel(depth), index: 0),
-        subtreeLevel = TreeLevel(shardHeight),
-        maxSubtreeIndex = (0x1 << (depth - shardHeight)) - 1;
+  late final PrunableTree<H> emptyTree = PrunableTree(
+    node: NodeNil(),
+    hashContext: store.hashContext,
+  );
+  ShardTree({
+    required this.store,
+    required this.maxCheckpoints,
+    required int depth,
+    required int shardHeight,
+  }) : rootAddr = NodeAddress(level: TreeLevel(depth), index: 0),
+       subtreeLevel = TreeLevel(shardHeight),
+       maxSubtreeIndex = (0x1 << (depth - shardHeight)) - 1;
   Hashable<H> get hashContext => store.hashContext;
   MERKLEPATH toMerklePath(LeafPosition position, List<H> path);
 
@@ -51,100 +57,125 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     }
     final r = store.getCheckpointAtDepth(checkpointDepth)?.$2.position();
     if (r == null) {
-      throw MerkleTreeException.failed("maxLeafPosition",
-          reason:
-              "The leaf corresponding to the requested checkpoint is not present in the tree.");
+      throw MerkleTreeException.failed(
+        "maxLeafPosition",
+        reason:
+            "The leaf corresponding to the requested checkpoint is not present in the tree.",
+      );
     }
     return r;
+  }
+
+  void truncateToCheckpointInternal({
+    required C checkpointId,
+    required Checkpoint checkpoint,
+  }) {
+    final state = checkpoint.treeState;
+    switch (state) {
+      case TreeStateEmpty():
+        store.truncateShards(0);
+        store.truncateCheckpointsRetaining(checkpointId);
+        store.putCap(emptyTree);
+        break;
+      case TreeStateAtPosition(:final position):
+        final subAddr = subtreeAddr(position);
+        final replacement = store
+            .getShard(subAddr)
+            ?.truncateToPosition(position);
+        final capTree = LocatedPrunableTree(
+          root: store.getCap(),
+          rootAddr: rootAddr,
+        );
+        final truncatedCap = capTree.truncateToPosition(position);
+        if (truncatedCap != null) {
+          store.putCap(truncatedCap.root);
+        }
+        if (replacement != null) {
+          store.truncateShards(subAddr.index);
+          store.putShard(replacement);
+          store.truncateCheckpointsRetaining(checkpointId);
+        }
+    }
   }
 
   bool truncateToCheckpointDepth(int checkpointDepth) {
     final checkpointId = store.getCheckpointAtDepth(checkpointDepth);
     if (checkpointId == null) return false;
 
-    void truncateToCheckpointInternal({
-      required C checkpointId,
-      required Checkpoint checkpoint,
-    }) {
-      final state = checkpoint.treeState;
-      switch (state) {
-        case TreeStateEmpty():
-          store.truncateShards(0);
-          store.truncateCheckpointsRetaining(checkpointId);
-          store.putCap(emptyTree);
-          break;
-        case TreeStateAtPosition(:final position):
-          final subAddr = subtreeAddr(position);
-          final replacement =
-              store.getShard(subAddr)?.truncateToPosition(position);
-          final capTree =
-              LocatedPrunableTree(root: store.getCap(), rootAddr: rootAddr);
-          final truncatedCap = capTree.truncateToPosition(position);
-          if (truncatedCap != null) {
-            store.putCap(truncatedCap.root);
-          }
-          if (replacement != null) {
-            store.truncateShards(subAddr.index);
-            store.putShard(replacement);
-            store.truncateCheckpointsRetaining(checkpointId);
-          }
-      }
-    }
+    truncateToCheckpointInternal(
+      checkpointId: checkpointId.$1,
+      checkpoint: checkpointId.$2,
+    );
+    return true;
+  }
+
+  bool truncateToCheckpoint(C checkpoint) {
+    final checkpointId = store.getCheckpoint(checkpoint);
+    if (checkpointId == null) return false;
 
     truncateToCheckpointInternal(
-        checkpointId: checkpointId.$1, checkpoint: checkpointId.$2);
+      checkpointId: checkpoint,
+      checkpoint: checkpointId,
+    );
     return true;
   }
 
   bool checkpoint(C checkpointId) {
-    (PrunableTree<H>, LeafPosition)? fn(
-        {required NodeAddress rootAddr, required PrunableTree<H> root}) {
+    (PrunableTree<H>, LeafPosition)? fn({
+      required NodeAddress rootAddr,
+      required PrunableTree<H> root,
+    }) {
       return root.node.fold(
-          onParent: (left, right, ann) {
-            final (lAddr, rAddr) = rootAddr.children();
+        onParent: (left, right, ann) {
+          final (lAddr, rAddr) = rootAddr.children();
 
-            final rightResult = fn(rootAddr: rAddr, root: right);
+          final rightResult = fn(rootAddr: rAddr, root: right);
 
-            if (rightResult == null) {
-              final leftResult = fn(rootAddr: lAddr, root: left);
-              if (leftResult == null) {
-                return null;
-              }
-
-              final (newLeft, pos) = leftResult;
-              return (
-                PrunableTree.unite(
-                    level: lAddr.level,
-                    ann: ann,
-                    left: newLeft,
-                    right: emptyTree),
-                pos
-              );
-            } else {
-              final (newRight, pos) = rightResult;
-              return (
-                PrunableTree.unite(
-                  level: lAddr.level,
-                  ann: ann,
-                  left: left,
-                  right: newRight,
-                ),
-                pos,
-              );
+          if (rightResult == null) {
+            final leftResult = fn(rootAddr: lAddr, root: left);
+            if (leftResult == null) {
+              return null;
             }
-          },
-          onLeaf: (v) {
+
+            final (newLeft, pos) = leftResult;
             return (
-              PrunableTree<H>(
-                  hashContext: store.hashContext,
-                  node: NodeLeaf(
-                      value: PrunableValue(
-                          value: v.value,
-                          flags: v.flags | RetentionFlags.checkpoint))),
-              rootAddr.maxPosition()
+              PrunableTree.unite(
+                level: lAddr.level,
+                ann: ann,
+                left: newLeft,
+                right: emptyTree,
+              ),
+              pos,
             );
-          },
-          onNil: () => null);
+          } else {
+            final (newRight, pos) = rightResult;
+            return (
+              PrunableTree.unite(
+                level: lAddr.level,
+                ann: ann,
+                left: left,
+                right: newRight,
+              ),
+              pos,
+            );
+          }
+        },
+        onLeaf: (v) {
+          return (
+            PrunableTree<H>(
+              hashContext: store.hashContext,
+              node: NodeLeaf(
+                value: PrunableValue(
+                  value: v.value,
+                  flags: v.flags | RetentionFlags.checkpoint,
+                ),
+              ),
+            ),
+            rootAddr.maxPosition(),
+          );
+        },
+        onNil: () => null,
+      );
     }
 
     final max = store.maxCheckpointId();
@@ -157,7 +188,8 @@ abstract class ShardTree<H extends Object, C extends Comparable,
       if (r != null) {
         final (PrunableTree<H> replacement, LeafPosition pos) = r;
         store.putShard(
-            LocatedPrunableTree(root: replacement, rootAddr: subtree.rootAddr));
+          LocatedPrunableTree(root: replacement, rootAddr: subtree.rootAddr),
+        );
         store.addCheckpoint(checkpointId, Checkpoint.atPosition(pos));
         _pruneExcessCheckpoints();
         return true;
@@ -174,15 +206,13 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     return root(address: rootAddr, truncateAt: result + 1);
   }
 
-  H root({
-    required NodeAddress address,
-    required LeafPosition truncateAt,
-  }) {
+  H root({required NodeAddress address, required LeafPosition truncateAt}) {
     assert(rootAddr.contains(address));
     final r = _rootInternal(
-        cap: LocatedPrunableTree<H>(rootAddr: rootAddr, root: store.getCap()),
-        targetAddr: address,
-        truncateAt: truncateAt);
+      cap: LocatedPrunableTree<H>(rootAddr: rootAddr, root: store.getCap()),
+      targetAddr: address,
+      truncateAt: truncateAt,
+    );
     return r.$1;
   }
 
@@ -199,9 +229,10 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     required LeafPosition truncateAt,
   }) {
     final value = _rootInternal(
-        cap: LocatedPrunableTree<H>(root: store.getCap(), rootAddr: rootAddr),
-        targetAddr: address,
-        truncateAt: truncateAt);
+      cap: LocatedPrunableTree<H>(root: store.getCap(), rootAddr: rootAddr),
+      targetAddr: address,
+      truncateAt: truncateAt,
+    );
     final nCap = value.$2;
     if (nCap != null) {
       store.putCap(nCap);
@@ -211,49 +242,62 @@ abstract class ShardTree<H extends Object, C extends Comparable,
 
   void insert({required NodeAddress rootAddr, required H value}) {
     if (rootAddr.level > this.rootAddr.level) {
-      throw MerkleTreeException.failed("insert",
-          reason: "Tree does not contain a root at address $rootAddr",
-          details: {"addr": rootAddr});
+      throw MerkleInsertionError.insertionFailed(
+        name: "insert",
+        reason: "Tree does not contain a root at address $rootAddr",
+        address: rootAddr,
+      );
     }
     final toInsert = LocatedPrunableTree<H>(
-        root: PrunableTree<H>(
-            hashContext: store.hashContext,
-            node: NodeLeaf(
-                value: PrunableValue(
-                    value: value, flags: RetentionFlags.ephemeral))),
-        rootAddr: rootAddr);
+      root: PrunableTree<H>(
+        hashContext: store.hashContext,
+        node: NodeLeaf(
+          value: PrunableValue(value: value, flags: RetentionFlags.ephemeral),
+        ),
+      ),
+      rootAddr: rootAddr,
+    );
     if (rootAddr.level >= subtreeLevel) {
-      final cap =
-          LocatedPrunableTree<H>(root: store.getCap(), rootAddr: this.rootAddr);
-      final insert =
-          cap.insertSubtree(subtree: toInsert, containsMarked: false);
+      final cap = LocatedPrunableTree<H>(
+        root: store.getCap(),
+        rootAddr: this.rootAddr,
+      );
+      final insert = cap.insertSubtree(
+        subtree: toInsert,
+        containsMarked: false,
+      );
       store.putCap(insert.subtree.root);
     }
     rootAddr.getContext(
       level: subtreeLevel,
       right: (_) {},
       left: (addr) {
-        final shard = store.getShard(addr) ??
+        final shard =
+            store.getShard(addr) ??
             LocatedPrunableTree<H>(
-                rootAddr: addr,
-                root: PrunableTree(
-                    node: NodeNil(), hashContext: store.hashContext));
-        final insert =
-            shard.insertSubtree(subtree: toInsert, containsMarked: false);
+              rootAddr: addr,
+              root: PrunableTree(
+                node: NodeNil(),
+                hashContext: store.hashContext,
+              ),
+            );
+        final insert = shard.insertSubtree(
+          subtree: toInsert,
+          containsMarked: false,
+        );
         store.putShard(insert.subtree);
       },
     );
   }
 
-  void append({
-    required H value,
-    required Retention<C> retention,
-  }) {
+  void append({required H value, required Retention<C> retention}) {
     if (retention case RetentionCheckpoint(id: final id)) {
       final max = store.maxCheckpointId();
       if (max != null && max.compareTo(id) >= 0) {
-        throw MerkleTreeException.failed("append",
-            reason: "Cannot append out-of-order checkpoint identifier.");
+        throw MerkleInsertionError.insertionFailed(
+          name: "append",
+          reason: "Cannot append out-of-order checkpoint identifier.",
+        );
       }
     }
     LocatedPrunableTree<H>? subtree = store.lastShard();
@@ -263,19 +307,24 @@ abstract class ShardTree<H extends Object, C extends Comparable,
         final addr = subtree.rootAddr;
         if (addr.index < maxSubtreeIndex) {
           append = LocatedPrunableTree<H>(
-                  root: emptyTree, rootAddr: addr.nextAtLevel())
-              .append(value: value, retention: retention);
+            root: emptyTree,
+            rootAddr: addr.nextAtLevel(),
+          ).append(value: value, retention: retention);
         } else {
-          throw MerkleTreeException.failed("append",
-              reason: "Note commitment tree is full.");
+          throw MerkleInsertionError.insertionFailed(
+            name: "append",
+            reason: "Note commitment tree is full.",
+          );
         }
       } else {
         append = subtree.append(value: value, retention: retention);
       }
     } else {
       final rootAddr = NodeAddress(level: subtreeLevel, index: 0);
-      append = LocatedPrunableTree<H>(root: emptyTree, rootAddr: rootAddr)
-          .append(value: value, retention: retention);
+      append = LocatedPrunableTree<H>(
+        root: emptyTree,
+        rootAddr: rootAddr,
+      ).append(value: value, retention: retention);
     }
     var (LocatedPrunableTree<H> result, LeafPosition position, C? checkpoint) =
         append;
@@ -286,36 +335,40 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     _pruneExcessCheckpoints();
   }
 
-  TreeBatchResult? batchInsert(
-      {required LeafPosition start, required List<(H, Retention<C>)> values}) {
+  TreeBatchResult? batchInsert({
+    required LeafPosition start,
+    required List<(H, Retention<C>)> values,
+  }) {
     NodeAddress subtreeRootAddr = subtreeAddr(start);
     LeafPosition? maxInsert;
     final List<IncompleteNodeInfo> incomplete = [];
     bool isLast = false;
-    final s = Iterable<(H, Retention<C>)>.generate(
-      values.length,
-      (index) {
-        isLast = index == values.length - 1;
-        return values[index];
-      },
-    );
+    final s = Iterable<(H, Retention<C>)>.generate(values.length, (index) {
+      isLast = index == values.length - 1;
+      return values[index];
+    });
     Iterator<(H, Retention<C>)>? itrator = s.iterator;
 
     while (itrator != null && !isLast) {
       // Fetch shard or empty
-      LocatedPrunableTree<H> shard = store.getShard(subtreeRootAddr) ??
+      LocatedPrunableTree<H> shard =
+          store.getShard(subtreeRootAddr) ??
           LocatedPrunableTree<H>(
-              rootAddr: subtreeRootAddr,
-              root: PrunableTree(
-                  node: NodeNil(), hashContext: store.hashContext));
+            rootAddr: subtreeRootAddr,
+            root: PrunableTree(node: NodeNil(), hashContext: store.hashContext),
+          );
 
       // Perform batch insert on shard
-      TreeBatchInsertReport<H, C>? res =
-          shard.batchInsert(start: start, values: itrator);
+      TreeBatchInsertReport<H, C>? res = shard.batchInsert(
+        start: start,
+        values: itrator,
+      );
       if (res == null) {
-        throw MerkleTreeException.failed("batchInsert",
-            reason:
-                "Iterator containing leaf values to insert was verified to be nonempty.");
+        throw MerkleInsertionError.insertionFailed(
+          name: "batchInsert",
+          reason:
+              "Iterator containing leaf values to insert was verified to be nonempty.",
+        );
       }
 
       // Store updated subtree
@@ -339,38 +392,56 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     return TreeBatchResult(maxInsert: maxInsert, incomplete: incomplete);
   }
 
-  MERKLEPATH? witnessAtCheckpointIdCaching(
-      {required LeafPosition position, required C checkpointId}) {
+  MERKLEPATH? witnessAtCheckpointIdCaching({
+    required LeafPosition position,
+    required C checkpointId,
+  }) {
     final checkpoint = store.getCheckpoint(checkpointId);
     if (checkpoint == null) return null;
     final asOf = checkpoint.position();
     if (asOf == null || position > asOf) {
-      throw MerkleTreeException.failed("witnessAtCheckpointIdCaching",
-          reason: "Missing tree root.");
+      final addr = NodeAddress(level: TreeLevel.zero, index: position.position);
+      throw MerkleWitnessError.failed(
+        name: "witnessAtCheckpointIdCaching",
+        reason: "Tree does not contain a root at address $addr.",
+        addresses: [addr],
+      );
     }
     return _witnessInternalCaching(position: position, asOf: asOf);
   }
 
-  MERKLEPATH? witnessAtCheckpointDepth(
-      {required LeafPosition position, required int checkpointDepth}) {
+  MERKLEPATH? witnessAtCheckpointDepth({
+    required LeafPosition position,
+    required int checkpointDepth,
+  }) {
     final checkpoin = store.getCheckpointAtDepth(checkpointDepth);
     if (checkpoin == null) return null;
     final asOf = checkpoin.$2.position() ?? LeafPosition(0);
     if (position > asOf) {
-      throw MerkleTreeException.failed("witnessAtCheckpointDepth",
-          reason: "Missing tree root.");
+      final addr = NodeAddress(level: TreeLevel.zero, index: position.position);
+      throw MerkleWitnessError.failed(
+        name: "witnessAtCheckpointDepth",
+        reason: "Tree does not contain a root at address $addr.",
+        addresses: [addr],
+      );
     }
     return _wintessInternal(position: position, asOf: asOf);
   }
 
-  MERKLEPATH? witnessAtCheckpointId(
-      {required LeafPosition position, required C checkpointId}) {
+  MERKLEPATH? witnessAtCheckpointId({
+    required LeafPosition position,
+    required C checkpointId,
+  }) {
     final checkpoint = store.getCheckpoint(checkpointId);
     if (checkpoint == null) return null;
     final asOf = checkpoint.position();
     if (asOf == null || position > asOf) {
-      throw MerkleTreeException.failed("witnessAtCheckpointId",
-          reason: "Missing tree root.");
+      final addr = NodeAddress(level: TreeLevel.zero, index: position.position);
+      throw MerkleWitnessError.failed(
+        name: "witnessAtCheckpointId",
+        reason: "Tree does not contain a root at address $addr.",
+        addresses: [addr],
+      );
     }
     return _wintessInternal(position: position, asOf: asOf);
   }
@@ -381,6 +452,7 @@ abstract class ShardTree<H extends Object, C extends Comparable,
       insertFrontierNodes(f, leafRetention);
     } else {
       switch (leafRetention) {
+        case RetentionReference<C>():
         case RetentionEphemeral<C>():
           break;
         case RetentionCheckpoint<C>(id: C id, marking: MarkingState marking)
@@ -389,30 +461,44 @@ abstract class ShardTree<H extends Object, C extends Comparable,
           store.addCheckpoint(id, Checkpoint.treeEmpty());
           break;
         default:
-          throw MerkleTreeException.failed("insertFrontier",
-              reason: "Invalid retention");
+          throw MerkleInsertionError.frontierInsertionFailed(
+            name: "insertFrontier",
+            reason: "Invalid retention.",
+          );
       }
     }
   }
 
   void insertFrontierNodes(
-      NonEmptyFrontier<H> frontier, Retention<C> leafRetention) {
+    NonEmptyFrontier<H> frontier,
+    Retention<C> leafRetention,
+  ) {
     final leafPosition = frontier.position;
-    final subtreeRootAddr =
-        NodeAddress.abovePosition(level: subtreeLevel, position: leafPosition);
-    final currentShard = store.getShard(subtreeRootAddr) ??
+    final subtreeRootAddr = NodeAddress.abovePosition(
+      level: subtreeLevel,
+      position: leafPosition,
+    );
+
+    final currentShard =
+        store.getShard(subtreeRootAddr) ??
         LocatedPrunableTree<H>(
-            rootAddr: subtreeRootAddr,
-            root:
-                PrunableTree(node: NodeNil(), hashContext: store.hashContext));
-    final (updatedSubtree, supertree) =
-        currentShard.insertFrontierNodes(frontier, leafRetention);
+          rootAddr: subtreeRootAddr,
+          root: PrunableTree.empty(store.hashContext),
+        );
+    final (updatedSubtree, supertree) = currentShard.insertFrontierNodes(
+      frontier,
+      leafRetention,
+    );
     store.putShard(updatedSubtree);
     if (supertree != null) {
-      final capTree =
-          LocatedPrunableTree<H>(rootAddr: rootAddr, root: store.getCap());
+      final capTree = LocatedPrunableTree<H>(
+        rootAddr: rootAddr,
+        root: store.getCap(),
+      );
       final newCap = capTree.insertSubtree(
-          subtree: supertree, containsMarked: leafRetention.isMarked);
+        subtree: supertree,
+        containsMarked: leafRetention.isMarked,
+      );
       store.putCap(newCap.subtree.root);
     }
     if (leafRetention case RetentionCheckpoint(id: C id)) {
@@ -422,7 +508,9 @@ abstract class ShardTree<H extends Object, C extends Comparable,
   }
 
   List<IncompleteNodeInfo> insertTree(
-      LocatedPrunableTree<H> tree, Map<C, LeafPosition> checkpoints) {
+    LocatedPrunableTree<H> tree,
+    Map<C, LeafPosition> checkpoints,
+  ) {
     final List<IncompleteNodeInfo> allIncomplete = [];
 
     for (final subtree in tree.decomposeToLevel(subtreeLevel)) {
@@ -433,11 +521,16 @@ abstract class ShardTree<H extends Object, C extends Comparable,
       // Normalize to a valid shard address
       final rootAddr = subtreeAddr(subtree.rootAddr.positionRangeStart());
       final containsMarked = subtree.root.containsMarked();
-      final currentShard = store.getShard(rootAddr) ??
+      final currentShard =
+          store.getShard(rootAddr) ??
           LocatedPrunableTree<H>(
-              rootAddr: rootAddr, root: PrunableTree.empty(hashContext));
+            rootAddr: rootAddr,
+            root: PrunableTree.empty(hashContext),
+          );
       final result = currentShard.insertSubtree(
-          subtree: subtree, containsMarked: containsMarked);
+        subtree: subtree,
+        containsMarked: containsMarked,
+      );
       store.putShard(result.subtree);
       allIncomplete.addAll(result.incomplete);
     }
@@ -449,10 +542,42 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     return allIncomplete;
   }
 
-  (H, PrunableTree<H>?) _rootInternal(
-      {required LocatedPrunableTree<H> cap,
-      required NodeAddress targetAddr,
-      required LeafPosition truncateAt}) {
+  Frontier<H> frontier() {
+    final lastShard = store.lastShard();
+    if (lastShard == null) {
+      return Frontier<H>();
+    }
+    final result = lastShard.frontierOmmers();
+    if (result == null) {
+      return Frontier<H>();
+    }
+    NodeAddress curAddress = lastShard.rootAddr;
+    final depthLevel = TreeLevel(depth);
+    List<H> ommers = result.ommers;
+    while (curAddress.level < depthLevel) {
+      if (curAddress.isRightChild()) {
+        final hash = root(
+          address: curAddress.sibling(),
+          truncateAt: result.position + 1,
+        );
+        ommers.add(hash);
+      }
+      curAddress = curAddress.parent();
+    }
+    return Frontier<H>(
+      frontier: NonEmptyFrontier<H>.fromParts(
+        result.position,
+        result.leaf,
+        ommers,
+      ),
+    );
+  }
+
+  (H, PrunableTree<H>?) _rootInternal({
+    required LocatedPrunableTree<H> cap,
+    required NodeAddress targetAddr,
+    required LeafPosition truncateAt,
+  }) {
     return cap.root.node.fold(
       onParent: (left, right, ann) {
         if (ann != null && targetAddr.contains(cap.rootAddr)) {
@@ -463,23 +588,28 @@ abstract class ShardTree<H extends Object, C extends Comparable,
         (H, PrunableTree<H>?)? rResult;
         if (!rAddr.contains(targetAddr)) {
           lResult = _rootInternal(
-              cap: LocatedPrunableTree<H>(rootAddr: lAddr, root: left),
-              targetAddr: lAddr.contains(targetAddr) ? targetAddr : lAddr,
-              truncateAt: truncateAt);
+            cap: LocatedPrunableTree<H>(rootAddr: lAddr, root: left),
+            targetAddr: lAddr.contains(targetAddr) ? targetAddr : lAddr,
+            truncateAt: truncateAt,
+          );
         }
         if (!lAddr.contains(targetAddr)) {
           rResult = _rootInternal(
-              cap: LocatedPrunableTree<H>(rootAddr: rAddr, root: right),
-              targetAddr: rAddr.contains(targetAddr) ? targetAddr : rAddr,
-              truncateAt: truncateAt);
+            cap: LocatedPrunableTree<H>(rootAddr: rAddr, root: right),
+            targetAddr: rAddr.contains(targetAddr) ? targetAddr : rAddr,
+            truncateAt: truncateAt,
+          );
         }
         (H, PrunableTree<H>?, PrunableTree<H>?) result;
         if (lResult != null && rResult != null) {
           result = (
-            store.hashContext
-                .combine(level: lAddr.level, a: lResult.$1, b: rResult.$1),
+            store.hashContext.combine(
+              level: lAddr.level,
+              a: lResult.$1,
+              b: rResult.$1,
+            ),
             lResult.$2,
-            rResult.$2
+            rResult.$2,
           );
         } else if (lResult != null) {
           result = (lResult.$1, lResult.$2, null);
@@ -492,14 +622,20 @@ abstract class ShardTree<H extends Object, C extends Comparable,
         final rV = result.$3?.nodeValue();
 
         PrunableTree<H> newParent = PrunableTree<H>(
-            hashContext: store.hashContext,
-            node: NodeParent(
-                ann: lV != null && rV != null
-                    ? store.hashContext
-                        .combine(level: lAddr.level, a: lV, b: rV)
+          hashContext: store.hashContext,
+          node: NodeParent(
+            ann:
+                lV != null && rV != null
+                    ? store.hashContext.combine(
+                      level: lAddr.level,
+                      a: lV,
+                      b: rV,
+                    )
                     : null,
-                left: result.$2 ?? emptyTree,
-                right: result.$3 ?? emptyTree));
+            left: result.$2 ?? emptyTree,
+            right: result.$3 ?? emptyTree,
+          ),
+        );
         return (result.$1, newParent);
       },
       onLeaf: (v) {
@@ -508,47 +644,59 @@ abstract class ShardTree<H extends Object, C extends Comparable,
           return (v.value, null);
         }
         final result = _rootInternal(
-            cap: LocatedPrunableTree<H>(
-                rootAddr: cap.rootAddr,
-                root: PrunableTree<H>(
-                    hashContext: store.hashContext,
-                    node: NodeParent(
-                        ann: null, left: emptyTree, right: emptyTree))),
-            targetAddr: targetAddr,
-            truncateAt: truncateAt);
+          cap: LocatedPrunableTree<H>(
+            rootAddr: cap.rootAddr,
+            root: PrunableTree<H>(
+              hashContext: store.hashContext,
+              node: NodeParent(ann: null, left: emptyTree, right: emptyTree),
+            ),
+          ),
+          targetAddr: targetAddr,
+          truncateAt: truncateAt,
+        );
         return (result.$1, result.$2?.reannotateRoot(v.value));
       },
       onNil: () {
         if (cap.rootAddr == targetAddr || cap.rootAddr.level == subtreeLevel) {
-          final result =
-              _rootFromShards(address: targetAddr, truncateAt: truncateAt);
+          final result = _rootFromShards(
+            address: targetAddr,
+            truncateAt: truncateAt,
+          );
           if (truncateAt >= cap.rootAddr.positionRangeStart()) {
             return (
               result,
               PrunableTree<H>(
-                  hashContext: store.hashContext,
-                  node: NodeLeaf(
-                      value: PrunableValue<H>(
-                          value: result, flags: RetentionFlags.ephemeral)))
+                hashContext: store.hashContext,
+                node: NodeLeaf(
+                  value: PrunableValue<H>(
+                    value: result,
+                    flags: RetentionFlags.ephemeral,
+                  ),
+                ),
+              ),
             );
           }
           return (result, null);
         }
         return _rootInternal(
-            cap: LocatedPrunableTree<H>(
-                rootAddr: cap.rootAddr,
-                root: PrunableTree<H>(
-                    hashContext: store.hashContext,
-                    node: NodeParent(
-                        ann: null, left: emptyTree, right: emptyTree))),
-            targetAddr: targetAddr,
-            truncateAt: truncateAt);
+          cap: LocatedPrunableTree<H>(
+            rootAddr: cap.rootAddr,
+            root: PrunableTree<H>(
+              hashContext: store.hashContext,
+              node: NodeParent(ann: null, left: emptyTree, right: emptyTree),
+            ),
+          ),
+          targetAddr: targetAddr,
+          truncateAt: truncateAt,
+        );
       },
     );
   }
 
-  H _rootFromShards(
-      {required NodeAddress address, required LeafPosition truncateAt}) {
+  H _rootFromShards({
+    required NodeAddress address,
+    required LeafPosition truncateAt,
+  }) {
     return address.getContext<H>(
       level: subtreeLevel,
       right: (position) {
@@ -559,6 +707,7 @@ abstract class ShardTree<H extends Object, C extends Comparable,
           if (truncateAt <= subtreeAddr.positionRangeStart()) {
             break;
           }
+
           final subtreeRoot = store.getShard(subtreeAddr)?.rootHash(truncateAt);
           if (subtreeRoot == null) {
             incomplete.add(subtreeAddr);
@@ -571,8 +720,11 @@ abstract class ShardTree<H extends Object, C extends Comparable,
               while (rootStack.isNotEmpty) {
                 final (addr, hash) = rootStack.removeLast();
                 if (addr.parent() == curAddr.parent()) {
-                  curHash = store.hashContext
-                      .combine(level: curAddr.level, a: hash, b: curHash);
+                  curHash = store.hashContext.combine(
+                    level: curAddr.level,
+                    a: hash,
+                    b: curHash,
+                  );
                   curAddr = curAddr.parent();
                 } else {
                   rootStack.add((addr, hash));
@@ -584,9 +736,11 @@ abstract class ShardTree<H extends Object, C extends Comparable,
           }
         }
         if (incomplete.isNotEmpty) {
-          throw MerkleTreeException.failed("rootFromShards",
-              reason: "Unable to compute root. missing values for nodes.",
-              details: {"addresses": incomplete});
+          throw MerkleTreeException.failed(
+            "rootFromShards",
+            reason: "Unable to compute root. missing values for nodes.",
+            details: {"addresses": incomplete.join(",")},
+          );
         }
         if (rootStack.isNotEmpty) {
           var (curAddr, curHash) = rootStack.removeLast();
@@ -602,8 +756,11 @@ abstract class ShardTree<H extends Object, C extends Comparable,
               );
               curAddr = curAddr.parent();
             }
-            curHash = store.hashContext
-                .combine(level: curAddr.level, a: hash, b: curHash);
+            curHash = store.hashContext.combine(
+              level: curAddr.level,
+              a: hash,
+              b: curHash,
+            );
             curAddr = curAddr.parent();
           }
 
@@ -625,12 +782,17 @@ abstract class ShardTree<H extends Object, C extends Comparable,
         if (truncateAt <= address.positionRangeStart()) {
           return store.hashContext.emptyRoot(address.level);
         }
-        final hash =
-            store.getShard(addr)?.subtree(address)?.rootHash(truncateAt);
+
+        final hash = store
+            .getShard(addr)
+            ?.subtree(address)
+            ?.rootHash(truncateAt);
         if (hash == null) {
-          throw MerkleTreeException.failed("rootFromShards",
-              reason: "Unable to compute root. missing values for nodes.",
-              details: {"address": addr});
+          throw MerkleTreeException.failed(
+            "rootFromShards",
+            reason: "Unable to compute root. missing values for nodes.",
+            details: {"address": addr.toString()},
+          );
         }
         return hash;
       },
@@ -657,8 +819,9 @@ abstract class ShardTree<H extends Object, C extends Comparable,
           final subtreeAddr = this.subtreeAddr(pos);
 
           if (removing) {
-            clearPositions.putIfAbsent(subtreeAddr, () => {}).update(pos,
-                (flags) {
+            clearPositions.putIfAbsent(subtreeAddr, () => {}).update(pos, (
+              flags,
+            ) {
               return flags | flagsToClear;
             }, ifAbsent: () => flagsToClear);
           } else {
@@ -709,19 +872,23 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     required LeafPosition asOf,
   }) {
     final subtree = subtreeAddr(position);
+
     final witness = store
         .getShard(subtree)
         ?.witness(position: position, truncateAt: asOf + 1);
     if (witness == null) {
-      throw MerkleTreeException.failed("witnessInternalCaching",
-          reason: "Unable to compute root. missing values for nodes.",
-          details: {"address": subtree});
+      throw MerkleWitnessError.incompleteTree(
+        name: "wintessInternal",
+        addresses: [subtree],
+      );
     }
     final rootAddr = this.rootAddr;
     NodeAddress curAddr = subtree;
     while (curAddr != rootAddr) {
-      final root =
-          rootCaching(address: curAddr.sibling(), truncateAt: asOf + 1);
+      final root = rootCaching(
+        address: curAddr.sibling(),
+        truncateAt: asOf + 1,
+      );
       witness.add(root);
       curAddr = curAddr.parent();
     }
@@ -734,13 +901,15 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     required LeafPosition asOf,
   }) {
     final subtree = subtreeAddr(position);
+
     final witness = store
         .getShard(subtree)
         ?.witness(position: position, truncateAt: asOf + 1);
     if (witness == null) {
-      throw MerkleTreeException.failed("wintessInternal",
-          reason: "Unable to compute root. missing values for nodes.",
-          details: {"address": subtree});
+      throw MerkleWitnessError.incompleteTree(
+        name: "wintessInternal",
+        addresses: [subtree],
+      );
     }
     // final w = witness.unwrap();
     final rootAddr = this.rootAddr;
@@ -752,5 +921,22 @@ abstract class ShardTree<H extends Object, C extends Comparable,
     }
     assert(witness.length == depth);
     return toMerklePath(position, witness);
+  }
+}
+
+extension ExtCheckpointLookupExtension
+    on
+        ShardTree<
+          MerkleNodeValue,
+          int,
+          ShardStore<MerkleNodeValue, int>,
+          MerklePath<MerkleNodeValue>
+        > {
+  int? findLatestCheckpoint(int upperBound) {
+    for (int i = upperBound; i > 0; i--) {
+      final checkpoint = store.getCheckpoint(i);
+      if (checkpoint != null) return i;
+    }
+    return null;
   }
 }

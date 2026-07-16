@@ -8,7 +8,7 @@ void main() {
 
 void _test() {
   test("Sapling Note encrypt/decrypt", () {
-    final domain = SaplingDomainNative(DefaultZCashCryptoContext.lazy());
+    final domain = SaplingDomainNative(DefaultZcashCryptoContext.lazy());
     for (final i in _tv) {
       final tv = _TestVector.fromJson(i);
       final ivk = SaplingIvk(JubJubNativeFr.fromBytes(tv.ivk));
@@ -22,52 +22,62 @@ void _test() {
       final sharedSecret = JubJubPoint.fromBytes(tv.sharedSecret);
       expect(sharedSecret.toBytes(), tv.sharedSecret);
       final kEnc = SaplingUtils.kdfSapling(
-          secret: sharedSecret.toBytes(), ephemeralKey: ephemeralKey.inner);
+        secret: sharedSecret.toBytes(),
+        ephemeralKey: ephemeralKey.inner,
+      );
       expect(kEnc, tv.kEnc);
 
       final ovk = SaplingOutgoingViewingKey(tv.ovk);
       final ock = domain.deriveOck(ovk, cv, cmu, ephemeralKey);
       expect(ock, tv.ock);
       final to = SaplingPaymentAddress(
-          transmissionKey: pkd, diversifier: Diversifier(tv.defaultD));
+        transmissionKey: pkd,
+        diversifier: Diversifier(tv.defaultD),
+      );
       final note = SaplingNote(
-          recipient: to,
-          value: ZAmount(BigInt.from(tv.v)),
-          rseed: SaplingRSeedBeforeZip212(rcm));
+        recipient: to,
+        value: ZAmount(BigInt.from(tv.v)),
+        rseed: SaplingRSeedBeforeZip212(rcm),
+      );
       final output = SaplingOutputDescription(
-          cv: cv,
-          cmu: cmu,
-          ephemeralKey: ephemeralKey,
-          encCiphertext: tv.cEnc,
-          outCiphertext: tv.cOut,
-          zkproof: GrothProofBytes(List<int>.filled(192, 0)));
+        cv: cv,
+        cmu: cmu,
+        ephemeralKey: ephemeralKey,
+        encCiphertext: tv.cEnc,
+        outCiphertext: tv.cOut,
+        zkproof: GrothProofBytes(List<int>.filled(192, 0)),
+      );
       final decrypt = domain.tryNoteDecryption(ivk: ivk, output: output);
       expect(decrypt?.$1, note);
       expect(decrypt?.$2, to);
       expect(decrypt?.$3, tv.memo);
 
-      final decryptCompact =
-          domain.tryCompactNoteDecryption(ivk: ivk, output: output);
+      final decryptCompact = domain.tryCompactNoteDecryption(
+        ivk: ivk,
+        output: output,
+      );
       expect(decryptCompact?.$1, note);
       expect(decryptCompact?.$2, to);
       final decryptWithOvk = domain.tryOutputRecoveryWithOvk(
-          ovk: ovk,
-          output: output,
-          cv: output.cv,
-          outCiphertext: output.outCiphertext);
+        ovk: ovk,
+        output: output,
+        cv: output.cv,
+        outCiphertext: output.outCiphertext,
+      );
       expect(decryptWithOvk?.$1, note);
       expect(decryptWithOvk?.$2, to);
       expect(decryptWithOvk?.$3, tv.memo);
       final ne = domain.createNoteWithEsk(
-          note: note, memo: tv.memo, ovk: ovk, esk: esk.toBytes());
+        note: note,
+        memo: tv.memo,
+        ovk: ovk,
+        esk: esk.toBytes(),
+      );
       expect(domain.encryptNotePlaintext(ne), tv.cEnc);
       expect(
-          domain.encryptOutgoingPlaintext(
-            cv: cv,
-            cm: cmu,
-            encryotedNote: ne,
-          ),
-          tv.cOut);
+        domain.encryptOutgoingPlaintext(cv: cv, cm: cmu, encryotedNote: ne),
+        tv.cOut,
+      );
     }
   });
 }
@@ -186,7 +196,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "db4cd2b0aac4f7eb8ca131f16567c445a9555126d3c29f14e3d776e841ae741581c7b2171ff4415250cac01f5982fd8f49619d61ad78f6830b3c606145962a0e",
     "cOut":
-        "0eb2b01be8880fc0469842271418b52bad4019892cde53eecacdb2e45f5f337585f7f6175d888f6e2c4ed13571cd96fd177a01ab101908d7ca4a6d81d916622f5ff077b13f345590e227c10e0895e204"
+        "0eb2b01be8880fc0469842271418b52bad4019892cde53eecacdb2e45f5f337585f7f6175d888f6e2c4ed13571cd96fd177a01ab101908d7ca4a6d81d916622f5ff077b13f345590e227c10e0895e204",
   },
   {
     "ovk": "3b946210ce6d1b1692d7392ac84a8bc8f03b72723c7d36721b809a79c9d6e45b",
@@ -213,7 +223,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "a6b13ea336ddb7a67bb09a0e68e9d3cfb39210831ea3a296ba09a922060fd38bad4ad62477c2c883c8babfed5d385b51abdcc698e936e78dc22671729155620b",
     "cOut":
-        "882458302c0aba55ed8d6718ca26d8c28a127a01e77c2ae5bf15c69673918177f92477a218a7f6cf12178022c9ddc7185c18d0876c3c296583e0bc54793bf1e26a854a41ab617f205271ba6c1429bdf4"
+        "882458302c0aba55ed8d6718ca26d8c28a127a01e77c2ae5bf15c69673918177f92477a218a7f6cf12178022c9ddc7185c18d0876c3c296583e0bc54793bf1e26a854a41ab617f205271ba6c1429bdf4",
   },
   {
     "ovk": "8bf4390e28ddc95b8302c381d5810b84ba8e6096e5a76822774fd49f491e8f49",
@@ -240,7 +250,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "66141739514b28f05def8a18eeee5eed4d44c6225c3c65d88dd9907708012f5a99aa10c05788081c0da7d879cd9543ec1892157292402e960b06995a08964c03",
     "cOut":
-        "9dcfab0d2054d2bdf406c31b4178465de6505db3be9b6936f78d2e2937579b582e832861929a75178804b657126add742e06cb84368642db9bf47ac6e4dc1af178198b22d6262345373b0f562ef27bb0"
+        "9dcfab0d2054d2bdf406c31b4178465de6505db3be9b6936f78d2e2937579b582e832861929a75178804b657126add742e06cb84368642db9bf47ac6e4dc1af178198b22d6262345373b0f562ef27bb0",
   },
   {
     "ovk": "147678e0553b97829347647c5bc7dab4cc2202b54ec29fd31a3de6be0825fc5e",
@@ -267,7 +277,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "25eb55fccf761fc64e85a588efe6ead7832fb1f0f7a83165895bdff942925f5cbdde1381ec9ff421cafd1e31cc5de25559881f6b21b2175d0dce9408597ea103",
     "cOut":
-        "254f122cfe9498add757cf0b610da8cbaeda053e26cb72306f362308552853ff023c23c26f3ab441b81ea25ce0ae57d1a94983bb45ab8a86da68ef63f15816c143327a1e460c510c631cc69f3960fb5a"
+        "254f122cfe9498add757cf0b610da8cbaeda053e26cb72306f362308552853ff023c23c26f3ab441b81ea25ce0ae57d1a94983bb45ab8a86da68ef63f15816c143327a1e460c510c631cc69f3960fb5a",
   },
   {
     "ovk": "1b6e75ece3ace8dba6a5410d9ad4755668e4b39585d635ec1da7c8dcfd5fc4ed",
@@ -294,7 +304,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "8b2a337f03622c24ff381d4c546f6977f90522e92fde44c9d1bb099714b9db2b3dc166d56a1d62f5a8d7551db5fd9313e8c7203d996af7d477083756d59af80d",
     "cOut":
-        "3bfc13673c24ac5eaf0bc2446c38a792ae42d96baf0553cee436b634b57389b3621ddbba22e684890a7b645d63c4bc8c26db54628cef4ded980f608f0020bbb5a2f65522a61f89df8218186704011e91"
+        "3bfc13673c24ac5eaf0bc2446c38a792ae42d96baf0553cee436b634b57389b3621ddbba22e684890a7b645d63c4bc8c26db54628cef4ded980f608f0020bbb5a2f65522a61f89df8218186704011e91",
   },
   {
     "ovk": "c6bc1f39f0d786314cb20bf9ab228540913555f970696b6d7c77bb332328372a",
@@ -321,7 +331,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "6b27daccb5a8207f532d10ca238f9786648a11b5966e51a2f7d89e15d29b8fdf4e418c3c543d6bf0153174a04e8544ae7c58092a2e4e5d7d9c672a3a79110903",
     "cOut":
-        "659def250834846f85eb9e395befe15e1d4d2ab4362d1aa7de84243f7445d5d28f4792924d60c760533cef051047e54d521e2b072d1330b2685eb870106c661f1f07b76fdbb514aa9b94ad4191bc0d2d"
+        "659def250834846f85eb9e395befe15e1d4d2ab4362d1aa7de84243f7445d5d28f4792924d60c760533cef051047e54d521e2b072d1330b2685eb870106c661f1f07b76fdbb514aa9b94ad4191bc0d2d",
   },
   {
     "ovk": "f62c05e848a873ef885e12b08c5e7ca2f32424bacc754cb69750444d355f5106",
@@ -348,7 +358,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "d11da01f0b43bdd5288d32385b8771d223493c69802544043f77cf1d71c1cb8c6da945d30381c2eed2b81d27086d2248e7c449fe509b38e276791189eabc4602",
     "cOut":
-        "e772e01d6109b6f985b1772ed1550a947b35a84b3e71123331a3d61f1bf5964e97425442e5c8ef2b9d84ab3dcbab9c96fe6a89ce1d5e8a9b83b5090bb07c50450bbbfc8a7464a77c33971633b21368f0"
+        "e772e01d6109b6f985b1772ed1550a947b35a84b3e71123331a3d61f1bf5964e97425442e5c8ef2b9d84ab3dcbab9c96fe6a89ce1d5e8a9b83b5090bb07c50450bbbfc8a7464a77c33971633b21368f0",
   },
   {
     "ovk": "e9e0dc1ed311daed64bd74da5d94fe88a6ea414b7312de3d2a78f64632bbe373",
@@ -375,7 +385,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "32cb2806b882f1368b0d4a898f72c4c8f728132cc12456946e7f4cb0fb058da9ab2aff0332d543fd1d8023185b8ecb5f22a29c32ef741633316eee514fc22309",
     "cOut":
-        "af4d97fb7228f01f6d9e2f79a1a1ba45a23d609059784ea9350f1eb092b054a3268cc026d3d737ef35adc286d195eaa414493ed2a51f2f61099a3451f9555bab1a5ef3e3fbbe8ec6416bd33d50dff98f"
+        "af4d97fb7228f01f6d9e2f79a1a1ba45a23d609059784ea9350f1eb092b054a3268cc026d3d737ef35adc286d195eaa414493ed2a51f2f61099a3451f9555bab1a5ef3e3fbbe8ec6416bd33d50dff98f",
   },
   {
     "ovk": "147dd11d77eba1b1636fd6190c62b9a5d0481bee7e917fab02e21858063ab504",
@@ -402,7 +412,7 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "9e64174b4ab981405c323b5e12475945a46d4fedf8060828041cd20e62fd2cefa53d19f5694595d5ae630227673c80249ce124419f46df4e7b3fc1046128cd0b",
     "cOut":
-        "bc16afa8aab2380626018ce2755867558f9d59857393a1f348b21cb50f53eabae7f6e47b45241f6b7b3d68945dd40cadc57a9ade6af969ae074ff289bcb6610ae38c8210a5cbd747b831151c56ef02c9"
+        "bc16afa8aab2380626018ce2755867558f9d59857393a1f348b21cb50f53eabae7f6e47b45241f6b7b3d68945dd40cadc57a9ade6af969ae074ff289bcb6610ae38c8210a5cbd747b831151c56ef02c9",
   },
   {
     "ovk": "573467a7b30ead6ccc504744ca9e1a281a0d1a08738b06a0684feacd1e9d126d",
@@ -429,6 +439,6 @@ const List<Map<String, dynamic>> _tv = [
     "op":
         "b68e9ee0c0678d7b3036931c831a25255f7ee487385a30316e15f6482b874fda29958980694f7f67080997c2664702890cd1b503dda42d33a899ce991fe0f800",
     "cOut":
-        "e27a464d6f44cc44f617e23c9fb1b71fffd46aebf03677cf7dd24d711ba0c6ca3853097b247ab74c15bb938ed602fbcd30f4a65956430f47a0fbcbe8e08aada38630785a805753ba33b334cd2a4bfc3d"
-  }
+        "e27a464d6f44cc44f617e23c9fb1b71fffd46aebf03677cf7dd24d711ba0c6ca3853097b247ab74c15bb938ed602fbcd30f4a65956430f47a0fbcbe8e08aada38630785a805753ba33b334cd2a4bfc3d",
+  },
 ];

@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/block_processor/src/exception.dart';
 import 'package:zcash_dart/src/block_processor/src/types.dart';
@@ -8,136 +7,210 @@ import 'package:zcash_dart/src/note/note.dart';
 import 'package:zcash_dart/src/orchard/orchard.dart';
 import 'package:zcash_dart/src/provider/provider.dart';
 import 'package:zcash_dart/src/sapling/sapling.dart';
-import 'package:zcash_dart/src/transaction/types/version.dart';
+import 'package:zcash_dart/src/transaction/sighash_digest/types.dart';
+import 'package:zcash_dart/src/transaction/types/transaction.dart';
 
-class DefaultZCashBlockScanner extends DefaultZCashBlockProcessor {
-  final ZCashWalletdProvider provider;
-  DefaultZCashBlockScanner(
-      {required ZCashBlockProcessorConfig config, required this.provider})
-      : super(config);
+class DefaultZcashBlockScanner extends DefaultZcashBlockProcessor {
+  DefaultZcashBlockScanner({required super.config, required super.provider});
 
   /// Scans a range of blocks and emits scanned block results as a stream.
-  /// [pendingNullifier] for detect account spends.
-  Stream<ScannedBlock> scanBlock(int start, int end,
-      {List<Nullifier> pendingNullifier = const []}) {
+  Stream<ScannedBlock> scanBlock(int start, int end) {
     if (end < start) {
-      throw ZCashBlockScannerException.failed("scanBlock",
-          reason: "Invalid block range.");
+      throw ZcashBlockScannerException.failed(
+        "scanBlock",
+        reason: "Invalid block range.",
+      );
     }
     final request = provider.requestStream(
-        ZWalletdRequestGetBlockRange(WalletdBlockRange.range(start, end)));
+      _createBlockRangeRequest(start, end),
+    );
     BlockStateInfo? previousState;
-    final nullifiers = pendingNullifier.clone();
+
+    return request.asyncMap((block) {
+      final state = buildBlockState(block, previousState: previousState);
+      final scanned = _scanBlockInternal(block, state);
+      previousState = state;
+      return scanned;
+    });
+  }
+
+  /// Scans a range of blocks and emits scanned block results as a stream.
+  Future<Stream<T>> scanBlockAsync<T extends Object?>({
+    required int start,
+    required int end,
+    required Future<T> Function(ScannedBlock block) onProcessed,
+    Duration? throttleDelay,
+  }) async {
+    if (end < start) {
+      throw ZcashBlockScannerException.failed(
+        "scanBlock",
+        reason: "Invalid block range.",
+      );
+    }
+    final request = await provider.requestStreamAsync(
+      _createBlockRangeRequest(start, end),
+    );
+    BlockStateInfo? previousState;
+    return request.asyncMap((block) async {
+      if (throttleDelay != null) await Future.delayed(throttleDelay);
+      final state = buildBlockState(block, previousState: previousState);
+      final scanned = await _scanBlockInternal(block, state);
+      previousState = state;
+      final result = await onProcessed(scanned);
+      return result;
+    });
+  }
+
+  /// Scans a range of blocks and emits scanned nullifiers results as a stream.
+  Stream<ScannedNullifiers> scanNullifiers(int start, int end) {
+    if (end < start) {
+      throw ZcashBlockScannerException.failed(
+        "scanBlock",
+        reason: "Invalid block range.",
+      );
+    }
+    final request = provider.requestStream(
+      _createBlockRangeRequest(start, end),
+    );
+    BlockStateInfo? previousState;
 
     return request.map((block) {
       final state = buildBlockState(block, previousState: previousState);
-      final scanned = _scanBlockInternal(block, state, nullifiers: nullifiers);
+      final scanned = _scanBlockNullifiers(block, state);
+      previousState = state;
+      return scanned;
+    });
+  }
+
+  /// Scans a range of blocks and emits scanned nullifiers results as a stream.
+  Future<Stream<ScannedNullifiers>> scanNullifiersAsync(
+    int start,
+    int end,
+  ) async {
+    if (end < start) {
+      throw ZcashBlockScannerException.failed(
+        "scanBlock",
+        reason: "Invalid block range.",
+      );
+    }
+    final request = await provider.requestStreamAsync(
+      _createBlockRangeRequest(start, end),
+    );
+    BlockStateInfo? previousState;
+
+    return request.map((block) {
+      final state = buildBlockState(block, previousState: previousState);
+      final scanned = _scanBlockNullifiers(block, state);
       previousState = state;
       return scanned;
     });
   }
 }
 
-class DefaultZCashBlockProcessor extends ZCashBlockProcessor {
+class DefaultZcashBlockProcessor extends ZcashBlockProcessor {
   @override
-  final ZCashBlockProcessorConfig config;
-  DefaultZCashBlockProcessor(this.config);
+  final IGrpcProvider<
+    IServiceProvider,
+    IServiceRequestParams,
+    BaseGRPCServiceRequestParams
+  >
+  provider;
+  @override
+  final ZcashBlockProcessorConfig config;
+  DefaultZcashBlockProcessor({required this.config, required this.provider});
 }
 
-abstract mixin class ZCashBlockProcessor {
-  abstract final ZCashBlockProcessorConfig config;
-  ZCashNetwork get network => config.network;
-  List<SaplingIvk> get saplingIvks => config.saplingIvks;
-  List<OrchardKeyAgreementPrivateKey> get orchardIvks => config.orchardIvks;
+abstract mixin class ZcashBlockProcessor {
+  IGrpcProvider<
+    IServiceProvider,
+    IServiceRequestParams,
+    BaseGRPCServiceRequestParams
+  >
+  get provider;
+  abstract final ZcashBlockProcessorConfig config;
+  ZcashNetwork get network => config.network;
   late SaplingDomainNative _saplingDomain = config.saplingDomain;
   SaplingDomainNative get saplingDomain => _saplingDomain;
   OrchardDomainNative get orchardDomain => config.orchardDomain;
 
   /// Builds and validates block state information from a compact block,
   /// optionally verifying continuity with the previous block state.
-  BlockStateInfo buildBlockState(CompactBlock block,
-      {BlockStateInfo? previousState}) {
+  BlockStateInfo buildBlockState(
+    CompactBlock block, {
+    BlockStateInfo? previousState,
+  }) {
     if (!block.isValid()) {
-      throw ZCashBlockScannerException.failed("buildBlockState",
-          reason: "Invalid compact block information.");
+      throw ZcashBlockScannerException.failed(
+        "buildBlockState",
+        reason: "Invalid compact block information.",
+      );
     }
     final height = block.getHeight();
 
-    final upgrade = NetworkUpgrade.fromHeight(height, config.network);
-    int? saplingCommitmentTreeSize = block.saplingCommitmentTreeSize;
-    int? orchardCommitmentTreeSize = block.orchardCommitmentTreeSize;
-    if (saplingCommitmentTreeSize == null) {
-      if (upgrade.hasSapling()) {
-        throw ZCashBlockScannerException.failed("buildBlockState",
-            reason: "Invalid compact block sapling tree size.");
-      }
-      saplingCommitmentTreeSize = 0;
-    }
-    if (orchardCommitmentTreeSize == null) {
-      if (upgrade.hasOrchard()) {
-        throw ZCashBlockScannerException.failed("buildBlockState",
-            reason: "Invalid compact block orchard tree size.");
-      }
-      orchardCommitmentTreeSize = 0;
-    }
+    final upgrade = config.activationProvider.protocolFromHeight(
+      config.network,
+      height,
+    );
+    int? saplingCommitmentTreeSize = block.saplingCommitmentTreeSize ?? 0;
+    int? orchardCommitmentTreeSize = block.orchardCommitmentTreeSize ?? 0;
+
     orchardCommitmentTreeSize -= block.totalOrchardOutputs();
     saplingCommitmentTreeSize -= block.totalSaplingOutputs();
     if (orchardCommitmentTreeSize.isNegative ||
         saplingCommitmentTreeSize.isNegative) {
-      throw ZCashBlockScannerException.failed("buildBlockState",
-          reason: "Invalid compact block tree size.");
+      throw ZcashBlockScannerException.failed(
+        "buildBlockState",
+        reason: "Invalid compact block tree size.",
+      );
     }
     final orchardFinalTreeSize =
         orchardCommitmentTreeSize + block.totalOrchardOutputs();
     final saplingFinalTreeSize =
         saplingCommitmentTreeSize + block.totalSaplingOutputs();
 
-    Zip212Enforcement fromNetworkUpgrade() {
-      if (upgrade < NetworkUpgrade.canopy) {
-        return Zip212Enforcement.off;
-      }
-      final gracePeriod =
-          upgrade.activeHeight(network) + NetworkUpgrade.gracePeriod;
-      if (gracePeriod < height) {
-        return Zip212Enforcement.gracePeriod;
-      }
-      return Zip212Enforcement.on;
-    }
-
     if (previousState != null) {
       if (height != (previousState.blockId + 1) ||
           orchardCommitmentTreeSize != previousState.orchardFinalTreeSize ||
           saplingCommitmentTreeSize != previousState.saplingFinalTreeSize) {
-        throw ZCashBlockScannerException.failed("buildBlockState",
-            reason: "Block state mismatch with previous block.");
+        throw ZcashBlockScannerException.failed(
+          "buildBlockState",
+          reason: "Block state mismatch with previous block.",
+        );
       }
     }
+    final zip212enforcement = config.activationProvider.zip212Enforcement(
+      network,
+      height,
+      protocol: upgrade,
+    );
 
     return BlockStateInfo(
-        orchardCommitmentTreeSize: orchardCommitmentTreeSize,
-        saplingCommitmentTreeSize: saplingCommitmentTreeSize,
-        upgrade: upgrade,
-        orchardFinalTreeSize: orchardFinalTreeSize,
-        saplingFinalTreeSize: saplingFinalTreeSize,
-        blockId: height,
-        blockhash: block.getHash(),
-        timestamp: block.timestamp(),
-        zip212enforcement: fromNetworkUpgrade());
+      orchardCommitmentTreeSize: orchardCommitmentTreeSize,
+      saplingCommitmentTreeSize: saplingCommitmentTreeSize,
+      upgrade: upgrade,
+      orchardFinalTreeSize: orchardFinalTreeSize,
+      saplingFinalTreeSize: saplingFinalTreeSize,
+      blockId: height,
+      blockhash: block.getHash(),
+      timestamp: block.timestamp(),
+      zip212enforcement: zip212enforcement,
+    );
   }
 
   /// Scans a compact block and returns the resulting scanned block.
-  ScannedBlock scan(CompactBlock block) =>
-      scanBlockInternal(block, buildBlockState(block));
-  ScannedBlock scanBlockInternal(CompactBlock block, BlockStateInfo state,
-      {List<Nullifier> nullifiers = const []}) {
-    return _scanBlockInternal(block, state, nullifiers: nullifiers.clone());
-  }
+  Future<ScannedBlock> scanBlockSync(CompactBlock block) =>
+      _scanBlockInternal(block, buildBlockState(block));
 
-  ScannedBlock _scanBlockInternal(CompactBlock block, BlockStateInfo state,
-      {List<Nullifier> nullifiers = const []}) {
+  Future<ScannedBlock> _scanBlockInternal(
+    CompactBlock block,
+    BlockStateInfo state,
+  ) async {
+    // print("new block!");
     if (saplingDomain.zip212enforcement != state.zip212enforcement) {
-      _saplingDomain = SaplingDomainNative(saplingDomain.context,
-          zip212enforcement: state.zip212enforcement);
+      _saplingDomain = SaplingDomainNative(
+        saplingDomain.context,
+        zip212enforcement: state.zip212enforcement,
+      );
     }
     final txes = block.vtx ?? [];
     final blockId = state.blockId;
@@ -145,26 +218,34 @@ abstract mixin class ZCashBlockProcessor {
     final blockHash = state.blockhash;
     if (txes.isEmpty) {
       return ScannedBlock(
-          blockId: blockId,
-          timestamp: timestamp,
-          blockhash: blockHash,
-          sapling:
-              SaplingScannedBundles(finalTreeSize: state.saplingFinalTreeSize),
-          orchard:
-              OrchardScannedBundles(finalTreeSize: state.orchardFinalTreeSize));
+        blockId: blockId,
+        timestamp: timestamp,
+        blockhash: blockHash,
+        bundles: ScannedBlockBundles(
+          sapling: ScannedProtocolBundles(
+            finalTreeSize: state.saplingFinalTreeSize,
+          ),
+          orchard: ScannedProtocolBundles(
+            finalTreeSize: state.orchardFinalTreeSize,
+          ),
+        ),
+        orchardNullifiers: [],
+        saplingNullifiers: [],
+      );
     }
     int orchardCommitmentTreeSize = state.orchardCommitmentTreeSize;
     int saplingCommitmentTreeSize = state.saplingCommitmentTreeSize;
     List<ScannedTx> scannedTxes = [];
-    List<ScannedBlockNullifiers<OrchardNullifier>> orchardNullifiers = [];
-    List<ScannedBlockNullifiers<SaplingNullifier>> saplingNullifiers = [];
+    List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers = [];
+    List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers = [];
     List<ScannedBlockCommitment<OrchardMerkleHash>> orchardCommitments = [];
     List<ScannedBlockCommitment<SaplingNode>> saplingCommitments = [];
     Retention<int> buildRetention(bool isLastCommitment, bool isMarked) {
       if (isLastCommitment) {
         return RetentionCheckpoint(
-            marking: isMarked ? MarkingState.marked : MarkingState.none,
-            id: blockId);
+          marking: isMarked ? MarkingState.marked : MarkingState.none,
+          id: blockId,
+        );
       }
       if (isMarked) {
         return RetentionMarked();
@@ -172,108 +253,307 @@ abstract mixin class ZCashBlockProcessor {
       return RetentionEphemeral();
     }
 
+    final orchardIvks = config.getOrchardIvks(blockId);
+    final saplingIvks = config.getSaplingIvks(blockId);
+
+    Map<ZcashTxId, TransactionData?> cachedTx = {};
+
     for (final tx in txes) {
-      List<OrchardScannedOutput> orchardOutputs = [];
-      List<SaplingScannedOutput> saplingOutputs = [];
+      List<OrchardScannedOutputWithIvk> orchardOutputs = [];
+      List<SaplingScannedOutputWithIvk> saplingOutputs = [];
       final txId = tx.getTxId();
       final txIndex = tx.getTxIndex();
       final actions = tx.getCompactActions();
       final outputs = tx.getOutputDescription();
-      final List<OrchardNullifier> orchardSpends = [];
       for (final output in actions) {
         final leafPosition = orchardCommitmentTreeSize + output.outputIndex;
         assert(leafPosition < state.orchardFinalTreeSize);
-        final decrypt = orchardDomain.batchIvkCompactNoteDecryption(
-            ivks: orchardIvks, output: output);
+        BatchIVKDecryptionResult<
+          OrchardKeyAgreementPrivateKey,
+          OrchardNote,
+          OrchardAddress
+        >?
+        decrypt = orchardDomain.batchIvkCompactNoteDecryption(
+          ivks: orchardIvks,
+          output: output,
+        );
+        if (decrypt != null && config.exportMemos && decrypt.memo == null) {
+          final fullOutput = await _tryGetTransaction(
+            txId: txId,
+            index: output.outputIndex,
+            protocol: ZcashProtocol.orchard,
+            txes: cachedTx,
+          );
+          assert(
+            fullOutput != null,
+            "Failed to export full output from transaction",
+          );
+          if (fullOutput != null) {
+            final newDecrypt = orchardDomain.batchIvkNoteDecryption(
+              ivks: orchardIvks,
+              output: fullOutput.cast<OrchardShildOutput>(),
+            );
+            assert(
+              newDecrypt != null,
+              "Unexpected decrypt result. must not be null.",
+            );
+            assert(
+              newDecrypt?.memo != null,
+              "Unexpected decrypt result. memo must not be null.",
+            );
+            if (newDecrypt != null) decrypt = newDecrypt;
+          }
+        }
         if (decrypt != null) {
           final scanKey = config.findOrchardScanKey(decrypt.ivk);
           OrchardNullifier? nullifier;
           final fvk = scanKey.scanKey.fvk;
           if (fvk != null) {
-            nullifier =
-                decrypt.note.nullifier(fvk: fvk, context: config.context);
-            nullifiers.add(nullifier);
+            nullifier = decrypt.note.nullifier(
+              fvk: fvk,
+              context: config.context,
+            );
           }
-          orchardOutputs.add(OrchardScannedOutput(
-              index: output.outputIndex,
-              ephemeralKey: output.ephemeralKey,
-              note: decrypt.note,
-              noteCommitmentTreePosition: LeafPosition(leafPosition),
-              account: scanKey.ivk,
-              isChange: false,
-              nullifier: nullifier));
+          orchardOutputs.add(
+            OrchardScannedOutputWithIvk(
+              output: OrchardScannedOutput(
+                index: output.outputIndex,
+                ephemeralKey: output.ephemeralKey,
+                note: decrypt.note,
+
+                noteCommitmentTreePosition: LeafPosition(leafPosition),
+              ),
+              ivk: scanKey.ivk,
+              nullifier: nullifier,
+              memo: decrypt.memo,
+            ),
+          );
         }
 
-        orchardCommitments.add(ScannedBlockCommitment(
+        orchardCommitments.add(
+          ScannedBlockCommitment(
             node: OrchardMerkleHash(output.cmx.inner),
             retention: buildRetention(
-                leafPosition + 1 == state.orchardFinalTreeSize,
-                decrypt != null)));
-        orchardSpends.add(output.nf);
-        orchardNullifiers.add(ScannedBlockNullifiers(
-            txId: txId, index: output.outputIndex, nullifier: output.nf));
+              leafPosition + 1 == state.orchardFinalTreeSize,
+              decrypt != null,
+            ),
+          ),
+        );
+        orchardNullifiers.add(
+          ScannedBlockNullifier(
+            txId: txId,
+            index: output.outputIndex,
+            nullifier: output.nf,
+          ),
+        );
       }
 
       for (final output in outputs) {
         final leafPosition = saplingCommitmentTreeSize + output.outputIndex;
         assert(leafPosition < state.saplingFinalTreeSize);
-        final decrypt = saplingDomain.batchIvkCompactNoteDecryption(
-            ivks: saplingIvks, output: output);
+        BatchIVKDecryptionResult<
+          SaplingIvk,
+          SaplingNote,
+          SaplingPaymentAddress
+        >?
+        decrypt = saplingDomain.batchIvkCompactNoteDecryption(
+          ivks: saplingIvks,
+          output: output,
+        );
+        if (decrypt != null && config.exportMemos && decrypt.memo == null) {
+          final fullOutput = await _tryGetTransaction(
+            txId: txId,
+            index: output.outputIndex,
+            protocol: ZcashProtocol.sapling,
+            txes: cachedTx,
+          );
+          assert(
+            fullOutput != null,
+            "Failed to export full output from transaction",
+          );
+          if (fullOutput != null) {
+            final newDecrypt = saplingDomain.batchIvkNoteDecryption(
+              ivks: saplingIvks,
+              output: fullOutput.cast<SaplingShildOutput>(),
+            );
+            assert(
+              newDecrypt != null,
+              "Unexpected decrypt result. must not be null.",
+            );
+            assert(
+              newDecrypt?.memo != null,
+              "Unexpected decrypt result. mem0 must not be null.",
+            );
+            if (newDecrypt != null) decrypt = newDecrypt;
+          }
+        }
         if (decrypt != null) {
           final scanKey = config.findSaplingScanKey(decrypt.ivk);
           SaplingNullifier? nullifier;
           final fvk = scanKey.scanKey.fvk;
           if (fvk != null) {
             nullifier = decrypt.note.nullifier(
-                nk: fvk.vk.nk, position: leafPosition, context: config.context);
-            nullifiers.add(nullifier);
+              nk: fvk.vk.nk,
+              position: leafPosition,
+              context: config.context,
+            );
           }
-          saplingOutputs.add(SaplingScannedOutput(
-              index: output.outputIndex,
-              ephemeralKey: output.ephemeralKey,
-              note: decrypt.note,
-              noteCommitmentTreePosition: LeafPosition(leafPosition),
-              account: scanKey.ivk,
+          saplingOutputs.add(
+            SaplingScannedOutputWithIvk(
+              output: SaplingScannedOutput(
+                index: output.outputIndex,
+                ephemeralKey: output.ephemeralKey,
+                note: decrypt.note,
+
+                noteCommitmentTreePosition: LeafPosition(leafPosition),
+              ),
+              ivk: scanKey.ivk,
               nullifier: nullifier,
-              isChange: false));
+              memo: decrypt.memo,
+            ),
+          );
         }
-        saplingCommitments.add(ScannedBlockCommitment(
+        saplingCommitments.add(
+          ScannedBlockCommitment(
             node: SaplingNode(output.cmu.inner),
             retention: buildRetention(
-                leafPosition + 1 == state.saplingFinalTreeSize,
-                decrypt != null)));
+              leafPosition + 1 == state.saplingFinalTreeSize,
+              decrypt != null,
+            ),
+          ),
+        );
       }
-      final spends = tx.getSpends();
-      for (final i in spends) {
-        saplingNullifiers.add(
-            ScannedBlockNullifiers(txId: txId, index: txIndex, nullifier: i));
-      }
-      final accountSpends = nullifiers
-          .where((e) => spends.contains(e) || orchardSpends.contains(e))
-          .toList();
-      nullifiers.removeWhere((e) => accountSpends.contains(e));
-      scannedTxes.add(ScannedTx(
+      saplingNullifiers.addAll(
+        tx.getSpends().map(
+          (e) =>
+              ScannedBlockNullifier(txId: txId, index: txIndex, nullifier: e),
+        ),
+      );
+
+      scannedTxes.add(
+        ScannedTx(
           txId: txId,
           index: txIndex,
           saplingOutputs: saplingOutputs,
           orchardOutputs: orchardOutputs,
-          orchardSpends: accountSpends.whereType<OrchardNullifier>().toList(),
-          saplingSpends: accountSpends.whereType<SaplingNullifier>().toList()));
+        ),
+      );
       orchardCommitmentTreeSize += actions.length;
       saplingCommitmentTreeSize += outputs.length;
     }
     return ScannedBlock(
+      blockId: blockId,
+      timestamp: timestamp,
+      blockhash: blockHash,
+      txes: scannedTxes,
+      saplingNullifiers: saplingNullifiers,
+      orchardNullifiers: orchardNullifiers,
+      bundles: ScannedBlockBundles(
+        sapling: ScannedProtocolBundles(
+          finalTreeSize: state.saplingFinalTreeSize,
+          commitments: saplingCommitments,
+        ),
+        orchard: ScannedProtocolBundles(
+          finalTreeSize: state.orchardFinalTreeSize,
+          commitments: orchardCommitments,
+        ),
+      ),
+    );
+  }
+
+  ScannedNullifiers scanNullifiersSync(CompactBlock block) =>
+      _scanBlockNullifiers(block, buildBlockState(block));
+  ScannedNullifiers _scanBlockNullifiers(
+    CompactBlock block,
+    BlockStateInfo state,
+  ) {
+    final txes = block.vtx ?? [];
+    final blockId = state.blockId;
+    final timestamp = state.timestamp;
+    final blockHash = state.blockhash;
+    if (txes.isEmpty) {
+      return ScannedNullifiers(
         blockId: blockId,
         timestamp: timestamp,
         blockhash: blockHash,
-        txes: scannedTxes,
-        sapling: SaplingScannedBundles(
-            finalTreeSize: state.saplingFinalTreeSize,
-            commitments: saplingCommitments,
-            nullifiers: saplingNullifiers),
-        orchard: OrchardScannedBundles(
-            finalTreeSize: state.orchardFinalTreeSize,
-            commitments: orchardCommitments,
-            nullifiers: orchardNullifiers));
+      );
+    }
+    List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers = [];
+    List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers = [];
+
+    for (final tx in txes) {
+      final txId = tx.getTxId();
+      final txIndex = tx.getTxIndex();
+      final actions = tx.getCompactActions();
+      for (final output in actions) {
+        orchardNullifiers.add(
+          ScannedBlockNullifier(
+            txId: txId,
+            index: output.outputIndex,
+            nullifier: output.nf,
+          ),
+        );
+      }
+      final spends = tx.getSpends();
+      for (final i in spends) {
+        saplingNullifiers.add(
+          ScannedBlockNullifier(txId: txId, index: txIndex, nullifier: i),
+        );
+      }
+    }
+    return ScannedNullifiers(
+      blockId: blockId,
+      timestamp: timestamp,
+      blockhash: blockHash,
+      orchardNullifiers: orchardNullifiers,
+      saplingNullifiers: saplingNullifiers,
+    );
+  }
+
+  Future<ShieldedOutput?> _tryGetTransaction({
+    required ZcashTxId txId,
+    required int index,
+    required ZcashProtocol protocol,
+    required Map<ZcashTxId, TransactionData?> txes,
+  }) async {
+    try {
+      if (txes.containsKey(txId) && txes[txId] == null) {
+        return null;
+      }
+      final txData = await provider.request(
+        ZcashGrpcRequestMessage(
+          request: ZWalletdGetTransaction(
+            getTransaction: ZWalletdTxFilter(hash: txId.hash),
+          ),
+        ),
+      );
+      final toTx = txData.toTransaction();
+      txes[txId] = toTx;
+      return switch (protocol) {
+        ZcashProtocol.orchard => toTx.orchardBundle?.actions.elementAtOrNull(
+          index,
+        ),
+        ZcashProtocol.sapling => toTx.saplingBundle?.shieldedOutputs.elementAt(
+          index,
+        ),
+        ZcashProtocol.transparent => null,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  ZcashGrpcRequestMessage<ZWalletdCompactBlock> _createBlockRangeRequest(
+    int start,
+    int end,
+  ) {
+    return ZcashGrpcRequestMessage(
+      request: ZWalletdGetBlockRange(
+        getBlockRange: ZWalletdBlockRange(
+          start: ZWalletdBlockID(height: BigInt.from(start)),
+          end: ZWalletdBlockID(height: BigInt.from(end)),
+        ),
+      ),
+    );
   }
 }

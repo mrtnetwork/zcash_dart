@@ -34,8 +34,8 @@ abstract mixin class PcztExtractor implements PcztV1 {
     );
   }
 
-  Future<({ZCashTransaction tx, List<int> sighash})> _extract(
-    ZCashCryptoContext context,
+  Future<({ZcashTransaction tx, List<int> sighash})> _extract(
+    ZcashCryptoContext context,
     bool verifySignatures,
   ) async {
     final version = global.getTxVersion();
@@ -88,13 +88,13 @@ abstract mixin class PcztExtractor implements PcztV1 {
       orchardBundle: orchardBundle,
     );
     return (
-      tx: ZCashTransaction(txId: txData.toTxId(), transactionData: txData),
+      tx: ZcashTransaction(txId: txData.toTxId(), transactionData: txData),
       sighash: sighash,
     );
   }
 
-  FutureOr<ZCashTransaction> extract(
-    ZCashCryptoContext context, {
+  FutureOr<ZcashTransaction> extract(
+    ZcashCryptoContext context, {
     SaplingBaseBundleVerifier? saplingBundleVerification,
     OrchardBaseBundleVerifier? orchardBundleVerification,
     bool verifyProofs = true,

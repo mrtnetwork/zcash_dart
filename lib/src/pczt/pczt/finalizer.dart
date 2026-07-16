@@ -21,7 +21,7 @@ abstract mixin class PcztIoFinalizer implements PcztExtractor {
     return transparent.outputs.isNotEmpty;
   }
 
-  Future<void> finalizeIo(ZCashCryptoContext context) async {
+  Future<void> finalizeIo(ZcashCryptoContext context) async {
     if (!hasShieldedSpends() && !hasTransparentSpends()) {
       throw PcztException.failed("finalizeIo", reason: "No spends.");
     }
@@ -31,11 +31,12 @@ abstract mixin class PcztIoFinalizer implements PcztExtractor {
     final tx = toTxData();
     final digest = tx.toTxDeigest();
     final sighash = SighashGenerator.v5(
-        tx: tx,
-        digest: digest,
-        input: ShieldedSignableInput(),
-        amounts: transparent.inputs.map((e) => e.value).toList(),
-        scriptPubKeys: transparent.inputs.map((e) => e.scriptPubkey).toList());
+      tx: tx,
+      digest: digest,
+      input: ShieldedSignableInput(),
+      amounts: transparent.inputs.map((e) => e.value).toList(),
+      scriptPubKeys: transparent.inputs.map((e) => e.scriptPubkey).toList(),
+    );
     await sapling.finalize(sighash: sighash, context: context);
     await orchard.finalize(sighash: sighash, context: context);
     if (hasShieldedSpends() || hasShieldedOutputs()) {

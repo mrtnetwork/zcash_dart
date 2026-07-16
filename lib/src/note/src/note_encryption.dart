@@ -29,23 +29,28 @@ class NoteEncryptionConst {
 }
 
 abstract class NoteDomain<
-    ENCSECRET extends Object,
-    ENCSECRETAGGPK extends Object,
-    DECPK,
-    DEC extends Object,
-    ENC extends Object,
-    NOTE extends Object,
-    RECIPIENT extends ShieldAddress,
-    DIVERSIFIEDTRANSMISSIONKEY extends Object,
-    INCOMINGVIEWINGKEY extends Object,
-    OUTGOINGVIEWINGKEY extends Object,
-    VALUECOMMITMENT extends Object,
-    EXTRACTEDCOMMITMENT extends Object,
-    OUTPUT extends ShieldedOutput<EXTRACTEDCOMMITMENT>,
-    ENCNOTE extends NoteEncryption<ENCSECRET, ENCSECRETAGGPK, NOTE,
-        OUTGOINGVIEWINGKEY>> {
+  ENCSECRET extends Object,
+  ENCSECRETAGGPK extends Object,
+  DECPK,
+  DEC extends Object,
+  ENC extends Object,
+  NOTE extends Object,
+  RECIPIENT extends ShieldAddress,
+  DIVERSIFIEDTRANSMISSIONKEY extends Object,
+  INCOMINGVIEWINGKEY extends Object,
+  OUTGOINGVIEWINGKEY extends Object,
+  VALUECOMMITMENT extends Object,
+  EXTRACTEDCOMMITMENT extends Object,
+  OUTPUT extends ShieldedOutput<EXTRACTEDCOMMITMENT>,
+  ENCNOTE extends NoteEncryption<
+    ENCSECRET,
+    ENCSECRETAGGPK,
+    NOTE,
+    OUTGOINGVIEWINGKEY
+  >
+> {
   final List<int> _nonce = const [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  ZCashCryptoContext get context;
+  ZcashCryptoContext get context;
 
   /// Derives the EphemeralSecretKey corresponding to this note.
   ENCSECRET? deriveEsk(NOTE note);
@@ -64,10 +69,7 @@ abstract class NoteDomain<
 
   /// Derives the SymmetricKey used to encrypt the note plaintext.
   List<int> kdf(DEC secret, EphemeralKeyBytes ephemeralKey);
-  List<int> encKdf(
-    ENC secret,
-    EphemeralKeyBytes ephemeralKey,
-  );
+  List<int> encKdf(ENC secret, EphemeralKeyBytes ephemeralKey);
 
   /// Encodes the given Note and Memo as a note plaintext.
   List<int> notePlaintextBytes(NOTE note, List<int> memo);
@@ -93,12 +95,18 @@ abstract class NoteDomain<
   EXTRACTEDCOMMITMENT cmstar(NOTE note);
 
   /// Parses the given note plaintext from the recipient's perspective.
-  (NOTE, RECIPIENT)? parseNotePlaintextWithoutMemoIvk(
-      INCOMINGVIEWINGKEY ivk, List<int> plaintext, OUTPUT output);
+  (NOTE, RECIPIENT, List<int>?)? parseNotePlaintextWithoutMemoIvk(
+    INCOMINGVIEWINGKEY ivk,
+    List<int> plaintext,
+    OUTPUT output,
+  );
 
   /// Parses the given note plaintext from the sender's perspective.
   (NOTE, RECIPIENT)? parseNotePlaintextWithoutMemoOvk(
-      DIVERSIFIEDTRANSMISSIONKEY pkD, List<int> plaintext, OUTPUT output);
+    DIVERSIFIEDTRANSMISSIONKEY pkD,
+    List<int> plaintext,
+    OUTPUT output,
+  );
 
   /// Extracts the memo field from the given note plaintext.
   List<int> extractMemo(List<int> plaintext);
@@ -122,7 +130,7 @@ abstract class NoteDomain<
     return (compactPart, memoPart);
   }
 
-  (NOTE, RECIPIENT)? _parseNotePlaintextWithoutMemoIvk({
+  (NOTE, RECIPIENT, List<int>?)? _parseNotePlaintextWithoutMemoIvk({
     required INCOMINGVIEWINGKEY ivk,
     required EphemeralKeyBytes ephemeralKey,
     required EXTRACTEDCOMMITMENT cm,
@@ -154,27 +162,30 @@ abstract class NoteDomain<
     return false;
   }
 
-  (NOTE, RECIPIENT)? tryCompactNoteDecryptionInner(
-      {required INCOMINGVIEWINGKEY ivk,
-      required EphemeralKeyBytes ephemeralKey,
-      required OUTPUT output,
-      required List<int> key}) {
+  (NOTE, RECIPIENT, List<int>?)? tryCompactNoteDecryptionInner({
+    required INCOMINGVIEWINGKEY ivk,
+    required EphemeralKeyBytes ephemeralKey,
+    required OUTPUT output,
+    required List<int> key,
+  }) {
     final plaintext = output.encCiphertextCompact;
     final result = List<int>.filled(plaintext.length, 0);
     ChaCha20.streamXOR(key, _nonce, plaintext, result, seekBytes: 64);
     return _parseNotePlaintextWithoutMemoIvk(
-        ivk: ivk,
-        ephemeralKey: ephemeralKey,
-        cm: output.cmstar(),
-        plaintext: result,
-        output: output);
+      ivk: ivk,
+      ephemeralKey: ephemeralKey,
+      cm: output.cmstar(),
+      plaintext: result,
+      output: output,
+    );
   }
 
-  (NOTE, RECIPIENT, List<int>)? tryNoteDecryptionInner(
-      {required INCOMINGVIEWINGKEY ivk,
-      required EphemeralKeyBytes ephemeralKey,
-      required OUTPUT output,
-      required List<int> key}) {
+  (NOTE, RECIPIENT, List<int>)? tryNoteDecryptionInner({
+    required INCOMINGVIEWINGKEY ivk,
+    required EphemeralKeyBytes ephemeralKey,
+    required OUTPUT output,
+    required List<int> key,
+  }) {
     final plain = output.splitCiphertextAtTag();
     if (plain == null) return null;
     final dec = ChaCha20Poly1305(key).decrypt(_nonce, plain.$2);
@@ -182,78 +193,151 @@ abstract class NoteDomain<
     final compact = splitPlaintextAtMemo(dec);
     if (compact == null) return null;
     final result = _parseNotePlaintextWithoutMemoIvk(
-        ivk: ivk,
-        plaintext: compact.$1,
-        cm: output.cmstar(),
-        ephemeralKey: ephemeralKey,
-        output: output);
+      ivk: ivk,
+      plaintext: compact.$1,
+      cm: output.cmstar(),
+      ephemeralKey: ephemeralKey,
+      output: output,
+    );
     if (result == null) return null;
     return (result.$1, result.$2, compact.$2);
   }
 
-  (NOTE, RECIPIENT, List<int>)? tryNoteDecryption(
-      {required INCOMINGVIEWINGKEY ivk, required OUTPUT output}) {
+  (NOTE, RECIPIENT, List<int>)? tryNoteDecryption({
+    required INCOMINGVIEWINGKEY ivk,
+    required OUTPUT output,
+  }) {
     final ephemeralKey = output.ephemeralKey;
     final epk = decEpk(ephemeralKey);
     if (epk == null) return null;
     final secret = kaAgreeDec(ivk, epk);
     final key = kdf(secret, ephemeralKey);
     return tryNoteDecryptionInner(
-        ivk: ivk, ephemeralKey: ephemeralKey, output: output, key: key);
+      ivk: ivk,
+      ephemeralKey: ephemeralKey,
+      output: output,
+      key: key,
+    );
   }
 
   List<BatchOutputDecryptionResult<EXTRACTEDCOMMITMENT, O, NOTE, RECIPIENT>>
-      batchOutputCompactNoteDecryption<O extends OUTPUT>(
-          {required INCOMINGVIEWINGKEY ivk, required List<O> outputs}) {
+  batchOutputCompactNoteDecryption<O extends OUTPUT>({
+    required INCOMINGVIEWINGKEY ivk,
+    required List<O> outputs,
+  }) {
     List<BatchOutputDecryptionResult<EXTRACTEDCOMMITMENT, O, NOTE, RECIPIENT>>
-        result = [];
+    result = [];
     for (final output in outputs) {
       final decrypt = tryCompactNoteDecryption(ivk: ivk, output: output);
       if (decrypt == null) continue;
-      result.add(BatchOutputDecryptionResult(
-          output: output, note: decrypt.$1, recipient: decrypt.$2));
+      result.add(
+        BatchOutputDecryptionResult(
+          output: output,
+          note: decrypt.$1,
+          recipient: decrypt.$2,
+          memo: decrypt.$3,
+        ),
+      );
+    }
+    return result;
+  }
+
+  List<BatchOutputDecryptionResult<EXTRACTEDCOMMITMENT, O, NOTE, RECIPIENT>>
+  batchOutputNoteDecryption<O extends OUTPUT>({
+    required INCOMINGVIEWINGKEY ivk,
+    required List<O> outputs,
+  }) {
+    List<BatchOutputDecryptionResult<EXTRACTEDCOMMITMENT, O, NOTE, RECIPIENT>>
+    result = [];
+    for (final output in outputs) {
+      final decrypt = tryNoteDecryption(ivk: ivk, output: output);
+      if (decrypt == null) continue;
+      result.add(
+        BatchOutputDecryptionResult(
+          output: output,
+          note: decrypt.$1,
+          recipient: decrypt.$2,
+          memo: decrypt.$3,
+        ),
+      );
     }
     return result;
   }
 
   BatchIVKDecryptionResult<INCOMINGVIEWINGKEY, NOTE, RECIPIENT>?
-      batchIvkCompactNoteDecryption(
-          {required List<INCOMINGVIEWINGKEY> ivks, required OUTPUT output}) {
+  batchIvkCompactNoteDecryption({
+    required List<INCOMINGVIEWINGKEY> ivks,
+    required OUTPUT output,
+  }) {
     for (final ivk in ivks) {
       final decrypt = tryCompactNoteDecryption(ivk: ivk, output: output);
       if (decrypt != null) {
         return BatchIVKDecryptionResult(
-            ivk: ivk, note: decrypt.$1, recipient: decrypt.$2);
+          ivk: ivk,
+          note: decrypt.$1,
+          recipient: decrypt.$2,
+          memo: decrypt.$3,
+        );
       }
     }
     return null;
   }
 
-  (NOTE, RECIPIENT)? tryCompactNoteDecryption(
-      {required INCOMINGVIEWINGKEY ivk, required OUTPUT output}) {
+  BatchIVKDecryptionResult<INCOMINGVIEWINGKEY, NOTE, RECIPIENT>?
+  batchIvkNoteDecryption({
+    required List<INCOMINGVIEWINGKEY> ivks,
+    required OUTPUT output,
+  }) {
+    for (final ivk in ivks) {
+      final decrypt = tryNoteDecryption(ivk: ivk, output: output);
+      if (decrypt != null) {
+        return BatchIVKDecryptionResult(
+          ivk: ivk,
+          note: decrypt.$1,
+          recipient: decrypt.$2,
+          memo: decrypt.$3,
+        );
+      }
+    }
+    return null;
+  }
+
+  (NOTE, RECIPIENT, List<int>?)? tryCompactNoteDecryption({
+    required INCOMINGVIEWINGKEY ivk,
+    required OUTPUT output,
+  }) {
     final ephemeralKey = output.ephemeralKey;
     final epk = decEpk(ephemeralKey);
     if (epk == null) return null;
     final secret = kaAgreeDec(ivk, epk);
     final key = kdf(secret, ephemeralKey);
     return tryCompactNoteDecryptionInner(
-        ivk: ivk, ephemeralKey: ephemeralKey, output: output, key: key);
+      ivk: ivk,
+      ephemeralKey: ephemeralKey,
+      output: output,
+      key: key,
+    );
   }
 
-  (NOTE, RECIPIENT, List<int>)? tryOutputRecoveryWithOvk(
-      {required OUTGOINGVIEWINGKEY ovk,
-      required OUTPUT output,
-      required List<int> outCiphertext,
-      required VALUECOMMITMENT cv}) {
+  (NOTE, RECIPIENT, List<int>?)? tryOutputRecoveryWithOvk({
+    required OUTGOINGVIEWINGKEY ovk,
+    required OUTPUT output,
+    required List<int> outCiphertext,
+    required VALUECOMMITMENT cv,
+  }) {
     final ock = deriveOck(ovk, cv, output.cmstar(), output.ephemeralKey);
     return tryOutputRecoveryWithOck(
-        ock: ock, output: output, outCiphertext: outCiphertext);
+      ock: ock,
+      output: output,
+      outCiphertext: outCiphertext,
+    );
   }
 
-  (NOTE, RECIPIENT, List<int>)? tryOutputRecoveryWithOck(
-      {required List<int> ock,
-      required OUTPUT output,
-      required List<int> outCiphertext}) {
+  (NOTE, RECIPIENT, List<int>?)? tryOutputRecoveryWithOck({
+    required List<int> ock,
+    required OUTPUT output,
+    required List<int> outCiphertext,
+  }) {
     assert(ock.length == NoteEncryptionConst.outGoingCypherKey);
     assert(outCiphertext.length == NoteEncryptionConst.outCiphertextSize);
     if (ock.length != NoteEncryptionConst.outGoingCypherKey ||
@@ -268,7 +352,7 @@ abstract class NoteDomain<
     return _tryOutputRecoveryWithPkdEsk(pkD: pkD, esk: esk, output: output);
   }
 
-  (NOTE, RECIPIENT, List<int>)? _tryOutputRecoveryWithPkdEsk({
+  (NOTE, RECIPIENT, List<int>?)? _tryOutputRecoveryWithPkdEsk({
     required DIVERSIFIEDTRANSMISSIONKEY pkD,
     required ENCSECRET esk,
     required OUTPUT output,
@@ -292,19 +376,26 @@ abstract class NoteDomain<
       }
     }
     if (_checkNoteValidaty(
-        note: note.$1, ephemeralKey: ephemeralKey, cm: output.cmstar())) {
+      note: note.$1,
+      ephemeralKey: ephemeralKey,
+      cm: output.cmstar(),
+    )) {
       return (note.$1, note.$2, compact.$2);
     }
     return null;
   }
 
-  ENCNOTE createNote(
-      {required NOTE note, required List<int> memo, OUTGOINGVIEWINGKEY? ovk});
-  ENCNOTE createNoteWithEsk(
-      {required NOTE note,
-      required List<int> memo,
-      required List<int> esk,
-      OUTGOINGVIEWINGKEY? ovk});
+  ENCNOTE createNote({
+    required NOTE note,
+    required List<int> memo,
+    OUTGOINGVIEWINGKEY? ovk,
+  });
+  ENCNOTE createNoteWithEsk({
+    required NOTE note,
+    required List<int> memo,
+    required List<int> esk,
+    OUTGOINGVIEWINGKEY? ovk,
+  });
 
   List<int> encryptNotePlaintext(ENCNOTE encryptedNote) {
     final pkD = getPkD(encryptedNote.note);
@@ -315,10 +406,11 @@ abstract class NoteDomain<
     return enc;
   }
 
-  List<int> encryptOutgoingPlaintext(
-      {required ENCNOTE encryotedNote,
-      required VALUECOMMITMENT cv,
-      required EXTRACTEDCOMMITMENT cm}) {
+  List<int> encryptOutgoingPlaintext({
+    required ENCNOTE encryotedNote,
+    required VALUECOMMITMENT cv,
+    required EXTRACTEDCOMMITMENT cm,
+  }) {
     final ovk = encryotedNote.ovk;
     List<int> ock;
     List<int> input;

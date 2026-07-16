@@ -10,16 +10,19 @@ mixin TransactionBuilderFeeContoller on BaseTransactionBuilder {
 
   ZAmount getFee() {
     return feeBuilder.feeRequired(
-        network: network,
-        targetHeight: targetHeight,
-        trasparentInputSizes: transparent.inputSizes(),
-        transparentOutputSizes: transparent.outputSizes(),
-        saplingInputCount: sapling.spends.length,
-        saplingOutputCount: sapling.bundleType.numOutputs(
-            numSpends: sapling.spends.length,
-            numOutputs: sapling.outputs.length),
-        orchardActionCount: orchard.bundleType.numActions(
-            numSpends: orchard.spends.length,
-            numOutputs: orchard.outputs.length));
+      network: network,
+      targetHeight: targetHeight,
+      trasparentInputSizes: transparent.inputSizes(),
+      transparentOutputSizes: transparent.outputSizes(),
+      saplingInputCount: sapling.spends.length,
+      saplingOutputCount: sapling.bundleType.numOutputs(
+        numSpends: sapling.spends.length,
+        numOutputs: sapling.outputs.length,
+      ),
+      orchardActionCount: orchard.bundleType.numActions(
+        numSpends: orchard.spends.length,
+        numOutputs: orchard.outputs.length,
+      ),
+    );
   }
 }

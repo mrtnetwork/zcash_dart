@@ -126,3 +126,18 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+# Detect 64-bit architecture
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+    set(ARCH "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+    set(ARCH "arm64")
+else()
+    message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}. Only x86_64 and aarch64 are supported.")
+endif()
+set(ZK "${CMAKE_SOURCE_DIR}/${ARCH}/libzk.so")
+if(NOT EXISTS "${ZK}")
+    message(FATAL_ERROR "Cannot find ${ZK} for architecture ${ARCH}")
+endif()
+install(FILES "${ZK}"
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib"
+        COMPONENT Runtime)

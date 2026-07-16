@@ -4,32 +4,38 @@ import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
 
-class MemoryShardStore<H extends Object, C extends Comparable>
+class MemoryShardStore<H extends MerkleNodeValue, C extends Comparable>
     implements ShardStore<H, C> {
   final List<LocatedPrunableTree<H>> _shards;
   final SplayTreeMap<C, Checkpoint> _checkpoints;
   PrunableTree<H> _cap;
+  @override
+  int get totalShards => _shards.length;
 
   MemoryShardStore.empty(Hashable<H> hashContext)
-      : _cap = PrunableTree.empty(hashContext),
-        _shards = [],
-        _checkpoints = SplayTreeMap<C, Checkpoint>();
+    : _cap = PrunableTree.empty(hashContext),
+      _shards = [],
+      _checkpoints = SplayTreeMap<C, Checkpoint>();
 
   @override
-  ShardStore<H, C> clone() {
-    return MemoryShardStore.empty(hashContext)
-      .._cap = _cap
+  ShardStore<H, C> clone({Hashable<H>? hashContext}) {
+    return MemoryShardStore.empty(hashContext ?? this.hashContext)
+      .._cap = _cap.clone(hashContext: hashContext)
       .._checkpoints.addAll(_checkpoints)
-      .._shards.addAll(_shards);
+      .._shards.addAll(_shards.map((e) => e.clone(hashContext: hashContext)));
   }
 
   @override
   LocatedPrunableTree<H>? getShard(NodeAddress shardRoot) {
-    final idx = shardRoot.index;
-    if (idx < 0 || idx >= _shards.length) {
+    return getShardAtIndex(shardRoot.index);
+  }
+
+  @override
+  LocatedPrunableTree<H>? getShardAtIndex(int index) {
+    if (index < 0 || index >= _shards.length) {
       return null;
     }
-    return _shards[idx];
+    return _shards[index];
   }
 
   @override
@@ -80,10 +86,7 @@ class MemoryShardStore<H extends Object, C extends Comparable>
   }
 
   @override
-  void addCheckpoint(
-    C checkpointId,
-    Checkpoint checkpoint,
-  ) {
+  void addCheckpoint(C checkpointId, Checkpoint checkpoint) {
     _checkpoints[checkpointId] = checkpoint;
   }
 

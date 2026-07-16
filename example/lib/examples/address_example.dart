@@ -13,7 +13,7 @@ import 'package:zcash_dart/zcash.dart';
 void main() {
   /// Lazily initialized cryptographic context
   /// (curves, hashers, parameters are loaded on demand)
-  final context = DefaultZCashCryptoContext.lazy();
+  final context = DefaultZcashCryptoContext.lazy();
 
   /// Generate a 12-word BIP39 mnemonic
   final mnemonic = Bip39MnemonicGenerator().fromWordsNumber(
@@ -26,10 +26,10 @@ void main() {
   /// Create a Zcash account from seed
   /// - Testnet network
   /// - Transparent support enabled
-  final account = ZCashAccount.fromSeed(
+  final account = ZcashAccount.fromSeed(
     seedBytes: seed,
-    config: ZCashAccountConfig(
-      network: ZCashNetwork.testnet,
+    config: ZcashAccountConfig(
+      network: ZcashNetwork.testnet,
       transparent: true,
       orchard: true,
       sapling: true,
@@ -72,15 +72,15 @@ void main() {
 
   /// Orchard Incoming Viewing Keys (external + internal)
   final orchardIvks = [
-    orchardFvk.toIvk(scope: Bip44Changes.chainExt, context: context),
-    orchardFvk.toIvk(scope: Bip44Changes.chainInt, context: context),
+    orchardFvk.toIvk(Bip44Changes.chainExt, context: context),
+    orchardFvk.toIvk(Bip44Changes.chainInt, context: context),
   ];
 
   /// Default unified address (contains Orchard, Sapling, Transparent receivers)
   final address = ufvk.defaultAddress(context: context);
 
   /// Encode as a standard Zcash address string
-  final zcashAddress = ZCashAddress(address.address);
+  final zcashAddress = ZcashAddress(address.address);
 
   // Example:
   // print("Mnemonic: $mnemonic");

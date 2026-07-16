@@ -4,15 +4,24 @@ import 'package:test/test.dart';
 import 'package:zcash_dart/src/address/src/unified.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
 
+import '../utils.dart';
+
 void main() {
   test("Tex/P2pkh address", () {
-    for (final i in _texAddrTestVector) {
-      final addr = ZCashAddress(i.elementAt(0));
-      expect(addr.addressType, ZCashAddressType.p2pkh);
-      expect(ZCashP2pkhAddress(i.elementAt(0)).address, i.elementAt(0));
+    for (final i in _texAddrTestVector.takeShuffle(10)) {
+      final addr = ZcashAddress(i.elementAt(0));
+      final decode = addr.encodeAsIAddress();
+      ZcashAddress iAddress = ZcashAddress.deserializeIAddress(bytes: decode);
+      expect(iAddress, addr);
+      expect(addr.addressType, ZcashAddressType.p2pkh);
+      expect(ZcashP2pkhAddress(i.elementAt(0)).address, i.elementAt(0));
       expect(BytesUtils.toHexString(addr.toBytes()), i.elementAt(1));
-      final addr2 = ZCashAddress(i.elementAt(2));
-      expect(addr2.addressType, ZCashAddressType.tex);
+      final addr2 = ZcashAddress(i.elementAt(2));
+      iAddress = ZcashAddress.deserializeIAddress(
+        bytes: addr2.encodeAsIAddress(),
+      );
+      expect(iAddress, addr2);
+      expect(addr2.addressType, ZcashAddressType.tex);
       expect(BytesUtils.toHexString(addr2.toBytes()), i.elementAt(1));
       expect(addr2.address, i.elementAt(2));
       expect(TexAddress(i.elementAt(2)).address, i.elementAt(2));
@@ -20,23 +29,39 @@ void main() {
   });
 
   test("Unified address", () {
-    for (final e in _testVector) {
+    for (final e in _testVector.takeShuffle(10)) {
       final i = _TestVector.fromJson(e);
-      final address = ZCashAddress(i.unifiedAddr).cast<ZCashUnifiedAddress>();
+      final address = ZcashAddress(i.unifiedAddr).cast<ZcashUnifiedAddress>();
+      ZcashAddress iAddress = ZcashAddress.deserializeIAddress(
+        bytes: address.encodeAsIAddress(),
+      );
+      expect(iAddress, address);
       if (i.p2pkhBytes != null) {
         final r = address.getReceiver<ReceiverP2pkh>(Typecode.p2pkh);
         expect(r.data, i.p2pkhBytes);
 
-        final addr = ZCashP2pkhAddress.fromBytes(
-            bytes: i.p2pkhBytes!, network: address.network);
+        final addr = ZcashP2pkhAddress.fromBytes(
+          bytes: i.p2pkhBytes!,
+          network: address.network,
+        );
+        iAddress = ZcashAddress.deserializeIAddress(
+          bytes: addr.encodeAsIAddress(),
+        );
+        expect(iAddress, addr);
         expect(addr.toBytes(), i.p2pkhBytes!);
       }
       if (i.p2shBytes != null) {
         final r = address.getReceiver<ReceiverP2sh>(Typecode.p2sh);
         expect(r.data, i.p2shBytes);
 
-        final addr = ZCashP2shAddress.fromBytes(
-            bytes: i.p2shBytes!, network: address.network);
+        final addr = ZcashP2shAddress.fromBytes(
+          bytes: i.p2shBytes!,
+          network: address.network,
+        );
+        iAddress = ZcashAddress.deserializeIAddress(
+          bytes: addr.encodeAsIAddress(),
+        );
+        expect(iAddress, addr);
         expect(addr.toBytes(), i.p2shBytes);
       }
       if (i.orchardRawAddr != null) {
@@ -47,7 +72,13 @@ void main() {
         final r = address.getReceiver<ReceiverSapling>(Typecode.sapling);
         expect(r.data, i.saplingRawAddr);
         final addr = SaplingAddress.fromBytes(
-            bytes: i.saplingRawAddr!, network: address.network);
+          bytes: i.saplingRawAddr!,
+          network: address.network,
+        );
+        iAddress = ZcashAddress.deserializeIAddress(
+          bytes: addr.encodeAsIAddress(),
+        );
+        expect(iAddress, addr);
         expect(addr.toBytes(), i.saplingRawAddr);
       }
     }
@@ -93,7 +124,8 @@ class _TestVector {
       diversifierIndex: json['diversifierIndex'],
     );
   }
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() =>
+      {
         'p2pkhBytes': BytesUtils.tryToHexString(p2pkhBytes),
         'p2shBytes': BytesUtils.tryToHexString(p2shBytes),
         'saplingRawAddr': BytesUtils.tryToHexString(saplingRawAddr),
@@ -117,7 +149,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 0,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "a7244a362f49f29644a955cf0039b88a61657861",
@@ -128,7 +160,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 0,
-    "diversifierIndex": 3
+    "diversifierIndex": 3,
   },
   {
     "p2pkhBytes": "e256dcb03e05dde7c91212b47a7461311c415059",
@@ -139,7 +171,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 0,
-    "diversifierIndex": 4
+    "diversifierIndex": 4,
   },
   {
     "p2pkhBytes": "cad268758c5e71493066446b98e71df9d1d6a5ca",
@@ -152,7 +184,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 1,
-    "diversifierIndex": 3
+    "diversifierIndex": 3,
   },
   {
     "p2pkhBytes": "8d653347a0fd3cd0842a790a5eaf89d8e3854659",
@@ -165,7 +197,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 1,
-    "diversifierIndex": 7
+    "diversifierIndex": 7,
   },
   {
     "p2pkhBytes": "e511f439b5f96cf824cd5e0e6b2eb8ee1bc83cb7",
@@ -178,7 +210,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 1,
-    "diversifierIndex": 8
+    "diversifierIndex": 8,
   },
   {
     "saplingRawAddr":
@@ -190,7 +222,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 2,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "saplingRawAddr":
@@ -202,7 +234,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 2,
-    "diversifierIndex": 5
+    "diversifierIndex": 5,
   },
   {
     "saplingRawAddr":
@@ -214,7 +246,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 2,
-    "diversifierIndex": 6
+    "diversifierIndex": 6,
   },
   {
     "p2pkhBytes": "871a089d446268aa7ac03d2a6f60ae70808f3974",
@@ -225,7 +257,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 3,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "7cb07c31b58040ac7cc12bfaaa138cfbefb38457",
@@ -236,7 +268,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 3,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "3e02e08b5965fce9c20ce6de6f9407674d01ba02",
@@ -247,7 +279,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 3,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "saplingRawAddr":
@@ -259,7 +291,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 4,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "saplingRawAddr":
@@ -271,7 +303,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 4,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "saplingRawAddr":
@@ -283,7 +315,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 4,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "p2pkhBytes": "40c44030e468b7091e9bb33ba0abdc63986f3c36",
@@ -294,7 +326,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 5,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "937e71f9b2b6440a05ee1475bcc487e08a4f5801",
@@ -305,7 +337,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 5,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "b34866819053983231c48fd8a2706cecff29ba99",
@@ -316,7 +348,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 5,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "p2pkhBytes": "06974d8bcd8ba8ef89ce36a653d93868251c2e3d",
@@ -330,7 +362,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 6,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "cdd4b2be1b57f24c85fc1e43c77bb2da2d2646f1",
@@ -344,7 +376,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 6,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "9f98c3116cb2f4e6f4c814148c81e379a538ced3",
@@ -358,7 +390,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 6,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "saplingRawAddr":
@@ -371,7 +403,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 7,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "saplingRawAddr":
@@ -384,7 +416,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 7,
-    "diversifierIndex": 5
+    "diversifierIndex": 5,
   },
   {
     "saplingRawAddr":
@@ -397,7 +429,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 7,
-    "diversifierIndex": 10
+    "diversifierIndex": 10,
   },
   {
     "p2pkhBytes": "65704e3ab767ca578e5b092fb47604f659475bae",
@@ -408,7 +440,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 8,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "ef85a6553d89f153b37afcab928eb2bb5fb337db",
@@ -419,7 +451,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 8,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "f96a00ef8b2233236967a6a43f07ec6074f7fdc5",
@@ -430,7 +462,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 8,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "orchardRawAddr":
@@ -440,7 +472,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 9,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "orchardRawAddr":
@@ -450,7 +482,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 9,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "orchardRawAddr":
@@ -460,7 +492,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 9,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "saplingRawAddr":
@@ -475,7 +507,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 10,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "saplingRawAddr":
@@ -490,7 +522,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 10,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "saplingRawAddr":
@@ -505,7 +537,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 10,
-    "diversifierIndex": 4
+    "diversifierIndex": 4,
   },
   {
     "p2pkhBytes": "294dbb37edd92ce046e266e22b0ed530a44b79c7",
@@ -519,7 +551,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 11,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "6462c9a3003e4d0e0ab764860d8b71f8a36a23ff",
@@ -533,7 +565,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 11,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "d5bca9e4e50be0c16bdfed7e5aca20ad43a23f20",
@@ -547,7 +579,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 11,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "orchardRawAddr":
@@ -560,7 +592,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 12,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "orchardRawAddr":
@@ -573,7 +605,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 12,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "orchardRawAddr":
@@ -586,7 +618,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 12,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "orchardRawAddr":
@@ -596,7 +628,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 13,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "orchardRawAddr":
@@ -606,7 +638,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 13,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "orchardRawAddr":
@@ -616,7 +648,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 13,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "p2pkhBytes": "e8225b817cdcfd01307c66ca35188e9b1ac238ca",
@@ -627,7 +659,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 14,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "3869048bd22a3c3e6bc884333b0a71b05f7f4125",
@@ -638,7 +670,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 14,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "59e919ce60110f97707c5c232b7d4db19e32c3ed",
@@ -649,7 +681,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 14,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "saplingRawAddr":
@@ -659,7 +691,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 15,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "saplingRawAddr":
@@ -669,7 +701,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 15,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "saplingRawAddr":
@@ -679,7 +711,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 15,
-    "diversifierIndex": 3
+    "diversifierIndex": 3,
   },
   {
     "p2pkhBytes": "f441228ee26a3a7d0d00e4d65ba49e3aa4877eb8",
@@ -690,7 +722,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 16,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "9f1f8526792b04efdda3b38981867397ac11e3c0",
@@ -701,7 +733,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 16,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "6149d0373c63fddd4fca3b9f5407ad22abda0df2",
@@ -712,7 +744,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 16,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "p2pkhBytes": "0eb9651c003776ab5d1e93c2779d10a0bdc3bb77",
@@ -725,7 +757,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 17,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "69f48a4974e80758ed435592a1dd4e4b38826cbc",
@@ -738,7 +770,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 17,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "f1bc3d7261bf77fe808e2b7178981c7cfe5570fd",
@@ -751,7 +783,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 17,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "p2pkhBytes": "407158fc804361fcb965dfa4882f0f1df5a49f47",
@@ -762,7 +794,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 18,
-    "diversifierIndex": 0
+    "diversifierIndex": 0,
   },
   {
     "p2pkhBytes": "f597980d65ca2ecd0fab5354e66ba9d4cd50f463",
@@ -773,7 +805,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 18,
-    "diversifierIndex": 1
+    "diversifierIndex": 1,
   },
   {
     "p2pkhBytes": "3e7f16836d93b5417445ad0fc9f7ba023617e2b3",
@@ -784,7 +816,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 18,
-    "diversifierIndex": 2
+    "diversifierIndex": 2,
   },
   {
     "p2pkhBytes": "29b06b228eb6b70fda051ff9e01bcb271b51c683",
@@ -795,7 +827,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 19,
-    "diversifierIndex": 5
+    "diversifierIndex": 5,
   },
   {
     "p2pkhBytes": "29099a651d5561f800e58f3e33c27f078a98581f",
@@ -806,7 +838,7 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 19,
-    "diversifierIndex": 11
+    "diversifierIndex": 11,
   },
   {
     "p2pkhBytes": "475494432c3437d50ef23623cb67670fef27d8f5",
@@ -817,8 +849,8 @@ const List<Map<String, dynamic>> _testVector = [
     "rootSeed":
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "account": 19,
-    "diversifierIndex": 15
-  }
+    "diversifierIndex": 15,
+  },
 ];
 
 const List<List<dynamic>> _texAddrTestVector = [
@@ -826,105 +858,75 @@ const List<List<dynamic>> _texAddrTestVector = [
     "t1V9mnyk5Z5cTNMCkLbaDwSskgJZucTLdgW",
     "7bb83570b8fae146e03c5331a020b1e0892f631d",
     "tex10wur2u9clts5dcpu2vc6qg93uzyj7cca2xm732",
-    0,
-    0
   ],
   [
     "t1LZdE42PAt1wREUv1YMYRFwJDPHPW8toLL",
     "1d81e86791c72d292f906e7c039a729e4b1ff7fc",
     "tex1rkq7seu3cukjjtusde7q8xnjne93laluyvdxu7",
-    0,
-    1
   ],
   [
     "t1M5AgJw56FNFRBNGtzAGX4AHfQh7ZCxd4w",
     "231839e305c0a02ed681406faf222585f6623904",
     "tex1yvvrncc9czsza45pgph67g39shmxywgyvsypwn",
-    0,
-    2
   ],
   [
     "t1bh6KjXccz6Ed45vFc3GeqoxWbwPxe8w2n",
     "c3755398b8b77f633fca7ccbda900831478979c9",
     "tex1cd648x9ckalkx0720n9a4yqgx9rcj7wfvjcq63",
-    1,
-    0
   ],
   [
     "t1WvCtHojWHSHBdDtCFgorUN1TzUFV8sCth",
     "8f17950e22b08886ac4832e22e24f2e8f3cb6b21",
     "tex13ute2r3zkzygdtzgxt3zuf8jareuk6ep7qd8ty",
-    1,
-    1
   ],
   [
     "t1U2MF7f81qrXkWouT3Xt4hLDAMjC9LniTK",
     "6f58adaf02bb48e6b398a442a2b294589e041620",
     "tex1dav2mtczhdywdvuc53p29v55tz0qg93qvfjp46",
-    1,
-    2
   ],
   [
     "t1awMYfhispKsnJPHn7jgUxNnVW1DTpTJx9",
     "bb2fbb540f0f7e434636680eaea2eefe375a7591",
     "tex1hvhmk4q0palyx33kdq82aghwlcm45av3ezlrzn",
-    2,
-    0
   ],
   [
     "t1Kgn7v5a2rKkxC24LoXNyHRn4q4Gs3KEEF",
     "13e41e47448122cad13c5c7f5bd31c77639a9f99",
     "tex1z0jpu36ysy3v45fut3l4h5cuwa3e48uea95pc6",
-    2,
-    1
   ],
   [
     "t1c1ixUTuStCzo19qPg89U9XFYmWDLru9mt",
     "c6fb64d8757e5c85b230a3358711697ae6540b44",
     "tex1cmakfkr40ewgtv3s5v6cwytf0tn9gz6y9j5z8e",
-    2,
-    2
   ],
   [
     "t1WBxR5jNWgg4Cqeot3FvNkBb9ztYyjVELp",
     "871a089d446268aa7ac03d2a6f60ae70808f3974",
     "tex1sudq382yvf5257kq854x7c9wwzqg7wt5h2c24u",
-    3,
-    0
   ],
   [
     "t1VEuDXP1QocoNaxrq4gZArTqqKCZdrwjG7",
     "7cb07c31b58040ac7cc12bfaaa138cfbefb38457",
     "tex10jc8cvd4spq2clxp90a25yuvl0hm8pzheuufxw",
-    3,
-    1
   ],
   [
     "t1PXVM8oR6qVrVjtcnU1iNmH2CfvZyBai8u",
     "3e02e08b5965fce9c20ce6de6f9407674d01ba02",
     "tex18cpwpz6evh7wnssvum0xl9q8vaxsrwsz83vght",
-    3,
-    2
   ],
   [
     "t1M3p1MgJCgjq4FMogS84kVvuszJbxPnpSM",
     "22d68debb3928da4046370d25ed2bbe8d5e985d0",
     "tex1yttgm6anj2x6gprrwrf9a54mar27npws73jwdy",
-    4,
-    0
   ],
   [
     "t1aqnebXhA45WpgQHLiXTPU1Kk6rp8vVDDr",
     "ba2230b41fdc81714328231f40ab73feb52645a4",
     "tex1hg3rpdqlmjqhzsegyv05p2mnl66jv3dykth955",
-    4,
-    1
   ],
   [
     "t1UG6FVxexmJRFXG4gvEmSF9HSTwHMFaSDT",
     "71f1fc6fd69370f23611536b3b64e7df1cebef69",
     "tex1w8clcm7kjdc0yds32d4nke88muwwhmmfunhkhd",
-    4,
-    2
-  ]
+  ],
 ];

@@ -7,9 +7,10 @@ import 'package:zcash_dart/src/transparent/pczt/pczt.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
 abstract class PcztBundle<
-    BUNDLE extends Bundle<BUNDLE>,
-    EXT extends ExtractedBundle<BUNDLE>,
-    PCZT extends PcztBundle<BUNDLE, EXT, PCZT>> {
+  BUNDLE extends Bundle<BUNDLE>,
+  EXT extends ExtractedBundle<BUNDLE>,
+  PCZT extends PcztBundle<BUNDLE, EXT, PCZT>
+> {
   BUNDLE? extractEffects();
   EXT? extract();
   PCZT clone();
@@ -31,29 +32,33 @@ abstract mixin class PcztV1 {
 class PcztZip32Derivation with LayoutSerializable, Equality {
   final List<int> seedFingerprint;
   final List<Bip32KeyIndex> derivationPath;
-  PcztZip32Derivation(
-      {required List<int> seedFingerprint,
-      required List<Bip32KeyIndex> derivationPath})
-      : seedFingerprint = seedFingerprint
-            .exc(
-                length: 32,
-                operation: "PcztZip32Derivation",
-                reason: "Invalid seed fingerprint bytes length.")
-            .asImmutableBytes,
-        derivationPath = derivationPath.immutable;
+  PcztZip32Derivation({
+    required List<int> seedFingerprint,
+    required List<Bip32KeyIndex> derivationPath,
+  }) : seedFingerprint =
+           seedFingerprint
+               .exc(
+                 length: 32,
+                 operation: "PcztZip32Derivation",
+                 reason: "Invalid seed fingerprint bytes length.",
+               )
+               .asImmutableBytes,
+       derivationPath = derivationPath.immutable;
   factory PcztZip32Derivation.deserializeJson(Map<String, dynamic> json) {
     return PcztZip32Derivation(
-        seedFingerprint: json.valueAsBytes("seed_fingerprint"),
-        derivationPath: json
-            .valueEnsureAsList<int>("derivation_path")
-            .map((e) => Bip32KeyIndex(e))
-            .toList());
+      seedFingerprint: json.valueAsBytes("seed_fingerprint"),
+      derivationPath:
+          json
+              .valueEnsureAsList<int>("derivation_path")
+              .map((e) => Bip32KeyIndex(e))
+              .toList(),
+    );
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.fixedBlob32(property: "seed_fingerprint"),
-      LayoutConst.bcsVector(LayoutConst.lebU32(), property: "derivation_path")
+      LayoutConst.bcsVector(LayoutConst.lebU32(), property: "derivation_path"),
     ], property: property);
   }
 
@@ -66,7 +71,7 @@ class PcztZip32Derivation with LayoutSerializable, Equality {
   Map<String, dynamic> toSerializeJson() {
     return {
       "seed_fingerprint": seedFingerprint,
-      "derivation_path": derivationPath.map((e) => e.index).toList()
+      "derivation_path": derivationPath.map((e) => e.index).toList(),
     };
   }
 

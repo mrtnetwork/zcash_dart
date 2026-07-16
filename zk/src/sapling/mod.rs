@@ -1,11 +1,15 @@
+use std::sync::Arc;
+
 use bellman::groth16::Proof;
 use bls12_381::Bls12;
 pub mod circuit;
 pub mod constants;
-pub mod params;
+
+pub mod node;
 pub mod pedersen_hash;
 pub mod prover;
-
+pub mod types;
+pub mod utils;
 use crate::sapling::{
     circuit::{OutputParameters, SpendParameters},
     constants::GROTH_PROOF_SIZE,
@@ -13,7 +17,7 @@ use crate::sapling::{
 };
 
 pub struct SaplingSpendProver {
-    pub(crate) spend_params: &'static SpendParameters,
+    pub(crate) spend_params: Arc<SpendParameters>,
 }
 
 impl SpendProver for SaplingSpendProver {
@@ -47,7 +51,7 @@ impl SpendProver for SaplingSpendProver {
 }
 
 pub struct SaplingOutputProver {
-    pub(crate) output_params: &'static OutputParameters,
+    pub(crate) output_params: Arc<OutputParameters>,
 }
 
 impl OutputProver for SaplingOutputProver {

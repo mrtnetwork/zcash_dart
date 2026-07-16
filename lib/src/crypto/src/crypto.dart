@@ -3,21 +3,15 @@ import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/crypto/src/exception.dart';
 import 'package:zcash_dart/src/orchard/orchard.dart';
-import 'package:zcash_dart/src/pedersen_hash/src/hash.dart';
 import 'package:zcash_dart/src/sapling/sapling.dart';
 import 'package:zcash_dart/src/transparent/keys/private_key.dart';
-import 'package:zcash_dart/src/zk_proof/bellman/bellman.dart';
-import 'package:zcash_dart/src/zk_proof/bellman/src/sapling/proof.dart';
-import 'package:zcash_dart/src/zk_proof/bellman/src/sapling/verifier.dart';
-import 'package:zcash_dart/src/zk_proof/halo2/src/orchard/constants/fixed_bases.dart';
-import 'package:zcash_dart/src/zk_proof/halo2/src/orchard/prover.dart';
-import 'package:zcash_dart/src/zk_proof/halo2/src/orchard/verifier.dart';
+import 'package:zcash_dart/src/zk_proof/lib/lib.dart';
 
 /// Provides cryptographic primitives and precomputed tables required for
-/// ZCash operations (e.g., Poseidon hash, Sinsemilla commitments, and
+/// Zcash operations (e.g., Poseidon hash, Sinsemilla commitments, and
 /// domain-separated commitments).
 ///
-/// ⚠️ Expensive to instantiate: creating a `DefaultZCashCryptoContext` allocates
+/// ⚠️ Expensive to instantiate: creating a `DefaultZcashCryptoContext` allocates
 /// internal tables and constants, so it should be created **once** and
 /// passed to any code that requires it, rather than recreated repeatedly.
 ///
@@ -27,22 +21,8 @@ import 'package:zcash_dart/src/zk_proof/halo2/src/orchard/verifier.dart';
 /// Refer to the examples for configuring the prover and verifier.
 
 /// Provides cryptographic primitives required for Zcash protocol operations.
-abstract mixin class ZCashCryptoContext implements ZCryptoContext {
-  const ZCashCryptoContext();
-
-  /// Returns a hash domain for the given domain string.
-  HashDomainNative getHashDomain(String domain, {bool withSeperator = false});
-
-  /// Returns the domain separation base point for the given domain.
-  PallasAffineNativePoint getDomainPoint(
-    String domain, {
-    bool withSeperator = true,
-  });
-
-  /// Returns fixed-base constants used for Orchard circuit operations.
-  (List<List<PallasNativeFp>>, List<int>) getFixedConstants(
-    OrchardFixedBases base,
-  );
+abstract mixin class ZcashCryptoContext implements ZCryptoContext {
+  const ZcashCryptoContext();
 
   /// Signs a message using RedPallas.
   FutureOr<ReddsaSignature> signRedPallas(
@@ -82,16 +62,16 @@ abstract mixin class ZCashCryptoContext implements ZCryptoContext {
 
   /// Creates Sapling spend proofs.
   FutureOr<List<GrothProofBytes>> createSaplingSpendProofs(
-    List<SaplingProofInputs<SaplingSpend>> args,
+    List<SaplingSpendParams> args,
   );
 
   /// Creates Sapling output proofs.
   FutureOr<List<GrothProofBytes>> createSaplingOutputProofs(
-    List<SaplingProofInputs<SaplingOutput>> args,
+    List<SaplingOutputParams> args,
   );
 
   /// Verifies an Orchard proof.
-  FutureOr<bool> verifyOrchardProof(OrchardVerifyInputs args);
+  FutureOr<bool> verifyOrchardProof(OrchardVerifyProofInputs args);
 
   /// Verifies Sapling spend proofs.
   FutureOr<bool> verifySaplingSpendProofs(List<SaplingVerifyInputs> proofs);
@@ -99,98 +79,61 @@ abstract mixin class ZCashCryptoContext implements ZCryptoContext {
   /// Verifies Sapling output proofs.
   FutureOr<bool> verifySaplingOutputProofs(List<SaplingVerifyInputs> proofs);
 
-  /// Returns a Pedersen hash implementation.
-  PedersenHashNative getPedersen();
+  // // /// Returns a Pedersen hash implementation.
+  // PedersenHashNative getPedersen();
 
-  /// Returns an Orchard prover instance.
-  BaseOrchardProver orchardProver();
-
-  /// Returns an Orchard verifier instance.
-  BaseOrchardVerifier orchardVerifier();
-
-  /// Returns a Sapling prover instance.
-  BaseSaplingProver saplingProver();
-
-  /// Returns a Sapling verifier instance.
-  BaseSaplingVerifier saplingVerifier();
+  JubJubNativePoint pedersonHash({
+    required List<bool> bits,
+    required Personalization personalization,
+  });
 
   /// Returns the Orchard Merkle hashable implementation.
   OrchardMerkleHashable orchardHashable();
 
   /// Returns the Sapling Merkle hashable implementation.
   SaplingMerkleHashable saplingHashable();
-
-  /// Returns the Poseidon hash specification.
-  P128Pow5T3NativeFp getPoseidonSpec();
-
-  /// Returns Sinsemilla generator points.
-  List<PallasAffineNativePoint> getSinsemillaS();
 }
 
 /// Default implementation of the Zcash cryptographic context.
-class DefaultZCashCryptoContext extends ZCashCryptoContext {
-  /// Enables or disables Dart-based PLONK proof generation.
-  final bool enableDartPlonk;
+class DefaultZcashCryptoContext extends ZcashCryptoContext {
+  ZKLib? _lib;
+  ZKLib? get lib => _lib;
 
-  DefaultZCashCryptoContext._({this.enableDartPlonk = false});
+  DefaultZcashCryptoContext({ZKLib? lib}) : _lib = lib;
 
   /// Creates a fully initialized crypto context with optional injected components.
-  factory DefaultZCashCryptoContext.sync({
-    bool enableDartPlonk = false,
-    BaseOrchardProver? orchardProver,
-    BaseOrchardVerifier? orchardVerifier,
+  factory DefaultZcashCryptoContext.sync({
     P128Pow5T3NativeFp? spec,
     SaplingMerkleHashable? saplingMerkleHashable,
     OrchardMerkleHashable? orchardMerkleHashable,
-    List<PallasAffineNativePoint>? sinsemillaS,
+    List<PallasNativePoint>? sinsemillaS,
     PedersenHashNative? pedersen,
-    BaseSaplingProver? saplingProver,
-    BaseSaplingVerifier? saplingVerifier,
+    ZKLib? lib,
   }) {
-    final context = DefaultZCashCryptoContext._(
-      enableDartPlonk: enableDartPlonk,
-    );
+    final context = DefaultZcashCryptoContext(lib: lib);
     context._orchardMerkleHashable = orchardMerkleHashable;
     context._pedersen = pedersen;
-    context._orchardProver = orchardProver;
-    context._orchardVerifier = orchardVerifier;
-    context._saplingProver = saplingProver;
-    context._saplingVerifier = saplingVerifier;
     context._spec = spec;
     context._saplingHashable = saplingMerkleHashable;
     context._sinsemillaS = sinsemillaS?.clone();
-    if (enableDartPlonk) {
-      context.orchardProver();
-      context.orchardVerifier();
-    }
     return context;
   }
 
   /// Creates a lazily initialized crypto context with optional injected components.
-  factory DefaultZCashCryptoContext.lazy({
-    bool enableDartPlonk = false,
+  factory DefaultZcashCryptoContext.lazy({
     P128Pow5T3NativeFp? spec,
     SaplingMerkleHashable? saplingMerkleHashable,
     OrchardMerkleHashable? orchardMerkleHashable,
-    List<PallasAffineNativePoint>? sinsemillaS,
-    BaseOrchardProver? orchardProver,
-    BaseOrchardVerifier? orchardVerifier,
+    List<PallasNativePoint>? sinsemillaS,
     PedersenHashNative? pedersen,
-    BaseSaplingProver? saplingProver,
-    BaseSaplingVerifier? saplingVerifier,
+    ZKLib? lib,
   }) {
-    final context = DefaultZCashCryptoContext._(
-      enableDartPlonk: enableDartPlonk,
-    );
+    final context = DefaultZcashCryptoContext(lib: lib);
     context._orchardMerkleHashable = orchardMerkleHashable;
     context._pedersen = pedersen;
-    context._orchardProver = orchardProver;
-    context._orchardVerifier = orchardVerifier;
     context._spec = spec;
     context._saplingHashable = saplingMerkleHashable;
     context._sinsemillaS = sinsemillaS?.clone();
-    context._saplingProver = saplingProver;
-    context._saplingVerifier = saplingVerifier;
     if (sinsemillaS != null) {
       context.getHashDomain("z.cash:Orchard-MerkleCRH");
     }
@@ -199,30 +142,12 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
 
   final Map<String, CommitDomainNative> _cachedDomains = {};
   final Map<String, HashDomainNative> _cachedHashDomain = {};
-  BaseOrchardProver? _orchardProver;
-  BaseOrchardVerifier? _orchardVerifier;
   PedersenHashNative? _pedersen;
   SaplingMerkleHashable? _saplingHashable;
   OrchardMerkleHashable? _orchardMerkleHashable;
   P128Pow5T3NativeFp? _spec;
-  List<PallasAffineNativePoint>? _sinsemillaS;
-
-  BaseSaplingProver? _saplingProver;
-  BaseSaplingVerifier? _saplingVerifier;
-
-  final Map<OrchardFixedBases, (List<List<PallasNativeFp>>, List<int>)>
-  _fixedConstants = {};
-
-  (List<List<PallasNativeFp>>, List<int>) _buildConstants(
-    OrchardFixedBases base,
-  ) {
-    final lagrangeCoeffs = base.lagrangeCoeffs();
-    final z = base.z();
-    return (lagrangeCoeffs, z);
-  }
-
+  List<PallasNativePoint>? _sinsemillaS;
   final Map<String, PallasAffineNativePoint> _hashDomainsQ = {};
-  @override
   PallasAffineNativePoint getDomainPoint(
     String domain, {
     bool withSeperator = true,
@@ -242,20 +167,10 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
     return point;
   }
 
-  @override
-  (List<List<PallasNativeFp>>, List<int>) getFixedConstants(
-    OrchardFixedBases base,
-  ) {
-    final constants = _fixedConstants[base] ??= _buildConstants(base);
-    return constants;
-  }
-
-  @override
-  List<PallasAffineNativePoint> getSinsemillaS() {
+  List<PallasNativePoint> getSinsemillaS() {
     return _sinsemillaS ??= HashDomainNative.generateSinsemillaS();
   }
 
-  @override
   CommitDomainNative getCommitDomain(String domain) {
     return _cachedDomains[domain] ??= CommitDomainNative.create(
       domain,
@@ -263,17 +178,14 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
     );
   }
 
-  @override
   P128Pow5T3NativeFp getPoseidonSpec() {
     return _spec ??= P128Pow5T3NativeFp();
   }
 
-  @override
   PoseidonHash<PallasNativeFp> getPoseidonHash() {
     return PoseidonHash(getPoseidonSpec());
   }
 
-  @override
   HashDomainNative getHashDomain(String domain, {bool withSeperator = false}) {
     final name = "$withSeperator-$domain";
     return _cachedHashDomain[name] ??= HashDomainNative.fromDomain(
@@ -303,7 +215,7 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
   FutureOr<OrchardProof> createOrchardProof(
     List<OrchardProofInputs> args,
   ) async {
-    final proof = await orchardProver().createOrchardProof(args);
+    final proof = await _getlib().createOrchardProof(args);
     return OrchardProof(proof);
   }
 
@@ -317,8 +229,8 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
   }
 
   @override
-  FutureOr<bool> verifyOrchardProof(OrchardVerifyInputs args) {
-    final verifier = orchardVerifier();
+  FutureOr<bool> verifyOrchardProof(OrchardVerifyProofInputs args) {
+    final verifier = _getlib();
     return verifier.verifyOrchardProof(args);
   }
 
@@ -331,19 +243,8 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
     return vk.verifySignature(signature, message);
   }
 
-  @override
   PedersenHashNative getPedersen() {
     return _pedersen ??= PedersenHashNative();
-  }
-
-  @override
-  BaseOrchardProver orchardProver() {
-    final prover = _orchardProver;
-    if (prover != null) return prover;
-    if (!enableDartPlonk) {
-      throw ZCashCryptoContextException("Missing orchard prover.");
-    }
-    return _orchardProver ??= DefaultOrchardProver.build(this);
   }
 
   @override
@@ -358,74 +259,61 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
     );
   }
 
-  @override
-  BaseOrchardVerifier orchardVerifier() {
-    final verifier = _orchardVerifier;
-    if (verifier != null) return verifier;
-    final prover = _orchardProver;
-    if (prover != null && prover is DefaultOrchardProver) {
-      return prover.toVerifier();
-    }
-    if (!enableDartPlonk) {
-      throw ZCashCryptoContextException("Missing orchard proof verifier.");
-    }
-    return _orchardVerifier ??= DefaultOrchardVerifier.build(this);
-  }
-
-  @override
-  BaseSaplingProver saplingProver() {
-    final prover = _saplingProver;
+  ZKLib _getlib() {
+    final prover = lib;
     if (prover == null) {
-      throw ZCashCryptoContextException("Missing sapling spend prover.");
+      throw ZcashCryptoContextException("Missing zk liberary.");
     }
     return prover;
   }
 
-  @override
-  BaseSaplingVerifier saplingVerifier() {
-    final verifier = _saplingVerifier;
-    if (verifier == null) {
-      throw ZCashCryptoContextException(
-        "Missing sapling spend proof verifier.",
-      );
+  T _foldZkLib<T>({
+    required T Function(ZKLib lib) onZkLib,
+    required T Function() onMissing,
+  }) {
+    final lib = this.lib;
+    if (lib != null) {
+      return onZkLib(lib);
     }
-    return verifier;
+    return onMissing();
   }
 
   @override
   FutureOr<List<GrothProofBytes>> createSaplingSpendProofs(
-    List<SaplingProofInputs<SaplingSpend>> args,
+    List<SaplingSpendParams> args,
   ) async {
     if (args.isEmpty) return [];
-    final prover = saplingProver();
-    final result = await prover.createSpendProofs(args);
+    final lib = _getlib();
+    final result = await lib.createSpendProofs(args);
     if (result.length != args.length) {
-      throw ZCashCryptoContextException("Unexcpected proof response.");
+      throw ZcashCryptoContextException("Unexcpected proof response.");
     }
     return result;
   }
 
   @override
   FutureOr<List<GrothProofBytes>> createSaplingOutputProofs(
-    List<SaplingProofInputs<SaplingOutput>> args,
+    List<SaplingOutputParams> args,
   ) async {
     if (args.isEmpty) return [];
-    final prover = saplingProver();
-    final result = await prover.createOutputProofs(args);
+    final lib = _getlib();
+    final result = await lib.createOutputProofs(args);
     if (result.length != args.length) {
-      throw ZCashCryptoContextException("Unexcpected proof response.");
+      throw ZcashCryptoContextException("Unexcpected proof response.");
     }
     return result;
   }
 
   @override
   FutureOr<bool> verifySaplingOutputProofs(List<SaplingVerifyInputs> proofs) {
-    return saplingVerifier().verifyOutputProofs(proofs);
+    final lib = _getlib();
+    return lib.verifyOutputProofs(proofs);
   }
 
   @override
   FutureOr<bool> verifySaplingSpendProofs(List<SaplingVerifyInputs> proofs) {
-    return saplingVerifier().verifySpendProofs(proofs);
+    final lib = _getlib();
+    return lib.verifySpendProofs(proofs);
   }
 
   @override
@@ -435,5 +323,100 @@ class DefaultZCashCryptoContext extends ZCashCryptoContext {
     int? sighash,
   }) async {
     return sk.signECDSA(message, sighash: sighash);
+  }
+
+  @override
+  PallasNativeFp pseudoRando({
+    required PallasNativeFp nk,
+    required PallasNativeFp rho,
+  }) {
+    return getPoseidonHash().hash([nk, rho]);
+  }
+
+  @override
+  PallasNativeFp? sinsemillaShortCommit({
+    required VestaNativeFq r,
+    required List<bool> bits,
+    String domain = "z.cash:Orchard-CommitIvk",
+  }) {
+    return _foldZkLib(
+      onZkLib: (lib) {
+        try {
+          final result = lib.sendRequest(
+            ZKRequestCommitmentShortDomain(
+              ZKCommitmentShortDomain(
+                r: r.toBytes(),
+                bits: bits,
+                domain: domain,
+              ),
+            ),
+          );
+          return PallasNativeFp.fromBytes(result);
+        } on ZKLibException catch (e) {
+          if (e.code == ZKLibResponseCode.hashError) {
+            return null;
+          }
+          rethrow;
+        }
+      },
+      onMissing: () {
+        final donmain = getCommitDomain(domain);
+        return donmain.shortCommit(msg: bits, r: r);
+      },
+    );
+  }
+
+  @override
+  PallasNativePoint? sinsemillaCommit({
+    required VestaNativeFq r,
+    required List<bool> bits,
+    String domain = "z.cash:Orchard-CommitIvk",
+  }) {
+    return _foldZkLib(
+      onZkLib: (lib) {
+        try {
+          final result = lib.sendRequest(
+            ZKRequestCommitmentDomain(
+              ZKCommitmentDomain(r: r.toBytes(), bits: bits, domain: domain),
+            ),
+          );
+          return PallasNativePoint.fromBytes(result);
+        } on ZKLibException catch (e) {
+          if (e.code == ZKLibResponseCode.hashError) {
+            return null;
+          }
+          rethrow;
+        }
+      },
+      onMissing: () {
+        final donmain = getCommitDomain(domain);
+        return donmain.commit(msg: bits, r: r);
+      },
+    );
+  }
+
+  @override
+  JubJubNativePoint pedersonHash({
+    required List<bool> bits,
+    required Personalization personalization,
+  }) {
+    return _foldZkLib(
+      onZkLib: (lib) {
+        int? merkleSize;
+        if (personalization case PersonalizationMerkleTree(:final size)) {
+          merkleSize = size;
+        }
+        final result = lib.sendRequest(
+          ZKRequestPedersenHash(
+            ZKPedersenHash(bits: bits, merkleTreeSize: merkleSize),
+          ),
+        );
+        return JubJubNativePoint.fromBytes(result);
+      },
+      onMissing: () {
+        final donmain = getPedersen();
+        return donmain.hash(inputBits: bits, personalization: personalization);
+      },
+    );
   }
 }

@@ -2,10 +2,7 @@
 
 use alloc::vec::Vec;
 use core::fmt;
-
-// use sapling_crypto::PaymentAddress;
 use std::io;
-// use core2::io;
 
 use group::{ff::PrimeField, Curve};
 

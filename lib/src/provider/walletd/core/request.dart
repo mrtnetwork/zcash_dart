@@ -1,34 +1,71 @@
+import 'package:blockchain_utils/cbor/cbor.dart';
+import 'package:blockchain_utils/helper/helper.dart';
+import 'package:blockchain_utils/networks/networks.dart';
 import 'package:blockchain_utils/service/service.dart';
 
-abstract class ZCashWalletdRequest<RESULT>
-    extends BaseGRPCServiceRequest<RESULT, ZCashWalletdRequestDetails<RESULT>> {
-  const ZCashWalletdRequest();
+abstract class ZcashWalletdRequest<RESULT>
+    extends IGRPCServiceRequest<RESULT, ZcashWalletdRequestDetails> {
+  const ZcashWalletdRequest();
   String get method;
 
   List<int> toBuffer();
 
   @override
-  ZCashWalletdRequestDetails<RESULT> buildRequest() {
-    return ZCashWalletdRequestDetails(this);
+  ZcashWalletdRequestDetails buildRequest(int _) {
+    return ZcashWalletdRequestDetails(
+      buffer: toBuffer(),
+      requestMethod: method,
+    );
   }
 }
 
-class ZCashWalletdRequestDetails<RESULT>
-    extends BaseGRPCServiceRequestParams<RESULT> {
-  final ZCashWalletdRequest<RESULT> request;
+class ZcashWalletdRequestDetails extends BaseGRPCServiceRequestParams
+    with CborTagSerializable {
+  final String requestMethod;
+  final List<int> buffer;
+  // final ZcashWalletdRequest<RESULT> request;
 
-  const ZCashWalletdRequestDetails(this.request);
+  ZcashWalletdRequestDetails({
+    required List<int> buffer,
+    required this.requestMethod,
+  }) : buffer = buffer.asImmutableBytes;
+  factory ZcashWalletdRequestDetails.deserialize({
+    List<int>? bytes,
+    CborObject? obj,
+  }) {
+    final values = CborTagSerializable.decodeTaggedValue(
+      identifier: BlockchainNetwork.zcash.identifier,
+      cborBytes: bytes,
+      cborObject: obj,
+    );
+    return ZcashWalletdRequestDetails(
+      buffer: values.rawValueAt(0),
+      requestMethod: values.rawValueAt(1),
+    );
+  }
 
   @override
   String method() {
-    return request.method;
+    return requestMethod;
   }
 
   @override
   List<int> toBuffer() {
-    return request.toBuffer();
+    return buffer;
   }
 
   @override
-  RESULT onResponse(List<int> bytes) => request.onResonse(bytes);
+  SerializationIdentifier get serializationIdentifier =>
+      BlockchainNetwork.zcash.identifier;
+
+  @override
+  List<CborObject?> get serializationItems => [
+    CborBytesValue(buffer),
+    requestMethod.toCbor(),
+  ];
+
+  @override
+  Uri encodeUrl(String uri) {
+    return Uri.parse(uri);
+  }
 }

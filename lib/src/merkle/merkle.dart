@@ -5,3 +5,5 @@ export 'store/memory.dart';
 export 'store/store.dart';
 export 'types/types.dart';
 export 'builder/merkle.dart';
+export 'builder/types.dart';
+export 'builder/native.dart';

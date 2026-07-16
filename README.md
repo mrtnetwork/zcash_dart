@@ -1,91 +1,148 @@
 # ZCash Dart
 
-**Zcash cryptography, transactions, and zero-knowledge proofs — in Dart.**
+**Zcash cryptography, transactions, and zero-knowledge proofs — implemented in Dart.**
 
-`zcash_dart` is a low-level Dart package for building **Zcash wallets, SDKs, and protocol tooling**.  
-It supports **Sapling**, **Orchard**, and **Transparent** transactions, with both **pure Dart** and **Rust-accelerated (FFI / WASM)** implementations.
+`zcash_dart` is a low-level Dart library for building **Zcash wallets, SDKs, and protocol-level applications**.
 
-Built for correctness first — performance where it matters.
+It provides support for:
+
+- Transparent transactions
+- Sapling transactions
+- Orchard transactions
+- Zcash addresses and keys
+- Zero-knowledge proof infrastructure
 
 ---
 
-> ⚠️ **Early Release**
->
-> This project is in an initial stage.  
-> Not production-ready. Expect bugs, breaking changes, and incomplete test coverage.
+# Features
 
+## Transactions
 
-## Features
+Support for Zcash transaction handling:
 
-### Transactions
-- Serialize and deserialize **all Zcash transaction versions**
+- Serialize and deserialize **all supported Zcash transaction versions**
 - Create, sign, and verify:
   - Orchard bundles
   - Sapling bundles
   - Transparent transactions
-- PCZT (Partially Constructed Zcash Transaction) support
-- Dart port of Zcash **incremental Merkle tree**
+- PCZT (**Partially Constructed Zcash Transaction**) support
+- Dart implementation of the Zcash **Incremental Merkle Tree**
 
 ---
 
-### Addresses & Keys
-- Sapling payment addresses
-- Transparent addresses (P2SH/P2PKH)
+## Addresses & Keys
+
+Support for Zcash key and address systems:
+
 - Sprout addresses
-- P2PKH & P2SH
+- Sapling payment addresses
+- Transparent addresses:
+  - P2PKH
+  - P2SH
 - Unified Addresses
-- ZIP-32 / BIP-32 HD wallet support
-- USK, UFVK, and UIVK support
+- ZIP-32 hierarchical deterministic wallets
+- BIP-32 HD wallet support
+- USK (**Unified Spending Key**)
+- UFVK (**Unified Full Viewing Key**)
+- UIVK (**Unified Incoming Viewing Key**)
 
 ---
 
-### Zero-Knowledge Proofs
+# Zero-Knowledge Proofs
 
-#### PLONK
-- Pure Dart implementation (⚠️ slow: ~30–40s per proof)
-- High-performance Rust backend (FFI / WASM)
+Support for Zcash zero-knowledge proof components:
 
-#### Groth16
-- Pure Dart implementation (⚠️ slow: ~30–40s per proof)
-- High-performance Rust backend (FFI / WASM)
+- Orchard proving system
+- Sapling proving system
+- PLONK / Groth16 proof support
 
-> ⚠️ **Production note**: Rust backends are strongly recommended for proof generation.
+## Building ZK Provers
+
+ZK proving code is located in the `zk` folder.
+
+To compile ZK components for your target platform:
+
+```bash
+cd zk
+cargo build --release [target]
+
+```
+
+Compile the prover for your required target:
+
+- Native platforms
+- WebAssembly (WASM)
+- Other supported targets
+
+The ZK module can be built independently and integrated with Dart applications.
 
 ---
 
-### Cryptography
+# Cryptography
 
-All Zcash-required cryptographic primitives are implemented in `blockchain_utils`:
+All Zcash-required cryptographic primitives are implemented in:
 
-- FF1
+`blockchain_utils`
+
+Supported primitives include:
+
+- FF1 format-preserving encryption
 - f4jumble
 - BLS12-381
 - Jubjub
-- Vesta–Pallas
+- Pallas / Vesta curves
 - Sinsemilla
-- Poseidon
+- Poseidon hash
 
 ---
 
-### Providers
-- Wallet integration via **walletd provider**
+# Providers
+
+Wallet integration support through:
+
+- `walletd` provider
 
 ---
 
-## Examples
+# Examples
 
-- **Transfer**
-  - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/transfer_example.dart
-- **ZKLib**
-  - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/zk_lib_example.dart
-- **Address Management**
-  - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/address_example.dart
-- **Provider Usage**
-  - https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib/examples/clinet/
+See the `example` folder for usage examples.
+
+Examples include:
+
+- Address generation
+- Key derivation
+- Transaction handling
+- Proof generation
+- Wallet integration
 
 ---
 
-## Contributing
+# Web Support
+
+`zcash_dart` supports Dart Web.
+
+Features:
+
+- Core cryptographic primitives are implemented in pure Dart
+- No native dependency is required for core cryptography
+- Compatible with Dart Web
+- Zero-knowledge components can be compiled to WebAssembly (WASM)
+
+## Performance Considerations
+
+Zcash cryptography and zero-knowledge proof generation are computationally expensive in Dart Web.
+
+For production web applications:
+
+- Compile heavy cryptographic operations to WASM
+- Run proving operations inside a Web Worker
+- Avoid blocking the browser main thread
+
+---
+
+
+# Contributing
 
 Contributions are welcome.
 
@@ -96,8 +153,11 @@ Contributions are welcome.
 
 ---
 
-## Bug Reports & Feature Requests
+# Bug Reports & Feature Requests
 
-Please use the GitHub Issues tab.
+Please use the GitHub Issues tab for:
 
----
+- Bug reports
+- Feature requests
+- Security concerns
+- Improvement suggestions

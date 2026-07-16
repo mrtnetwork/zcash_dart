@@ -1,60 +1,77 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
+import 'package:zcash_dart/src/transaction/sighash_digest/types.dart';
 import 'package:zcash_dart/src/transparent/exception/exception.dart';
 import 'package:zcash_dart/src/transparent/keys/public_key.dart';
 import 'package:zcash_dart/src/transparent/keys/multisig.dart';
 import 'package:zcash_dart/src/transparent/transaction/input.dart';
+import 'package:zcash_dart/src/value/value.dart';
 
 /// TransparentUtxo represents an unspent transaction output (UTXO) on the zcash blockchain.
 /// It includes details such as the transaction hash (TxHash), the amount of transparent (Value),
 /// the output index (Vout), the script type (ScriptType), and the block height at which the UTXO
 /// was confirmed (BlockHeight).
-class TransparentUtxo with PartialEquality {
+class TransparentUtxo with PartialEquality, LayoutSerializable {
   /// TxHash is the unique identifier of the transaction containing this UTXO.
-  final List<int> txHash;
+  final ZcashTxId txId;
 
-  /// Value is a pointer to a BigInt representing the amount of transparent associated with this UTXO.
-  final BigInt value;
+  final ZAmount amount;
 
   /// Vout is the output index within the transaction that corresponds to this UTXO.
   final int vout;
 
   /// BlockHeight represents the block height at which this UTXO was confirmed.
-  final int? blockHeight;
-
-  final bool coinbase;
+  final int blockHeight;
 
   TransparentUtxo._({
-    required List<int> txHash,
-    required this.value,
+    required this.txId,
+    required this.amount,
     required this.vout,
-    this.blockHeight,
-    required this.coinbase,
-  }) : txHash = txHash.exc(
-         length: 32,
-         operation: "TransparentUtxo",
-         reason: "Invalid transaction hash bytes length.",
-       );
+    required this.blockHeight,
+  });
 
   factory TransparentUtxo({
-    required List<int> txHash,
+    required ZcashTxId txHash,
     required BigInt value,
     required int vout,
-    int? blockHeight,
+    required int blockHeight,
   }) {
     return TransparentUtxo._(
-      txHash: txHash,
-      value: value,
+      txId: txHash,
+      amount: ZAmount(value),
       blockHeight: blockHeight,
       vout: vout,
-      coinbase: txHash.every((e) => e == 0),
+    );
+  }
+
+  factory TransparentUtxo.dummy({BigInt? amount}) {
+    return TransparentUtxo(
+      txHash: ZcashTxId(
+        QuickCrypto.generateRandom(QuickCrypto.blake2b256DigestSize),
+      ),
+      value: amount ?? BigInt.zero,
+      vout: QuickCrypto.generateRandomInt(BinaryOps.mask8),
+      blockHeight: 0,
+    );
+  }
+  factory TransparentUtxo.deserialize(List<int> bytes) {
+    return TransparentUtxo.deserializeJson(
+      LayoutSerializable.deserialize(bytes: bytes, layout: layout()),
+    );
+  }
+  factory TransparentUtxo.deserializeJson(Map<String, dynamic> json) {
+    return TransparentUtxo(
+      txHash: ZcashTxId(json.valueAsBytes("tx_hash")),
+      value: json.valueAsBigInt("amount"),
+      vout: json.valueAs("vout"),
+      blockHeight: json.valueAs("block_height"),
     );
   }
 
   TransparentTxInput toInput({int? sequence, Script? scriptSig}) {
     return TransparentTxInput(
-      txId: txHash,
+      txId: txId,
       txIndex: vout,
       scriptSig: scriptSig,
       sequance: sequence,
@@ -63,18 +80,46 @@ class TransparentUtxo with PartialEquality {
 
   Map<String, dynamic> toJson() {
     return {
-      "tx_hash": txHash,
-      "value": value.toString(),
+      "tx_hash": txId.hash,
+      "value": amount.toString(),
       "vout": vout,
       "block_height": blockHeight,
     };
   }
 
   @override
-  List<dynamic> get variables => [txHash, vout, value, blockHeight];
+  List<dynamic> get variables => [txId, vout, amount, blockHeight];
 
   @override
-  List<dynamic> get parts => [txHash, vout];
+  List<dynamic> get parts => [txId, vout];
+
+  String get identifier => "${txId.txId}_$vout";
+  static Layout<Map<String, dynamic>> layout({String? property}) {
+    return LayoutConst.struct([
+      LayoutConst.fixedBlobN(
+        QuickCrypto.blake2b256DigestSize,
+        property: "tx_hash",
+      ),
+      LayoutConst.lebU32(property: "vout"),
+      LayoutConst.lebU64(property: "amount"),
+      LayoutConst.optional(LayoutConst.lebU32(), property: "block_height"),
+    ], property: property);
+  }
+
+  @override
+  Layout<Map<String, dynamic>> toLayout({String? property}) {
+    return layout(property: property);
+  }
+
+  @override
+  Map<String, dynamic> toSerializeJson() {
+    return {
+      "tx_hash": txId.hash,
+      "vout": vout,
+      "amount": amount.value,
+      "block_height": blockHeight,
+    };
+  }
 }
 
 class TransparentUtxoOwner {
@@ -84,7 +129,7 @@ class TransparentUtxoOwner {
   final PubKeyModes keyType;
 
   /// Address is the Bitcoin address associated with the UTXO owner.
-  final ZCashTransparentAddress address;
+  final ZcashTransparentAddress address;
 
   /// MultiSigAddress is a pointer to a MultiSignaturAddress instance representing a multi-signature address
   /// associated with the UTXO owner. It may be null if the UTXO owner is not using a multi-signature scheme.
@@ -100,7 +145,7 @@ class TransparentUtxoOwner {
   }) : _multiSigAddress = null;
   factory TransparentUtxoOwner({
     required ZECPublic publicKey,
-    required ZCashTransparentAddress address,
+    required ZcashTransparentAddress address,
     PubKeyModes mode = PubKeyModes.compressed,
   }) {
     return TransparentUtxoOwner._(
@@ -112,7 +157,7 @@ class TransparentUtxoOwner {
   }
   factory TransparentUtxoOwner.nonStandardP2sh({
     required Script redeemScript,
-    required ZCashP2shAddress address,
+    required ZcashP2shAddress address,
   }) {
     if (P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
         address.toScriptPubKey()) {
@@ -175,12 +220,12 @@ class TransparentUtxoOwner {
     }
   }
 
-  ZCashAddress toAddress() {
+  ZcashAddress toAddress() {
     switch (address.type) {
       case P2pkhAddressType.p2pkh:
         return address;
       default:
-        return ZCashP2shAddress.fromScript(
+        return ZcashP2shAddress.fromScript(
           script: reedemScript(),
           network: address.network,
         );

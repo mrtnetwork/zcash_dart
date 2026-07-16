@@ -5,10 +5,14 @@ class TransparentBuilderException extends TransparentExceptoion
     implements TransactionBuilderException {
   const TransparentBuilderException(super.message, {super.details});
 
-  static TransparentBuilderException operationFailed(String operation,
-      {Map<String, dynamic>? details, String? reason}) {
+  static TransparentBuilderException operationFailed(
+    String operation, {
+    Map<String, String?>? details,
+    String? reason,
+  }) {
     return TransparentBuilderException(
-        "Transparent builder operation failed during $operation",
-        details: {...details ?? {}, "reason": reason});
+      "Transparent builder operation failed during $operation",
+      details: {...details ?? {}, "reason": reason},
+    );
   }
 }

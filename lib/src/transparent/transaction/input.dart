@@ -1,12 +1,13 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/layout/layout.dart';
 import 'package:blockchain_utils/utils/utils.dart';
+import 'package:zcash_dart/src/transaction/sighash_digest/types.dart';
 import 'package:zcash_dart/src/transparent/exception/exception.dart';
 
 /// Represents a transparent transaction input.
 class TransparentTxInput with LayoutSerializable {
   /// the transaction id.
-  final List<int> txId;
+  final ZcashTxId txId;
 
   /// the index of the UTXO that we want to spend
   final int txIndex;
@@ -24,32 +25,36 @@ class TransparentTxInput with LayoutSerializable {
     required this.coinbase,
     Script? scriptSig,
     int? sequance,
-  })  : sequence = sequance ?? BinaryOps.maxUint32,
-        scriptSig = scriptSig ?? Script(script: []);
+  }) : sequence = sequance ?? BinaryOps.maxUint32,
+       scriptSig = scriptSig ?? Script(script: []);
   factory TransparentTxInput.deserializeJson(Map<String, dynamic> json) {
     return TransparentTxInput(
-        txId: json.valueAsBytes("tx_id"),
-        txIndex: json.valueAs("index"),
-        scriptSig: Script.deserialize(bytes: json.valueAsBytes("script")),
-        sequance: json.valueAs<int>("sequence"));
+      txId: ZcashTxId(json.valueAsBytes("tx_id")),
+      txIndex: json.valueAs("index"),
+      scriptSig: Script.deserialize(bytes: json.valueAsBytes("script")),
+      sequance: json.valueAs<int>("sequence"),
+    );
   }
   factory TransparentTxInput({
-    required List<int> txId,
+    required ZcashTxId txId,
     required int txIndex,
     Script? scriptSig,
     int? sequance,
   }) {
     if (sequance != null &&
         (sequance.isNegative || sequance > BinaryOps.maxUint32)) {
-      throw TransparentExceptoion.operationFailed("TransparentTxInput",
-          reason: "Invalid transaction sequance.");
+      throw TransparentExceptoion.operationFailed(
+        "TransparentTxInput",
+        reason: "Invalid transaction sequance.",
+      );
     }
     return TransparentTxInput._(
-        txId: txId,
-        txIndex: txIndex,
-        sequance: sequance,
-        scriptSig: scriptSig,
-        coinbase: txId.every((e) => e == 0));
+      txId: txId,
+      txIndex: txIndex,
+      sequance: sequance,
+      scriptSig: scriptSig,
+      coinbase: txId.hash.every((e) => e == 0),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
@@ -68,10 +73,10 @@ class TransparentTxInput with LayoutSerializable {
   @override
   Map<String, dynamic> toSerializeJson() {
     return {
-      "tx_id": txId,
+      "tx_id": txId.hash,
       "index": txIndex,
       "script": scriptSig.toBytes(),
-      "sequence": sequence
+      "sequence": sequence,
     };
   }
 }

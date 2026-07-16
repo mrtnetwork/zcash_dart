@@ -17,8 +17,12 @@ class ZECPrivate {
 
   /// creates an object from raw 32 bytes
   factory ZECPrivate.fromBytes(List<int> keyBytes) {
-    final key = Bip32PrivateKey.fromBytes(keyBytes, Bip32KeyData(),
-        Bip32Const.mainNetKeyNetVersions, EllipticCurveTypes.secp256k1);
+    final key = Bip32PrivateKey.fromBytes(
+      keyBytes,
+      Bip32KeyData(),
+      Bip32Const.mainNetKeyNetVersions,
+      EllipticCurveTypes.secp256k1,
+    );
     return ZECPrivate._(key);
   }
 
@@ -56,12 +60,15 @@ class ZECPrivate {
   }) {
     final btcSigner = BitcoinKeySigner.fromKeyBytes(toBytes());
     final signature = btcSigner.signMessageConst(
-        message: message,
-        messagePrefix: messagePrefix,
-        extraEntropy: extraEntropy);
+      message: message,
+      messagePrefix: messagePrefix,
+      extraEntropy: extraEntropy,
+    );
     int rId = signature[0] + mode.header;
-    return StringUtils.decode([rId, ...signature.sublist(1)],
-        type: StringEncoding.base64);
+    return StringUtils.decode([
+      rId,
+      ...signature.sublist(1),
+    ], encoding: StringEncoding.base64);
   }
 
   /// Signs a message using Bitcoin's message signing format.
@@ -72,14 +79,17 @@ class ZECPrivate {
   /// - [message]: The raw message to be signed.
   /// - [messagePrefix]: The prefix used for Bitcoin's message signing.
   /// - [extraEntropy]: Optional extra entropy to modify the signature.
-  String signMessage(List<int> message,
-      {String messagePrefix = BitcoinSignerUtils.signMessagePrefix,
-      List<int> extraEntropy = const []}) {
+  String signMessage(
+    List<int> message, {
+    String messagePrefix = BitcoinSignerUtils.signMessagePrefix,
+    List<int> extraEntropy = const [],
+  }) {
     final btcSigner = BitcoinKeySigner.fromKeyBytes(toBytes());
     final signature = btcSigner.signMessageConst(
-        message: message,
-        messagePrefix: messagePrefix,
-        extraEntropy: extraEntropy);
+      message: message,
+      messagePrefix: messagePrefix,
+      extraEntropy: extraEntropy,
+    );
     return BytesUtils.toHexString(signature.sublist(1));
   }
 
@@ -87,12 +97,16 @@ class ZECPrivate {
   ///
   /// - [txDigest]: The transaction digest (message) to sign.
   /// - [sighash]: The sighash flag to append (default is SIGHASH_ALL).
-  List<int> signECDSA(List<int> txDigest,
-      {int? sighash = BitcoinOpCodeConst.sighashAll,
-      List<int> extraEntropy = const []}) {
+  List<int> signECDSA(
+    List<int> txDigest, {
+    int? sighash = BitcoinOpCodeConst.sighashAll,
+    List<int> extraEntropy = const [],
+  }) {
     final btcSigner = BitcoinKeySigner.fromKeyBytes(toBytes());
-    List<int> signature =
-        btcSigner.signECDSADerConst(txDigest, extraEntropy: extraEntropy);
+    List<int> signature = btcSigner.signECDSADerConst(
+      txDigest,
+      extraEntropy: extraEntropy,
+    );
     if (sighash != null) {
       signature = <int>[...signature, sighash];
     }

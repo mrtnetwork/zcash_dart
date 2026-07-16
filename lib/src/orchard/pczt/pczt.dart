@@ -3,14 +3,10 @@ import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 import 'package:zcash_dart/src/note/note.dart';
 import 'package:zcash_dart/src/orchard/orchard.dart';
-import 'package:zcash_dart/src/orchard/pczt/exception.dart';
-import 'package:zcash_dart/src/orchard/builder/builder.dart';
 import 'package:zcash_dart/src/pczt/types/global.dart';
 import 'package:zcash_dart/src/pczt/types/types.dart';
 import 'package:zcash_dart/src/pczt/pczt/utils.dart';
 import 'package:zcash_dart/src/value/value.dart';
-import 'package:zcash_dart/src/zk_proof/halo2/halo2.dart';
-import 'package:zcash_dart/src/zk_proof/halo2/src/orchard/prover.dart';
 
 class OrchardPcztSpend with LayoutSerializable {
   final OrchardNullifier nullifier;
@@ -296,7 +292,7 @@ class OrchardPcztSpend with LayoutSerializable {
   }
 
   void verifyNullifier(
-    ZCashCryptoContext context, {
+    ZcashCryptoContext context, {
     OrchardFullViewingKey? fvk,
   }) {
     fvk = findFvk(fvk: fvk);
@@ -750,7 +746,7 @@ class OrchardPcztAction with LayoutSerializable {
   FutureOr<void> sign({
     required List<int> sighash,
     required OrchardSpendAuthorizingKey ask,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
     bool verifyRsk = true,
   }) async {
     final rsk = _validateAndGetRsk(
@@ -765,7 +761,7 @@ class OrchardPcztAction with LayoutSerializable {
   Future<void> applySignature({
     required List<int> sighash,
     required ReddsaSignature signature,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
     bool verifySignature = true,
   }) async {
     if (verifySignature &&
@@ -998,7 +994,7 @@ class OrchardPcztBundle
     );
   }
 
-  List<OrchardTransfableCircuit> toCircuits(ZCashCryptoContext context) =>
+  List<OrchardTransfableCircuit> toCircuits(ZcashCryptoContext context) =>
       actions.map((e) {
         final fvk = e.spend.getFvk();
         final recipient = e.spend.getRecipient();
@@ -1080,7 +1076,7 @@ class OrchardPcztBundle
 
   FutureOr<void> finalize({
     required List<int> sighash,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
     bool verifyBsk = true,
   }) async {
     _verifyAndGentBsk(verifyBsk: verifyBsk);
@@ -1092,7 +1088,7 @@ class OrchardPcztBundle
     }
   }
 
-  Future<void> createProof(ZCashCryptoContext context) async {
+  Future<void> createProof(ZcashCryptoContext context) async {
     final circuits = toCircuits(context);
     final instances = toInstances();
     final proof = await context.createOrchardProof(
@@ -1202,7 +1198,7 @@ class OrchardExtractedBundle implements ExtractedBundle<OrchardBundle> {
 
   Future<OrchardBundle> buildBindingAutorization({
     required List<int> sighash,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
     bool verifyBindingSignature = true,
   }) async {
     for (final i in bundle.actions) {

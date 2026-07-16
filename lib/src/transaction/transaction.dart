@@ -6,3 +6,4 @@ export 'types/version.dart';
 export 'builders/builder.dart';
 export 'builders/core.dart';
 export 'builders/types.dart';
+export 'builders/exception.dart';

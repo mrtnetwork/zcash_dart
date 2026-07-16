@@ -17,8 +17,9 @@ class _TransactionDigestUtils {
   static const zcashTxPersonalizationPrefix = "ZcashTxHash_";
 
   static BLAKE2b hasher(List<int> personalization) => BLAKE2b(
-      digestLength: QuickCrypto.blake2b256DigestSize,
-      config: Blake2bConfig(personalization: personalization));
+    digestLength: QuickCrypto.blake2b256DigestSize,
+    config: Blake2bConfig(personalization: personalization),
+  );
   static List<int> hashOrchardBundleTxIdData(OrchardBundle bundle) {
     final h = hasher(zcashOrchardHashPersonalization.codeUnits);
     final ch = hasher("ZTxIdOrcActCHash".codeUnits);
@@ -47,7 +48,8 @@ class _TransactionDigestUtils {
   }
 
   static List<int> hashSaplingSpend(
-      List<SaplingSpendDescription> shieldedSpends) {
+    List<SaplingSpendDescription> shieldedSpends,
+  ) {
     final h = hasher("ZTxIdSSpendsHash".codeUnits);
     if (shieldedSpends.isNotEmpty) {
       final ch = hasher("ZTxIdSSpendCHash".codeUnits);
@@ -102,7 +104,7 @@ class _TransactionDigestUtils {
   static List<int> transparentPrevoutHash(List<TransparentTxInput> input) {
     final h = hasher("ZTxIdPrevoutHash".codeUnits);
     for (final i in input) {
-      h.update(i.txId);
+      h.update(i.txId.hash);
       h.update(i.txIndex.toU32LeBytes());
     }
     return h.digest();
@@ -126,22 +128,26 @@ class _TransactionDigestUtils {
   }
 
   static List<int> encodeAsVarint(List<int> bytes) {
-    return LayoutConst.varintVector(LayoutConst.u8(), property: "script")
-        .serialize(bytes);
+    return LayoutConst.varintVector(
+      LayoutConst.u8(),
+      property: "script",
+    ).serialize(bytes);
   }
 
   static TransparentDigest transparentDigests(TransparentBundle bundle) {
     return TransparentDigest(
-        prevoutsDigest: transparentPrevoutHash(bundle.vin),
-        sequenceDigest: transparentSequenceHash(bundle.vin),
-        outputsDigest: transparentOutputsHash(bundle.vout));
+      prevoutsDigest: transparentPrevoutHash(bundle.vin),
+      sequenceDigest: transparentSequenceHash(bundle.vin),
+      outputsDigest: transparentOutputsHash(bundle.vout),
+    );
   }
 
-  static List<int> hashHeaderTxId(
-      {required TxVersion version,
-      required NetworkUpgrade branchId,
-      required int lockTime,
-      required int expiryHeight}) {
+  static List<int> hashHeaderTxId({
+    required TxVersion version,
+    required ZcashNetworkProtocol branchId,
+    required int lockTime,
+    required int expiryHeight,
+  }) {
     final h = hasher("ZTxIdHeadersHash".codeUnits);
     h.update(version.header().toU32LeBytes());
     h.update(version.type.groupId!.toU32LeBytes());
@@ -163,7 +169,7 @@ class _TransactionDigestUtils {
 
   static List<int> toHash({
     required TxVersion verion,
-    required NetworkUpgrade branchId,
+    required ZcashNetworkProtocol branchId,
     required List<int> headerDigest,
     required List<int> transparentDigest,
     List<int>? saplingDigest,
@@ -171,27 +177,32 @@ class _TransactionDigestUtils {
   }) {
     final h = hasher([
       ...zcashTxPersonalizationPrefix.codeUnits,
-      ...branchId.branchId.toU32LeBytes()
+      ...branchId.branchId.toU32LeBytes(),
     ]);
     h.update(headerDigest);
     h.update(transparentDigest);
-    saplingDigest ??= QuickCrypto.blake2b256Hash([],
-        personalization: zcashSaplingHashPersonalization.codeUnits);
+    saplingDigest ??= QuickCrypto.blake2b256Hash(
+      [],
+      personalization: zcashSaplingHashPersonalization.codeUnits,
+    );
     h.update(saplingDigest);
-    orchardDigest ??= QuickCrypto.blake2b256Hash([],
-        personalization: zcashOrchardHashPersonalization.codeUnits);
+    orchardDigest ??= QuickCrypto.blake2b256Hash(
+      [],
+      personalization: zcashOrchardHashPersonalization.codeUnits,
+    );
     h.update(orchardDigest);
     return h.digest();
   }
 }
 
 class _SighashV5Utils {
-  static List<int> _transparentSigDigest(
-      {required TransparentBundle? transparent,
-      required TransparentDigest? digest,
-      required SignableInput input,
-      List<Script> scriptPubKeys = const [],
-      List<BigInt> amounts = const []}) {
+  static List<int> _transparentSigDigest({
+    required TransparentBundle? transparent,
+    required TransparentDigest? digest,
+    required SignableInput input,
+    List<Script> scriptPubKeys = const [],
+    List<BigInt> amounts = const [],
+  }) {
     if (transparent == null || digest == null) {
       return _TransactionDigestUtils.hashTransparentTxidData(digest);
     }
@@ -202,14 +213,17 @@ class _SighashV5Utils {
     final hashtype = input.hashType;
     final flagAnyoneCanPay =
         hashtype & BitcoinOpCodeConst.sighashAnyoneCanPay != 0;
-    final flagSingle = hashtype & BitcoinOpCodeConst.sighashMask ==
+    final flagSingle =
+        hashtype & BitcoinOpCodeConst.sighashMask ==
         BitcoinOpCodeConst.sighashSingle;
-    final flagNone = hashtype & BitcoinOpCodeConst.sighashMask ==
+    final flagNone =
+        hashtype & BitcoinOpCodeConst.sighashMask ==
         BitcoinOpCodeConst.sighashNone;
 
-    final prevoutsDigest = flagAnyoneCanPay
-        ? _TransactionDigestUtils.transparentPrevoutHash([])
-        : digest.prevoutsDigest;
+    final prevoutsDigest =
+        flagAnyoneCanPay
+            ? _TransactionDigestUtils.transparentPrevoutHash([])
+            : digest.prevoutsDigest;
 
     final amountsDigest = () {
       final h = _TransactionDigestUtils.hasher("ZTxTrAmountsHash".codeUnits);
@@ -231,16 +245,18 @@ class _SighashV5Utils {
       return h.digest();
     }();
 
-    final sequenceDigest = flagAnyoneCanPay
-        ? _TransactionDigestUtils.transparentSequenceHash([])
-        : digest.sequenceDigest;
+    final sequenceDigest =
+        flagAnyoneCanPay
+            ? _TransactionDigestUtils.transparentSequenceHash([])
+            : digest.sequenceDigest;
     final outputsDigest = () {
       if (input.type.isTransparent) {
         final index = input.cast<TransparentSignableInput>().index;
         if (flagSingle) {
           if (index < transparent.vout.length) {
-            return _TransactionDigestUtils.transparentOutputsHash(
-                [transparent.vout[index]]);
+            return _TransactionDigestUtils.transparentOutputsHash([
+              transparent.vout[index],
+            ]);
           } else {
             return _TransactionDigestUtils.transparentOutputsHash([]);
           }
@@ -256,12 +272,15 @@ class _SighashV5Utils {
     if (input.type.isTransparent) {
       final transparentInput = input.cast<TransparentSignableInput>();
       final txin = transparent.vin[transparentInput.index];
-      ch.update(txin.txId);
+      ch.update(txin.txId.hash);
       ch.update(txin.txIndex.toU32LeBytes());
 
       ch.update(transparentInput.amount.toI64LeBytes());
-      ch.update(_TransactionDigestUtils.encodeAsVarint(
-          transparentInput.sciptPubKey.toBytes()));
+      ch.update(
+        _TransactionDigestUtils.encodeAsVarint(
+          transparentInput.sciptPubKey.toBytes(),
+        ),
+      );
       ch.update(txin.sequence.toU32LeBytes());
     }
     final txinSigDigest = ch.digest();
@@ -278,26 +297,29 @@ class _SighashV5Utils {
     return h.digest();
   }
 
-  static List<int> generate(
-      {required TransactionData tx,
-      required TxDigestsPart digest,
-      required SignableInput input,
-      NetworkUpgrade? branchId,
-      List<Script> scriptPubKeys = const [],
-      List<BigInt> amounts = const []}) {
+  static List<int> generate({
+    required TransactionData tx,
+    required TxDigestsPart digest,
+    required SignableInput input,
+    ZcashNetworkProtocol? branchId,
+    List<Script> scriptPubKeys = const [],
+    List<BigInt> amounts = const [],
+  }) {
     final hash = _transparentSigDigest(
-        transparent: tx.transparentBundle,
-        digest: digest.transparentDigest,
-        input: input,
-        amounts: amounts,
-        scriptPubKeys: scriptPubKeys);
+      transparent: tx.transparentBundle,
+      digest: digest.transparentDigest,
+      input: input,
+      amounts: amounts,
+      scriptPubKeys: scriptPubKeys,
+    );
     return _TransactionDigestUtils.toHash(
-        verion: tx.version,
-        branchId: branchId ?? tx.consensusBranchId!,
-        headerDigest: digest.headerDigest,
-        transparentDigest: hash,
-        orchardDigest: digest.orchardDigest,
-        saplingDigest: digest.saplingDigest);
+      verion: tx.version,
+      branchId: branchId ?? tx.consensusBranchId!,
+      headerDigest: digest.headerDigest,
+      transparentDigest: hash,
+      orchardDigest: digest.orchardDigest,
+      saplingDigest: digest.saplingDigest,
+    );
   }
 }
 
@@ -306,78 +328,88 @@ class _SighashV4Utils {
 
   static List<int> _transparentPrevoutHash(List<TransparentTxInput> inputs) {
     final inputsBytes =
-        inputs.expand((e) => [...e.txId, ...e.txIndex.toU32LeBytes()]).toList();
+        inputs
+            .expand((e) => [...e.txId.hash, ...e.txIndex.toU32LeBytes()])
+            .toList();
 
-    return _TransactionDigestUtils.hasher("ZcashPrevoutHash".codeUnits)
-        .update(inputsBytes)
-        .digest();
+    return _TransactionDigestUtils.hasher(
+      "ZcashPrevoutHash".codeUnits,
+    ).update(inputsBytes).digest();
   }
 
   static List<int> _sequenceHash(List<TransparentTxInput> inputs) {
     final inputsBytes =
         inputs.expand((e) => e.sequence.toU32LeBytes()).toList();
-    return _TransactionDigestUtils.hasher("ZcashSequencHash".codeUnits)
-        .update(inputsBytes)
-        .digest();
+    return _TransactionDigestUtils.hasher(
+      "ZcashSequencHash".codeUnits,
+    ).update(inputsBytes).digest();
   }
 
   static List<int> _outputsHash(List<TransparentTxOutput> outputs) {
-    final inputsBytes = outputs
-        .expand((e) => [
-              ...e.amount.toI64LeBytes(),
-              ..._TransactionDigestUtils.encodeAsVarint(
-                  e.scriptPubKey.toBytes())
-            ])
-        .toList();
+    final inputsBytes =
+        outputs
+            .expand(
+              (e) => [
+                ...e.amount.toI64LeBytes(),
+                ..._TransactionDigestUtils.encodeAsVarint(
+                  e.scriptPubKey.toBytes(),
+                ),
+              ],
+            )
+            .toList();
     return _TransactionDigestUtils.hasher(
-            _zcashOutputsHashPersonalization.codeUnits)
-        .update(inputsBytes)
-        .digest();
+      _zcashOutputsHashPersonalization.codeUnits,
+    ).update(inputsBytes).digest();
   }
 
   static List<int> _singleOutputHash(TransparentTxOutput output) {
     final inputsBytes = [
       ...output.amount.toI64LeBytes(),
-      ..._TransactionDigestUtils.encodeAsVarint(output.scriptPubKey.toBytes())
+      ..._TransactionDigestUtils.encodeAsVarint(output.scriptPubKey.toBytes()),
     ];
     return _TransactionDigestUtils.hasher(
-            _zcashOutputsHashPersonalization.codeUnits)
-        .update(inputsBytes)
-        .digest();
+      _zcashOutputsHashPersonalization.codeUnits,
+    ).update(inputsBytes).digest();
   }
 
-  static List<int> _joinsSplitsHash(
-      {required List<SproutJsDescription> joinssplits,
-      required List<int> joinsplitPubKey}) {
+  static List<int> _joinsSplitsHash({
+    required List<SproutJsDescription> joinssplits,
+    required List<int> joinsplitPubKey,
+  }) {
     final joinsBytes = [
       ...joinssplits.map((e) => e.toSerializeBytes()).expand((e) => e),
-      ...joinsplitPubKey
+      ...joinsplitPubKey,
     ];
-    return _TransactionDigestUtils.hasher("ZcashJSplitsHash".codeUnits)
-        .update(joinsBytes)
-        .digest();
+    return _TransactionDigestUtils.hasher(
+      "ZcashJSplitsHash".codeUnits,
+    ).update(joinsBytes).digest();
   }
 
   static List<int> _shieldedSpendsHash(
-      List<SaplingSpendDescription> shieldedSpends) {
+    List<SaplingSpendDescription> shieldedSpends,
+  ) {
     return _TransactionDigestUtils.hasher("ZcashSSpendsHash".codeUnits)
-        .update(shieldedSpends
-            .expand((e) => e.toSerializeBytes(withAuthSig: false))
-            .toList())
+        .update(
+          shieldedSpends
+              .expand((e) => e.toSerializeBytes(withAuthSig: false))
+              .toList(),
+        )
         .digest();
   }
 
   static List<int> _shieldedOutputsHash(
-      List<SaplingOutputDescription> shieldedOutputs) {
+    List<SaplingOutputDescription> shieldedOutputs,
+  ) {
     return _TransactionDigestUtils.hasher("ZcashSOutputHash".codeUnits)
         .update(shieldedOutputs.expand((e) => e.toSerializeBytes()).toList())
         .digest();
   }
 
-  static List<int> generate(
-      {required TransactionData tx,
-      required SignableInput signableInput,
-      NetworkUpgrade? branchId}) {
+  static List<int> generate({
+    required TransactionData tx,
+    required SignableInput signableInput,
+    ZcashNetworkProtocol? branchId,
+  }) {
     final hashType = signableInput.hashType;
     branchId ??= tx.consensusBranchId;
     final groupId = tx.version.type.groupId;
@@ -389,13 +421,15 @@ class _SighashV4Utils {
       );
     }
     if (branchId == null || groupId == null) {
-      throw ArgumentException.invalidOperationArguments("generate",
-          reason: 'Invalid transaction version.');
+      throw ArgumentException.invalidOperationArguments(
+        "generate",
+        reason: 'Invalid transaction version.',
+      );
     }
 
     final personalization = [
       ..."ZcashSigHash".codeUnits,
-      ...branchId.branchId.toU32LeBytes()
+      ...branchId.branchId.toU32LeBytes(),
     ];
     final h = _TransactionDigestUtils.hasher(personalization);
 
@@ -415,16 +449,19 @@ class _SighashV4Utils {
     h.update(groupId.toU32LeBytes());
     final transparentInputs = tx.transparentBundle?.vin ?? [];
     final transparentOutputs = tx.transparentBundle?.vout ?? [];
-    condUpdate((hashType & BitcoinOpCodeConst.sighashAnyoneCanPay) == 0,
-        () => _transparentPrevoutHash(transparentInputs));
+    condUpdate(
+      (hashType & BitcoinOpCodeConst.sighashAnyoneCanPay) == 0,
+      () => _transparentPrevoutHash(transparentInputs),
+    );
 
     condUpdate(
-        (hashType & BitcoinOpCodeConst.sighashAnyoneCanPay) == 0 &&
-            (hashType & BitcoinOpCodeConst.sighashMask) !=
-                BitcoinOpCodeConst.sighashSingle &&
-            (hashType & BitcoinOpCodeConst.sighashMask) !=
-                BitcoinOpCodeConst.sighashNone,
-        () => _sequenceHash(transparentInputs));
+      (hashType & BitcoinOpCodeConst.sighashAnyoneCanPay) == 0 &&
+          (hashType & BitcoinOpCodeConst.sighashMask) !=
+              BitcoinOpCodeConst.sighashSingle &&
+          (hashType & BitcoinOpCodeConst.sighashMask) !=
+              BitcoinOpCodeConst.sighashNone,
+      () => _sequenceHash(transparentInputs),
+    );
 
     // Outputs
     if ((hashType & BitcoinOpCodeConst.sighashMask) !=
@@ -437,9 +474,7 @@ class _SighashV4Utils {
       if (signableInput is TransparentSignableInput &&
           tx.transparentBundle != null &&
           signableInput.index < tx.transparentBundle!.vout.length) {
-        h.update(
-          _singleOutputHash(transparentOutputs[signableInput.index]),
-        );
+        h.update(_singleOutputHash(transparentOutputs[signableInput.index]));
       } else {
         h.update(zero32);
       }
@@ -448,17 +483,23 @@ class _SighashV4Utils {
     }
     final joinsplits = tx.sproutBundle?.joinsplits ?? [];
     condUpdate(
-        joinsplits.isNotEmpty,
-        () => _joinsSplitsHash(
-            joinssplits: joinsplits,
-            joinsplitPubKey: tx.sproutBundle!.joinsplitPubkey));
+      joinsplits.isNotEmpty,
+      () => _joinsSplitsHash(
+        joinssplits: joinsplits,
+        joinsplitPubKey: tx.sproutBundle!.joinsplitPubkey,
+      ),
+    );
     final shieldedSpends = tx.saplingBundle?.shieldedSpends ?? [];
     final shieldedOutputs = tx.saplingBundle?.shieldedOutputs ?? [];
     if (tx.version.hasSapling()) {
       condUpdate(
-          shieldedSpends.isNotEmpty, () => _shieldedSpendsHash(shieldedSpends));
-      condUpdate(shieldedOutputs.isNotEmpty,
-          () => _shieldedOutputsHash(shieldedOutputs));
+        shieldedSpends.isNotEmpty,
+        () => _shieldedSpendsHash(shieldedSpends),
+      );
+      condUpdate(
+        shieldedOutputs.isNotEmpty,
+        () => _shieldedOutputsHash(shieldedOutputs),
+      );
     }
     h.update(tx.locktime.toU32LeBytes());
     h.update(tx.expiryHeight.toU32LeBytes());
@@ -484,10 +525,11 @@ class _SighashV4Utils {
 
       final txin = bundle.vin[transparentInput.index];
       final data = [
-        ...txin.txId,
+        ...txin.txId.hash,
         ...txin.txIndex.toU32LeBytes(),
         ..._TransactionDigestUtils.encodeAsVarint(
-            transparentInput.scriptCode.toBytes()),
+          transparentInput.scriptCode.toBytes(),
+        ),
         ...transparentInput.amount.toI64LeBytes(),
         ...txin.sequence.toU32LeBytes(),
       ];
@@ -500,45 +542,51 @@ class _SighashV4Utils {
 /// Generates sighash values for signing Zcash transactions (v4 and v5).
 class SighashGenerator {
   /// Generates a v4 sighash for a given transaction and input, optionally using a branch ID.
-  static List<int> v4(
-          {required TransactionData tx,
-          required SignableInput signableInput,
-          NetworkUpgrade? branchId}) =>
-      _SighashV4Utils.generate(
-          tx: tx, signableInput: signableInput, branchId: branchId);
+  static List<int> v4({
+    required TransactionData tx,
+    required SignableInput signableInput,
+    ZcashNetworkProtocol? branchId,
+  }) => _SighashV4Utils.generate(
+    tx: tx,
+    signableInput: signableInput,
+    branchId: branchId,
+  );
 
   /// Generates a v5 sighash for a transaction, input, and digest.
   /// [scriptPubKeys] all transparent input scriptPubKeys
   /// [amounts] all transparent input amounts.
-  static List<int> v5(
-          {required TransactionData tx,
-          required TxDigestsPart digest,
-          required SignableInput input,
-          NetworkUpgrade? branchId,
-          List<Script> scriptPubKeys = const [],
-          List<BigInt> amounts = const []}) =>
-      _SighashV5Utils.generate(
-          tx: tx,
-          digest: digest,
-          input: input,
-          amounts: amounts,
-          branchId: branchId,
-          scriptPubKeys: scriptPubKeys);
+  static List<int> v5({
+    required TransactionData tx,
+    required TxDigestsPart digest,
+    required SignableInput input,
+    ZcashNetworkProtocol? branchId,
+    List<Script> scriptPubKeys = const [],
+    List<BigInt> amounts = const [],
+  }) => _SighashV5Utils.generate(
+    tx: tx,
+    digest: digest,
+    input: input,
+    amounts: amounts,
+    branchId: branchId,
+    scriptPubKeys: scriptPubKeys,
+  );
 }
 
 /// Utility class for computing transaction digests and generating Zcash transaction IDs.
 class TxIdDigester {
   /// Computes the header digest for a transaction given version, branch, locktime, and expiry.
-  static List<int> _digestHeader(
-      {required TxVersion version,
-      required NetworkUpgrade branchId,
-      required int locktime,
-      required int expiryHeight}) {
+  static List<int> _digestHeader({
+    required TxVersion version,
+    required ZcashNetworkProtocol branchId,
+    required int locktime,
+    required int expiryHeight,
+  }) {
     return _TransactionDigestUtils.hashHeaderTxId(
-        version: version,
-        branchId: branchId,
-        lockTime: locktime,
-        expiryHeight: expiryHeight);
+      version: version,
+      branchId: branchId,
+      lockTime: locktime,
+      expiryHeight: expiryHeight,
+    );
   }
 
   /// Computes the Orchard bundle digest, or returns null if no bundle.
@@ -563,38 +611,48 @@ class TxIdDigester {
     return null;
   }
 
-  /// Converts transaction digests into a ZCashTxId using branch-specific personalization.
-  static ZCashTxId _toTxId({
+  /// Converts transaction digests into a ZcashTxId using branch-specific personalization.
+  static ZcashTxId _toTxId({
     required TxDigestsPart digest,
-    required NetworkUpgrade branchId,
+    required ZcashNetworkProtocol branchId,
   }) {
     final h = _TransactionDigestUtils.hasher([
       ..._TransactionDigestUtils.zcashTxPersonalizationPrefix.codeUnits,
-      ...branchId.branchId.toU32LeBytes()
+      ...branchId.branchId.toU32LeBytes(),
     ]);
     h.update(digest.headerDigest);
     final transparent = _TransactionDigestUtils.hashTransparentTxidData(
-        digest.transparentDigest);
+      digest.transparentDigest,
+    );
     h.update(transparent);
-    final saplingDigest = digest.saplingDigest ??
-        QuickCrypto.blake2b256Hash([],
-            personalization: _TransactionDigestUtils
-                .zcashSaplingHashPersonalization.codeUnits);
+    final saplingDigest =
+        digest.saplingDigest ??
+        QuickCrypto.blake2b256Hash(
+          [],
+          personalization:
+              _TransactionDigestUtils.zcashSaplingHashPersonalization.codeUnits,
+        );
     h.update(saplingDigest);
-    final orchardDigest = digest.orchardDigest ??
-        QuickCrypto.blake2b256Hash([],
-            personalization: _TransactionDigestUtils
-                .zcashOrchardHashPersonalization.codeUnits);
+    final orchardDigest =
+        digest.orchardDigest ??
+        QuickCrypto.blake2b256Hash(
+          [],
+          personalization:
+              _TransactionDigestUtils.zcashOrchardHashPersonalization.codeUnits,
+        );
     h.update(orchardDigest);
-    return ZCashTxId(h.digest());
+    return ZcashTxId(h.digest());
   }
 
-  /// Computes the ZCashTxId for a transaction.
-  static ZCashTxId txToTxId(TransactionData data) {
+  /// Computes the ZcashTxId for a transaction.
+  static ZcashTxId txToTxId(TransactionData data) {
     final branchId = data.consensusBranchId;
     if (branchId == null) {
-      throw ArgumentException.invalidOperationArguments("toTxId",
-          name: "branchId", reason: "Missing branch id.");
+      throw ArgumentException.invalidOperationArguments(
+        "toTxId",
+        name: "branchId",
+        reason: "Missing branch id.",
+      );
     }
     final digest = txToDigest(data);
     return _toTxId(digest: digest, branchId: branchId);
@@ -604,17 +662,22 @@ class TxIdDigester {
   static TxDigestsPart txToDigest(TransactionData data) {
     final branchId = data.consensusBranchId;
     if (branchId == null) {
-      throw ArgumentException.invalidOperationArguments("toTxId",
-          name: "branchId", reason: "Missing branch id.");
+      throw ArgumentException.invalidOperationArguments(
+        "toTxId",
+        name: "branchId",
+        reason: "Missing branch id.",
+      );
     }
     return TxDigestsPart(
-        headerDigest: _digestHeader(
-            version: data.version,
-            branchId: branchId,
-            locktime: data.locktime,
-            expiryHeight: data.expiryHeight),
-        transparentDigest: _digestTransparent(data.transparentBundle),
-        orchardDigest: _digestOrchard(data.orchardBundle),
-        saplingDigest: _digestSapling(data.saplingBundle));
+      headerDigest: _digestHeader(
+        version: data.version,
+        branchId: branchId,
+        locktime: data.locktime,
+        expiryHeight: data.expiryHeight,
+      ),
+      transparentDigest: _digestTransparent(data.transparentBundle),
+      orchardDigest: _digestOrchard(data.orchardBundle),
+      saplingDigest: _digestSapling(data.saplingBundle),
+    );
   }
 }

@@ -6,33 +6,41 @@ class SaplingProofGenerationKey with LayoutSerializable, Equality {
   final JubJubNativeFr nsk;
 
   SaplingNullifierDerivingKey? _nk;
-  SaplingProofGenerationKey(
-      {required this.ak, required this.nsk, SaplingNullifierDerivingKey? nk})
-      : _nk = nk;
+  SaplingProofGenerationKey({
+    required this.ak,
+    required this.nsk,
+    SaplingNullifierDerivingKey? nk,
+  }) : _nk = nk;
   factory SaplingProofGenerationKey.deserializeJson(Map<String, dynamic> json) {
     return SaplingProofGenerationKey(
-        ak: SaplingSpendVerificationKey.fromBytes(json.valueAsBytes("ak")),
-        nsk: JubJubNativeFr.fromBytes(json.valueAsBytes("nsk")));
+      ak: SaplingSpendVerificationKey.fromBytes(json.valueAsBytes("ak")),
+      nsk: JubJubNativeFr.fromBytes(json.valueAsBytes("nsk")),
+    );
   }
   factory SaplingProofGenerationKey.fromSaplingExpandedSpendingKey(
-      SaplingExpandedSpendingKey expsk) {
+    SaplingExpandedSpendingKey expsk,
+  ) {
     return SaplingProofGenerationKey(
-        ak: expsk.ask.toVerificationKey(),
-        nsk: JubJubNativeFr.fromBytes(expsk.nsk.toBytes()),
-        nk: expsk.toFvk().vk.nk);
+      ak: expsk.ask.toVerificationKey(),
+      nsk: JubJubNativeFr.fromBytes(expsk.nsk.toBytes()),
+      nk: expsk.toFvk().vk.nk,
+    );
   }
 
   SaplingViewingKey toViewingKey() {
     return SaplingViewingKey(
-        ak: ak,
-        nk: _nk ??= SaplingNullifierDerivingKey(
-            SaplingUtils.proofGenerationKeyGeneratorNative * nsk));
+      ak: ak,
+      nk:
+          _nk ??= SaplingNullifierDerivingKey(
+            SaplingUtils.proofGenerationKeyGeneratorNative * nsk,
+          ),
+    );
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.fixedBlob32(property: "ak"),
-      LayoutConst.fixedBlob32(property: "nsk")
+      LayoutConst.fixedBlob32(property: "nsk"),
     ], property: property);
   }
 

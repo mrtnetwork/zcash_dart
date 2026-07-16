@@ -11,24 +11,38 @@ class TransparentTxOutput with Equality, LayoutSerializable {
 
   /// script of output
   final Script scriptPubKey;
-  const TransparentTxOutput._(
-      {required this.amount, required this.scriptPubKey});
-  factory TransparentTxOutput(
-      {required BigInt amount, required Script scriptPubKey}) {
+  const TransparentTxOutput._({
+    required this.amount,
+    required this.scriptPubKey,
+  });
+  factory TransparentTxOutput({
+    required BigInt amount,
+    required Script scriptPubKey,
+  }) {
     try {
       return TransparentTxOutput._(
         amount: amount.asI64,
         scriptPubKey: scriptPubKey,
       );
     } catch (_) {
-      throw TransparentExceptoion.operationFailed("TransparentTxOutput",
-          reason: "Invalid output amount.");
+      throw TransparentExceptoion.operationFailed(
+        "TransparentTxOutput",
+        reason: "Invalid output amount.",
+      );
     }
+  }
+  factory TransparentTxOutput.deserialize(List<int> bytes) {
+    final decode = LayoutSerializable.deserialize(
+      bytes: bytes,
+      layout: layout(),
+    );
+    return TransparentTxOutput.deserializeJson(decode);
   }
   factory TransparentTxOutput.deserializeJson(Map<String, dynamic> json) {
     return TransparentTxOutput(
-        amount: json.valueAsBigInt("amount"),
-        scriptPubKey: Script.deserialize(bytes: json.valueAsBytes("script")));
+      amount: json.valueAsBigInt("amount"),
+      scriptPubKey: Script.deserialize(bytes: json.valueAsBytes("script")),
+    );
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -66,7 +80,7 @@ abstract class BaseTransparentOutputInfo {
 /// the recipient address and the value of bitcoins sent to that address.
 class TransparentSpendableOutput implements BaseTransparentOutputInfo {
   /// Address is a Bitcoin address representing the recipient of the transaction output.
-  final ZCashTransparentAddress address;
+  final ZcashTransparentAddress address;
 
   /// Value is a pointer to a BigInt representing the amount of bitcoins sent to the recipient.
   @override
@@ -76,7 +90,9 @@ class TransparentSpendableOutput implements BaseTransparentOutputInfo {
 
   @override
   TransparentTxOutput toOutput() => TransparentTxOutput(
-      amount: value, scriptPubKey: address.toScriptPubKey());
+    amount: value,
+    scriptPubKey: address.toScriptPubKey(),
+  );
 }
 
 /// TransparentSpendableOutput represents details about a Bitcoin transaction output, including
@@ -93,11 +109,30 @@ class TransparentNullDataOutput implements BaseTransparentOutputInfo {
 
   factory TransparentNullDataOutput(List<int> data) {
     if (data.length > TransparentBuilderConstant.maxOpReturn) {
-      throw TransparentExceptoion.operationFailed("TransparentNullDataOutput",
-          reason: "Data is to long.");
+      throw TransparentExceptoion.operationFailed(
+        "TransparentNullDataOutput",
+        reason: "Data is to long.",
+      );
     }
     return TransparentNullDataOutput._(
-        BitcoinScriptUtils.buildOpReturn([data]));
+      BitcoinScriptUtils.buildOpReturn([data]),
+    );
+  }
+  factory TransparentNullDataOutput.fromScript(Script script) {
+    final content = BitcoinScriptUtils.getOpRetrunContentBytes(script);
+    if (content == null) {
+      throw TransparentExceptoion.operationFailed(
+        "TransparentNullDataOutput",
+        reason: "Invalid OP_RETURN script.",
+      );
+    }
+    if (content.length > TransparentBuilderConstant.maxOpReturn) {
+      throw TransparentExceptoion.operationFailed(
+        "TransparentNullDataOutput",
+        reason: "Data is to long.",
+      );
+    }
+    return TransparentNullDataOutput._(script);
   }
 
   @override

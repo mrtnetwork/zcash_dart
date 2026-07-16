@@ -1,7 +1,5 @@
 import 'package:zcash_dart/zcash.dart';
 
-import 'utils.dart';
-
 void main() async {
   /// ⚠️ IMPORTANT:
   /// Before running this example, go to the `zk` folder and compile
@@ -21,26 +19,13 @@ void main() async {
 
   final zklib = await ZKLib.init(
     ZKLibConfig(
-      /// Web (WASM)
-      webWasmUrl: "...",
-      webGlueJsUrl: "...",
-
-      /// Optional: Web Worker for off-main-thread proof generation
-      workerModuleUrl: "...",
-
-      /// Native platforms
-      androidLibraryUrl: "...",
-      linuxLibraryUrl: "...",
+      wasm: ZKWasmConfig(moduleUrl: "assets/zk/zk_bg.wasm", wasmUrl: "*.js"),
 
       /// Sapling parameter files (downloaded or bundled)
       saplingOutputParamsUrl: "...",
 
-      /// If true, proof generation runs in a Dart isolate
-      /// (recommended for non-blocking UI)
-      useIsolate: false,
-
       /// Custom downloader for Sapling parameters
-      saplingParamsDownloader: SaplingParamDownloer(),
+      // saplingParamsDownloader: SaplingParamDownloer(),
     ),
   );
 

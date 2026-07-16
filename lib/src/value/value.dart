@@ -24,8 +24,10 @@ class ZAmount with Equality, LayoutSerializable {
   /// Creates a ZAmount from a zatoshi value with range validation.
   factory ZAmount.fromZatoshi(BigInt amount) {
     if (amount.isNegative || amount > maxZatoshi) {
-      throw ArgumentException.invalidOperationArguments("fromZatoshi",
-          reason: "Inavlid zatoshi amount.");
+      throw ArgumentException.invalidOperationArguments(
+        "fromZatoshi",
+        reason: "Inavlid zatoshi amount.",
+      );
     }
     return ZAmount._(amount);
   }
@@ -39,7 +41,9 @@ class ZAmount with Equality, LayoutSerializable {
   factory ZAmount.deserializeJson(Map<String, dynamic> json) {
     final bool isNegative = json.valueAsBool("is_negative");
     return ZAmount.fromMagnitudeSign(
-        json.valueAsBigInt("magnitude"), isNegative);
+      json.valueAsBigInt("magnitude"),
+      isNegative,
+    );
   }
 
   /// Creates a ZAmount from magnitude and sign.
@@ -56,7 +60,7 @@ class ZAmount with Equality, LayoutSerializable {
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.lebU64(property: "magnitude"),
-      LayoutConst.boolean(property: "is_negative")
+      LayoutConst.boolean(property: "is_negative"),
     ], property: property);
   }
 
@@ -72,19 +76,21 @@ class ZAmount with Equality, LayoutSerializable {
   /// Creates a ZAmount from an 8-byte little-endian representation.
   factory ZAmount.fromBytes(List<int> bytes) {
     if (bytes.length != 8) {
-      throw ArgumentException.invalidOperationArguments("ZAmount",
-          reason: "Invalid bytes length.");
+      throw ArgumentException.invalidOperationArguments(
+        "ZAmount",
+        reason: "Invalid bytes length.",
+      );
     }
     return ZAmount._(BigintUtils.fromBytes(bytes, byteOrder: Endian.little));
   }
 
   /// Serializes the ZAmount to an 8-byte little-endian array.
   List<int> toBytes() {
-    return value.toI64LeBytes();
+    return value.toLeBytes(length: 8, sign: true);
   }
 
   /// Converts the value to a 64-bit binary representation.
-  List<bool> toBits() => BigintUtils.toBinaryBool(value.asI64, bitLength: 64);
+  List<bool> toBits() => BigintUtils.toBinaryBool(value, bitLength: 64);
 
   /// Returns true if the amount is zero.
   bool isZero() => value == BigInt.zero;
@@ -104,12 +110,12 @@ class ZAmount with Equality, LayoutSerializable {
           value = (value + amount).asI128;
           break;
         default:
-          throw DartZCashPluginException("Unsupported operation.");
+          throw DartZcashPluginException("Unsupported operation.");
       }
 
       return ZAmount._(value);
     } catch (_) {}
-    throw DartZCashPluginException("Sum failed. ZAmount overflowed.");
+    throw DartZcashPluginException("Sum failed. ZAmount overflowed.");
   }
 
   /// Subtracts another ZAmount or BigInt, throwing on overflow.
@@ -124,12 +130,12 @@ class ZAmount with Equality, LayoutSerializable {
           value = (value - amount).asI128;
           break;
         default:
-          throw DartZCashPluginException("Unsupported operation.");
+          throw DartZcashPluginException("Unsupported operation.");
       }
 
       return ZAmount._(value);
     } catch (_) {}
-    throw DartZCashPluginException("Subtraction failed. ZAmount overflowed.");
+    throw DartZcashPluginException("Subtraction failed. ZAmount overflowed.");
   }
 
   /// Converts the value to a 64-bit signed integer, throwing if out of range.
@@ -137,7 +143,7 @@ class ZAmount with Equality, LayoutSerializable {
     try {
       return value.asI64;
     } catch (_) {}
-    throw DartZCashPluginException("Value out of range.");
+    throw DartZcashPluginException("Value out of range.");
   }
 
   /// Returns the amount in zatoshi, throwing if out of range.
@@ -145,7 +151,7 @@ class ZAmount with Equality, LayoutSerializable {
     try {
       return ZAmount.fromZatoshi(value).value;
     } catch (_) {}
-    throw DartZCashPluginException("Value out of range.");
+    throw DartZcashPluginException("Value out of range.");
   }
 
   /// Returns a ZAmount clamped to zatoshi range.
@@ -153,7 +159,7 @@ class ZAmount with Equality, LayoutSerializable {
     try {
       return ZAmount._(value.toU64);
     } catch (_) {}
-    throw DartZCashPluginException("Value out of range.");
+    throw DartZcashPluginException("Value out of range.");
   }
 
   /// Returns a ZAmount clamped to 64-bit signed integer range.
@@ -173,7 +179,7 @@ class ZAmount with Equality, LayoutSerializable {
   Map<String, dynamic> toSerializeJson() {
     return {
       "magnitude": value.isNegative ? (-value).asU64 : value,
-      "is_negative": value.isNegative
+      "is_negative": value.isNegative,
     };
   }
 

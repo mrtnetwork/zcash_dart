@@ -9,8 +9,10 @@ class ZECPublic with Equality {
 
   factory ZECPublic.fromBip32(Bip32PublicKey publicKey) {
     if (publicKey.curveType != EllipticCurveTypes.secp256k1) {
-      throw TransparentExceptoion.operationFailed("fromBip32",
-          reason: 'invalid public key curve for bitcoin');
+      throw TransparentExceptoion.operationFailed(
+        "fromBip32",
+        reason: 'invalid public key curve for bitcoin',
+      );
     }
     return ZECPublic._(publicKey.pubKey as Secp256k1PublicKey);
   }
@@ -41,11 +43,12 @@ class ZECPublic with Equality {
 
   /// toAddress generates a P2PKH (Pay-to-Public-Key-Hash) address from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
-  ZCashP2pkhAddress toAddress(
-      {PublicKeyType mode = PublicKeyType.compressed,
-      ZCashNetwork network = ZCashNetwork.mainnet}) {
+  ZcashP2pkhAddress toAddress({
+    PublicKeyType mode = PublicKeyType.compressed,
+    ZcashNetwork network = ZcashNetwork.mainnet,
+  }) {
     final h160 = toHash160(mode: mode);
-    return ZCashP2pkhAddress.fromBytes(bytes: h160, network: network);
+    return ZcashP2pkhAddress.fromBytes(bytes: h160, network: network);
   }
 
   /// toRedeemScript generates a redeem script from the ZECPublic key.
@@ -57,28 +60,36 @@ class ZECPublic with Equality {
   /// toP2pkhInP2sh generates a P2SH (Pay-to-Script-Hash) address
   /// wrapping a P2PK (Pay-to-Public-Key) script derived from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
-  ZCashP2shAddress toP2pkhInP2sh(
-      {PublicKeyType mode = PublicKeyType.compressed,
-      ZCashNetwork network = ZCashNetwork.mainnet}) {
+  ZcashP2shAddress toP2pkhInP2sh({
+    PublicKeyType mode = PublicKeyType.compressed,
+    ZcashNetwork network = ZcashNetwork.mainnet,
+  }) {
     final addr = toAddress(mode: mode);
     final script = addr.toScriptPubKey();
     final toBytes = script.toBytes();
     final h160 = QuickCrypto.hash160(toBytes);
-    return ZCashP2shAddress.fromBytes(
-        bytes: h160, type: P2shAddressType.p2pkhInP2sh, network: network);
+    return ZcashP2shAddress.fromBytes(
+      bytes: h160,
+      type: P2shAddressType.p2pkhInP2sh,
+      network: network,
+    );
   }
 
   /// toP2pkInP2sh generates a P2SH (Pay-to-Script-Hash) address
   /// wrapping a P2PK (Pay-to-Public-Key) script derived from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
-  ZCashP2shAddress toP2pkInP2sh(
-      {PublicKeyType mode = PublicKeyType.compressed,
-      ZCashNetwork network = ZCashNetwork.mainnet}) {
+  ZcashP2shAddress toP2pkInP2sh({
+    PublicKeyType mode = PublicKeyType.compressed,
+    ZcashNetwork network = ZcashNetwork.mainnet,
+  }) {
     final script = toP2pkRedeemScript(mode: mode);
     final toBytes = script.toBytes();
     final h160 = QuickCrypto.hash160(toBytes);
-    return ZCashP2shAddress.fromBytes(
-        bytes: h160, type: P2shAddressType.p2pkInP2sh, network: network);
+    return ZcashP2shAddress.fromBytes(
+      bytes: h160,
+      type: P2shAddressType.p2pkInP2sh,
+      network: network,
+    );
   }
 
   List<int> toBytes({PubKeyModes mode = PubKeyModes.uncompressed}) {
@@ -98,13 +109,17 @@ class ZECPublic with Equality {
   /// - [message]: The original message that was signed.
   /// - [signature]: The compact ECDSA signature to verify.
   /// - [messagePrefix]: The prefix used in Bitcoin's message signing.
-  bool verify(
-      {required List<int> message,
-      required List<int> signature,
-      String messagePrefix = BitcoinSignerUtils.signMessagePrefix}) {
+  bool verify({
+    required List<int> message,
+    required List<int> signature,
+    String messagePrefix = BitcoinSignerUtils.signMessagePrefix,
+  }) {
     final verifyKey = BitcoinSignatureVerifier.fromKeyBytes(toBytes());
     return verifyKey.verifyMessageSignature(
-        message: message, messagePrefix: messagePrefix, signature: signature);
+      message: message,
+      messagePrefix: messagePrefix,
+      signature: signature,
+    );
   }
 
   /// Recovers the BIP-137 public key from a signed message and signature.
@@ -115,16 +130,20 @@ class ZECPublic with Equality {
   /// - [message]: The original message that was signed.
   /// - [signature]: The Base64-encoded signature.
   /// - [messagePrefix]: The prefix used in Bitcoin's message signing.
-  ZECPublic getBip137PublicKey(
-      {required List<int> message,
-      required String signature,
-      String messagePrefix = BitcoinSignerUtils.signMessagePrefix}) {
-    final signatureBytes =
-        StringUtils.encode(signature, type: StringEncoding.base64);
+  ZECPublic getBip137PublicKey({
+    required List<int> message,
+    required String signature,
+    String messagePrefix = BitcoinSignerUtils.signMessagePrefix,
+  }) {
+    final signatureBytes = StringUtils.encode(
+      signature,
+      encoding: StringEncoding.base64,
+    );
     final ecdsaPubKey = BitcoinSignatureVerifier.recoverPublicKey(
-        message: message,
-        signature: signatureBytes,
-        messagePrefix: messagePrefix);
+      message: message,
+      signature: signatureBytes,
+      messagePrefix: messagePrefix,
+    );
     return ZECPublic.fromBytes(ecdsaPubKey.toBytes());
   }
 
@@ -142,23 +161,28 @@ class ZECPublic with Equality {
   /// Returns the corresponding Bitcoin address derived from the recovered public key.
   /// The address type is determined by the recovery mode of the signature (e.g.,
   /// uncompressed, compressed, SegWit, or P2SH-wrapped SegWit).
-  ZCashTransparentAddress? getBip137Address(
-      {required List<int> message,
-      required String signature,
-      String messagePrefix = BitcoinSignerUtils.signMessagePrefix}) {
-    final signatureBytes =
-        StringUtils.encode(signature, type: StringEncoding.base64);
+  ZcashTransparentAddress? getBip137Address({
+    required List<int> message,
+    required String signature,
+    String messagePrefix = BitcoinSignerUtils.signMessagePrefix,
+  }) {
+    final signatureBytes = StringUtils.encode(
+      signature,
+      encoding: StringEncoding.base64,
+    );
     final ecdsaPubKey = BitcoinSignatureVerifier.recoverPublicKey(
-        message: message,
-        signature: signatureBytes,
-        messagePrefix: messagePrefix);
+      message: message,
+      signature: signatureBytes,
+      messagePrefix: messagePrefix,
+    );
     final publicKey = ZECPublic.fromBytes(ecdsaPubKey.toBytes());
     final mode = BIP137Mode.findMode(signatureBytes[0]);
     return switch (mode) {
-      BIP137Mode.p2pkhUncompressed =>
-        publicKey.toAddress(mode: PubKeyModes.uncompressed),
+      BIP137Mode.p2pkhUncompressed => publicKey.toAddress(
+        mode: PubKeyModes.uncompressed,
+      ),
       BIP137Mode.p2pkhCompressed => publicKey.toAddress(),
-      _ => null
+      _ => null,
     };
   }
 
@@ -171,13 +195,17 @@ class ZECPublic with Equality {
   /// - [signature]: The Base64-encoded signature to verify.
   /// - [address]: The expected Bitcoin address to compare against.
   /// - [messagePrefix]: The prefix used in Bitcoin's message signing
-  bool verifyBip137Address(
-      {required List<int> message,
-      required String signature,
-      required ZCashTransparentAddress address,
-      String messagePrefix = BitcoinSignerUtils.signMessagePrefix}) {
+  bool verifyBip137Address({
+    required List<int> message,
+    required String signature,
+    required ZcashTransparentAddress address,
+    String messagePrefix = BitcoinSignerUtils.signMessagePrefix,
+  }) {
     final signerAddress = getBip137Address(
-        message: message, signature: signature, messagePrefix: messagePrefix);
+      message: message,
+      signature: signature,
+      messagePrefix: messagePrefix,
+    );
     return address.toScriptPubKey() == signerAddress?.toScriptPubKey();
   }
 
@@ -190,11 +218,15 @@ class ZECPublic with Equality {
   /// - [signature]: The DER-encoded ECDSA signature to verify.
   ///
   /// Returns `true` if the signature is valid for the given digest, otherwise `false`.
-  bool verifyDerSignature(
-      {required List<int> digest, required List<int> signature}) {
+  bool verifyDerSignature({
+    required List<int> digest,
+    required List<int> signature,
+  }) {
     final verifyKey = BitcoinSignatureVerifier.fromKeyBytes(toBytes());
     return verifyKey.verifyECDSADerSignature(
-        digest: digest, signature: signature);
+      digest: digest,
+      signature: signature,
+    );
   }
 
   @override

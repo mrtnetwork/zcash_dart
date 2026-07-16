@@ -7,16 +7,18 @@ import 'package:zcash_dart/src/transaction/sighash_digest/generator.dart';
 import 'package:zcash_dart/src/transaction/types/transaction.dart';
 import 'package:zcash_dart/src/transaction/types/version.dart';
 
+import '../utils.dart';
+
 void main() {
   test("ZIP-0244", () {
-    for (final e in _testVector0244) {
+    for (final e in _testVector0244.takeShuffle()) {
       final i = _Test0244Vector.fromJson(e);
       final bytes = i.tx;
       final tx = TransactionData.deserialize(bytes);
       final encode = tx.toSerializeBytes();
 
       expect(bytes, encode);
-      expect(tx.toTxId().txId, i.txid);
+      expect(tx.toTxId().hash, i.txid);
       final amounts = i.amounts.map((e) => BigintUtils.parse(e)).toList();
       final scripts =
           i.scriptPubkeys.map((e) => Script.deserialize(bytes: e)).toList();
@@ -28,74 +30,82 @@ void main() {
             i.scriptPubkeys.map((e) => Script.deserialize(bytes: e)).toList();
         TransparentSignableInput singable(int sighash) =>
             TransparentSignableInput(
-                hashType: sighash,
-                index: index,
-                scriptCode: scripts[index],
-                sciptPubKey: scripts[index],
-                amount: amounts[index]);
+              hashType: sighash,
+              index: index,
+              scriptCode: scripts[index],
+              sciptPubKey: scripts[index],
+              amount: amounts[index],
+            );
 
         List<int> sighash = SighashGenerator.v5(
-            tx: tx,
-            digest: tx.toTxDeigest(),
-            input: singable(BitcoinOpCodeConst.sighashAll),
-            amounts: amounts,
-            scriptPubKeys: scripts);
+          tx: tx,
+          digest: tx.toTxDeigest(),
+          input: singable(BitcoinOpCodeConst.sighashAll),
+          amounts: amounts,
+          scriptPubKeys: scripts,
+        );
         expect(sighash, i.sighashAll);
         sighash = SighashGenerator.v5(
-            tx: tx,
-            digest: tx.toTxDeigest(),
-            input: singable(BitcoinOpCodeConst.sighashNone),
-            amounts: amounts,
-            scriptPubKeys: scripts);
+          tx: tx,
+          digest: tx.toTxDeigest(),
+          input: singable(BitcoinOpCodeConst.sighashNone),
+          amounts: amounts,
+          scriptPubKeys: scripts,
+        );
         expect(sighash, i.sighashNone);
         if (index < transparent!.vout.length) {
           sighash = SighashGenerator.v5(
-              tx: tx,
-              digest: tx.toTxDeigest(),
-              input: singable(BitcoinOpCodeConst.sighashSingle),
-              amounts: amounts,
-              scriptPubKeys: scripts);
+            tx: tx,
+            digest: tx.toTxDeigest(),
+            input: singable(BitcoinOpCodeConst.sighashSingle),
+            amounts: amounts,
+            scriptPubKeys: scripts,
+          );
           expect(sighash, i.sighashSingle);
         } else {
           expect(i.sighashSingle, null);
         }
         sighash = SighashGenerator.v5(
-            tx: tx,
-            digest: tx.toTxDeigest(),
-            input: singable(BitcoinOpCodeConst.sighashAllAnyOneCanPay),
-            amounts: amounts,
-            scriptPubKeys: scripts);
+          tx: tx,
+          digest: tx.toTxDeigest(),
+          input: singable(BitcoinOpCodeConst.sighashAllAnyOneCanPay),
+          amounts: amounts,
+          scriptPubKeys: scripts,
+        );
         expect(sighash, i.sighashAllAnyone);
         sighash = SighashGenerator.v5(
-            tx: tx,
-            digest: tx.toTxDeigest(),
-            input: singable(BitcoinOpCodeConst.sighashNoneAnyOneCanPay),
-            amounts: amounts,
-            scriptPubKeys: scripts);
+          tx: tx,
+          digest: tx.toTxDeigest(),
+          input: singable(BitcoinOpCodeConst.sighashNoneAnyOneCanPay),
+          amounts: amounts,
+          scriptPubKeys: scripts,
+        );
         expect(sighash, i.sighashNoneAnyone);
         if (index < transparent.vout.length) {
           sighash = SighashGenerator.v5(
-              tx: tx,
-              digest: tx.toTxDeigest(),
-              input: singable(BitcoinOpCodeConst.sighashSingleAnyOneCanPay),
-              amounts: amounts,
-              scriptPubKeys: scripts);
+            tx: tx,
+            digest: tx.toTxDeigest(),
+            input: singable(BitcoinOpCodeConst.sighashSingleAnyOneCanPay),
+            amounts: amounts,
+            scriptPubKeys: scripts,
+          );
           expect(sighash, i.sighashSingleAnyone);
         } else {
           expect(i.sighashSingle, null);
         }
       }
       final sighash = SighashGenerator.v5(
-          tx: tx,
-          digest: tx.toTxDeigest(),
-          input: ShieldedSignableInput(),
-          amounts: amounts,
-          scriptPubKeys: scripts);
+        tx: tx,
+        digest: tx.toTxDeigest(),
+        input: ShieldedSignableInput(),
+        amounts: amounts,
+        scriptPubKeys: scripts,
+      );
       expect(sighash, i.sighashShielded);
     }
   });
   test("ZIP-0243", () {
-    for (final e in _testVector0243) {
+    for (final e in _testVector0243.takeShuffle()) {
       final i = _Test0243Vector.fromJson(e);
 
       final bytes = i.tx;
@@ -105,23 +115,26 @@ void main() {
       SignableInput singable() {
         if (i.transparentInput == null) return ShieldedSignableInput();
         return TransparentSignableInput(
-            hashType: i.hashType,
-            index: i.transparentInput!,
-            scriptCode: Script.deserialize(bytes: i.scriptCode),
-            sciptPubKey: Script.deserialize(bytes: i.scriptCode),
-            amount: i.amount);
+          hashType: i.hashType,
+          index: i.transparentInput!,
+          scriptCode: Script.deserialize(bytes: i.scriptCode),
+          sciptPubKey: Script.deserialize(bytes: i.scriptCode),
+          amount: i.amount,
+        );
       }
 
       expect(
-          i.sighash,
-          SighashGenerator.v4(
-              tx: tx,
-              signableInput: singable(),
-              branchId: NetworkUpgrade.sapling));
+        i.sighash,
+        SighashGenerator.v4(
+          tx: tx,
+          signableInput: singable(),
+          branchId: ZcashNetworkProtocol.sapling,
+        ),
+      );
     }
   });
   test("ZIP-0143", () {
-    for (final e in _testVector0143) {
+    for (final e in _testVector0143.takeShuffle()) {
       final i = _Test0143Vector.fromJson(e);
       final bytes = i.tx;
       final tx = TransactionData.deserialize(bytes);
@@ -130,19 +143,22 @@ void main() {
       SignableInput singable() {
         if (i.transactionInput == null) return ShieldedSignableInput();
         return TransparentSignableInput(
-            hashType: i.hashType,
-            index: i.transactionInput!,
-            scriptCode: Script.deserialize(bytes: i.scriptCode),
-            sciptPubKey: Script.deserialize(bytes: i.scriptCode),
-            amount: i.amount);
+          hashType: i.hashType,
+          index: i.transactionInput!,
+          scriptCode: Script.deserialize(bytes: i.scriptCode),
+          sciptPubKey: Script.deserialize(bytes: i.scriptCode),
+          amount: i.amount,
+        );
       }
 
       expect(
-          i.sighash,
-          SighashGenerator.v4(
-              tx: tx,
-              signableInput: singable(),
-              branchId: NetworkUpgrade.overwinter));
+        i.sighash,
+        SighashGenerator.v4(
+          tx: tx,
+          signableInput: singable(),
+          branchId: ZcashNetworkProtocol.overwinter,
+        ),
+      );
     }
   });
 }
@@ -152,28 +168,31 @@ class _Test0143Vector {
   final List<int> scriptCode; // Script type assumed to be a Dart class
   final int hashType; // u32 -> int
   final BigInt amount; // i64 -> int
-  final NetworkUpgrade
-      consensusBranchId; // NetworkUpgrade -> assumed Dart class
+  final ZcashNetworkProtocol
+  consensusBranchId; // NetworkUpgrade -> assumed Dart class
   final List<int> sighash; // [u8; 32] -> List<int> with length 32
   final int? transactionInput;
-  const _Test0143Vector(
-      {required this.tx,
-      required this.scriptCode,
-      required this.hashType,
-      required this.amount,
-      required this.consensusBranchId,
-      required this.sighash,
-      this.transactionInput});
+  const _Test0143Vector({
+    required this.tx,
+    required this.scriptCode,
+    required this.hashType,
+    required this.amount,
+    required this.consensusBranchId,
+    required this.sighash,
+    this.transactionInput,
+  });
   factory _Test0143Vector.fromJson(Map<String, dynamic> json) {
     return _Test0143Vector(
-        tx: json.valueAsBytes("tx"),
-        scriptCode: json.valueAsBytes("scriptCode"),
-        hashType: json.valueAs("hashType"),
-        amount: json.valueAs("amount"),
-        consensusBranchId: NetworkUpgrade.values.firstWhere(
-            (e) => e.name == json.valueAsString("consensusBranchId")),
-        sighash: json.valueAsBytes("sighash"),
-        transactionInput: json.valueAs("transparentInput"));
+      tx: json.valueAsBytes("tx"),
+      scriptCode: json.valueAsBytes("scriptCode"),
+      hashType: json.valueAs("hashType"),
+      amount: json.valueAs("amount"),
+      consensusBranchId: ZcashNetworkProtocol.values.firstWhere(
+        (e) => e.name == json.valueAsString("consensusBranchId"),
+      ),
+      sighash: json.valueAsBytes("sighash"),
+      transactionInput: json.valueAs("transparentInput"),
+    );
   }
 
   Map<String, dynamic> toJson() {
@@ -183,7 +202,7 @@ class _Test0143Vector {
       "hashType": hashType,
       "amount": amount,
       "consensusBranchId": consensusBranchId.name,
-      "sighash": BytesUtils.toHexString(sighash)
+      "sighash": BytesUtils.toHexString(sighash),
     }.notNullValue;
   }
 }
@@ -194,7 +213,7 @@ class _Test0243Vector {
   final int? transparentInput;
   final int hashType;
   final BigInt amount;
-  final NetworkUpgrade consensusBranchId;
+  final ZcashNetworkProtocol consensusBranchId;
   final List<int> sighash;
 
   _Test0243Vector({
@@ -215,12 +234,13 @@ class _Test0243Vector {
     return _Test0243Vector(
       tx: json.valueAsBytes("tx"),
       scriptCode: json.valueAsBytes("scriptCode"),
-      transparentInput: json.containsKey("transparentInput")
-          ? json.valueAs("transparentInput")
-          : null,
+      transparentInput:
+          json.containsKey("transparentInput")
+              ? json.valueAs("transparentInput")
+              : null,
       hashType: json.valueAs("hashType"),
       amount: json.valueAs("amount"),
-      consensusBranchId: NetworkUpgrade.values.firstWhere(
+      consensusBranchId: ZcashNetworkProtocol.values.firstWhere(
         (e) => e.name == json.valueAsString("consensusBranchId"),
       ),
       sighash: json.valueAsBytes("sighash"),
@@ -277,32 +297,40 @@ class _Test0244Vector {
       txid: json.valueAsBytes("txid"),
       authDigest: json.valueAsBytes("authDigest"),
       amounts: json.valueEnsureAsList<String>("amounts"),
-      scriptPubkeys: json
-          .valueEnsureAsList<String>("scriptPubkeys")
-          .map((e) => BytesUtils.fromHexString(e))
-          .toList(),
-      transparentInput: json.containsKey("transparentInput")
-          ? json.valueAs("transparentInput")
-          : null,
+      scriptPubkeys:
+          json
+              .valueEnsureAsList<String>("scriptPubkeys")
+              .map((e) => BytesUtils.fromHexString(e))
+              .toList(),
+      transparentInput:
+          json.containsKey("transparentInput")
+              ? json.valueAs("transparentInput")
+              : null,
       sighashShielded: json.valueAsBytes("sighashShielded"),
-      sighashAll: json.containsKey("sighashAll")
-          ? json.valueAsBytes("sighashAll")
-          : null,
-      sighashNone: json.containsKey("sighashNone")
-          ? json.valueAsBytes("sighashNone")
-          : null,
-      sighashSingle: json.containsKey("sighashSingle")
-          ? json.valueAsBytes("sighashSingle")
-          : null,
-      sighashAllAnyone: json.containsKey("sighashAllAnyone")
-          ? json.valueAsBytes("sighashAllAnyone")
-          : null,
-      sighashNoneAnyone: json.containsKey("sighashNoneAnyone")
-          ? json.valueAsBytes("sighashNoneAnyone")
-          : null,
-      sighashSingleAnyone: json.containsKey("sighashSingleAnyone")
-          ? json.valueAsBytes("sighashSingleAnyone")
-          : null,
+      sighashAll:
+          json.containsKey("sighashAll")
+              ? json.valueAsBytes("sighashAll")
+              : null,
+      sighashNone:
+          json.containsKey("sighashNone")
+              ? json.valueAsBytes("sighashNone")
+              : null,
+      sighashSingle:
+          json.containsKey("sighashSingle")
+              ? json.valueAsBytes("sighashSingle")
+              : null,
+      sighashAllAnyone:
+          json.containsKey("sighashAllAnyone")
+              ? json.valueAsBytes("sighashAllAnyone")
+              : null,
+      sighashNoneAnyone:
+          json.containsKey("sighashNoneAnyone")
+              ? json.valueAsBytes("sighashNoneAnyone")
+              : null,
+      sighashSingleAnyone:
+          json.containsKey("sighashSingleAnyone")
+              ? json.valueAsBytes("sighashSingleAnyone")
+              : null,
     );
   }
 
@@ -335,7 +363,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1969273897303781',
     "consensusBranchId": "sapling",
     "sighash":
-        "63d18534de5f2d1c9e169b73f9c783718adbef5c8a7d55b5e7a37affa1dd3ff3"
+        "63d18534de5f2d1c9e169b73f9c783718adbef5c8a7d55b5e7a37affa1dd3ff3",
   },
   {
     "tx":
@@ -346,7 +374,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '652655344020909',
     "consensusBranchId": "sapling",
     "sighash":
-        "bbe6d84f57c56b29b914c694baaccb891297e961de3eb46c68e3c89c47b1a1db"
+        "bbe6d84f57c56b29b914c694baaccb891297e961de3eb46c68e3c89c47b1a1db",
   },
   {
     "tx":
@@ -356,7 +384,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1345602751504862',
     "consensusBranchId": "sapling",
     "sighash":
-        "1553d4f1074510718199005fefaaa83e29d163eebdf3c033827908acb46fa24b"
+        "1553d4f1074510718199005fefaaa83e29d163eebdf3c033827908acb46fa24b",
   },
   {
     "tx":
@@ -366,7 +394,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1039204199089370',
     "consensusBranchId": "sapling",
     "sighash":
-        "6c4e3244c2d2bfb8d6f6699777a11a64adfee49b2fc781e6951534f973440ddb"
+        "6c4e3244c2d2bfb8d6f6699777a11a64adfee49b2fc781e6951534f973440ddb",
   },
   {
     "tx":
@@ -376,7 +404,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '691732482992802',
     "consensusBranchId": "sapling",
     "sighash":
-        "5d405a1c4ded1987988a100364a3cd6fe0ba2220a6abce08c5171359553065e9"
+        "5d405a1c4ded1987988a100364a3cd6fe0ba2220a6abce08c5171359553065e9",
   },
   {
     "tx":
@@ -386,7 +414,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1152393991505765',
     "consensusBranchId": "sapling",
     "sighash":
-        "58110e2319ad85504a698f73e7ac31a723a029ec07b772fbb32fba17ffe2cc8d"
+        "58110e2319ad85504a698f73e7ac31a723a029ec07b772fbb32fba17ffe2cc8d",
   },
   {
     "tx":
@@ -396,7 +424,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1788797765223798',
     "consensusBranchId": "sapling",
     "sighash":
-        "cbfa22699b04beb76707b51d625e94d26c0df8ada7cf68fcded960654b20f360"
+        "cbfa22699b04beb76707b51d625e94d26c0df8ada7cf68fcded960654b20f360",
   },
   {
     "tx":
@@ -406,7 +434,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1871432121379810',
     "consensusBranchId": "sapling",
     "sighash":
-        "3677a9484f0404fb50645856f4d4a70b2e2b1c2d862f1d4ef68d520960a12a2b"
+        "3677a9484f0404fb50645856f4d4a70b2e2b1c2d862f1d4ef68d520960a12a2b",
   },
   {
     "tx":
@@ -416,7 +444,7 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '1501997449504444',
     "consensusBranchId": "sapling",
     "sighash":
-        "a1cf50cffe59be5f315ffe516e289ee8025e5938f1e8e188537ff1a893ac7114"
+        "a1cf50cffe59be5f315ffe516e289ee8025e5938f1e8e188537ff1a893ac7114",
   },
   {
     "tx":
@@ -427,8 +455,8 @@ const List<Map<String, dynamic>> _testVector0243 = [
     "amount": '391892287957268',
     "consensusBranchId": "sapling",
     "sighash":
-        "6a3b2bcc155789a27439aa275ca99ec648ddd588e82efae4ac46ba3fd0e3bba0"
-  }
+        "6a3b2bcc155789a27439aa275ca99ec648ddd588e82efae4ac46ba3fd0e3bba0",
+  },
 ];
 const List<Map<String, dynamic>> _testVector0143 = [
   {
@@ -440,7 +468,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "449567650863240",
     "consensusBranchId": "overwinter",
     "sighash":
-        "493d49c3e2225d11c464051820147625f3909fa7189f61c7eaecfc6dad2e8203"
+        "493d49c3e2225d11c464051820147625f3909fa7189f61c7eaecfc6dad2e8203",
   },
   {
     "tx":
@@ -450,7 +478,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "1672704339313879",
     "consensusBranchId": "overwinter",
     "sighash":
-        "a1f1a4e5cd9bd522322d661edd2af1bf2a7019cfab94ece18f4ba935b0a19073"
+        "a1f1a4e5cd9bd522322d661edd2af1bf2a7019cfab94ece18f4ba935b0a19073",
   },
   {
     "tx":
@@ -461,7 +489,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "365293780364847",
     "consensusBranchId": "overwinter",
     "sighash":
-        "23652e76cb13b85a0e3363bb5fca061fa791c40c533eccee899364e6e60bb4f7"
+        "23652e76cb13b85a0e3363bb5fca061fa791c40c533eccee899364e6e60bb4f7",
   },
   {
     "tx":
@@ -472,7 +500,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "711752082734717",
     "consensusBranchId": "overwinter",
     "sighash":
-        "b38e31708cb78eeec7663eca1e01b7539e26b730cf446d3bf57a998e9ed92b47"
+        "b38e31708cb78eeec7663eca1e01b7539e26b730cf446d3bf57a998e9ed92b47",
   },
   {
     "tx":
@@ -482,7 +510,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "379068098637835",
     "consensusBranchId": "overwinter",
     "sighash":
-        "92e7b48f328187712687af4dc17a73fe0a70ac078d24cdcdd458a3d68661ec0a"
+        "92e7b48f328187712687af4dc17a73fe0a70ac078d24cdcdd458a3d68661ec0a",
   },
   {
     "tx":
@@ -493,7 +521,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "1437866676382615",
     "consensusBranchId": "overwinter",
     "sighash":
-        "d8e9b972b2898efcca8e96bc9870008cdbc19d45b78d09efb102f2d70dba01ad"
+        "d8e9b972b2898efcca8e96bc9870008cdbc19d45b78d09efb102f2d70dba01ad",
   },
   {
     "tx":
@@ -503,7 +531,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "1993227025071196",
     "consensusBranchId": "overwinter",
     "sighash":
-        "2b62ff0c8dec4df18b9956615b574dda3942fe452d9178b0bbb2eaee4de44a8c"
+        "2b62ff0c8dec4df18b9956615b574dda3942fe452d9178b0bbb2eaee4de44a8c",
   },
   {
     "tx":
@@ -514,7 +542,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "449567650863240",
     "consensusBranchId": "overwinter",
     "sighash":
-        "493d49c3e2225d11c464051820147625f3909fa7189f61c7eaecfc6dad2e8203"
+        "493d49c3e2225d11c464051820147625f3909fa7189f61c7eaecfc6dad2e8203",
   },
   {
     "tx":
@@ -524,7 +552,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "1712463999734827",
     "consensusBranchId": "overwinter",
     "sighash":
-        "bb10300e4dafe30c3ff02634d0e0032f1715b00cbc773df6b09e0043386a1418"
+        "bb10300e4dafe30c3ff02634d0e0032f1715b00cbc773df6b09e0043386a1418",
   },
   {
     "tx":
@@ -535,7 +563,7 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "1564816348934332",
     "consensusBranchId": "overwinter",
     "sighash":
-        "214662c67450603d8aa73beabbf7518d036ce91dc87b0181e8a0f3fa822c7d8a"
+        "214662c67450603d8aa73beabbf7518d036ce91dc87b0181e8a0f3fa822c7d8a",
   },
   {
     "tx":
@@ -546,8 +574,8 @@ const List<Map<String, dynamic>> _testVector0143 = [
     "amount": "483959951916902",
     "consensusBranchId": "overwinter",
     "sighash":
-        "296fd763f2545e64fb5d7d49c000d2b418b93bde2234f8742911e8afefd06d57"
-  }
+        "296fd763f2545e64fb5d7d49c000d2b418b93bde2234f8742911e8afefd06d57",
+  },
 ];
 
 const List<Map<String, dynamic>> _testVector0244 = [
@@ -571,7 +599,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
         "9c9e75ee15f4eda15d777939529fa3a4f64b935c7d21835f79393e7aa23e2879",
     "sighashNoneAnyone":
         "a7dff00a96fd2b41c5808d35e4a6a2aa7b40eeebb6dcf3b9f281eb6c17e43af4",
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -589,7 +617,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashSingle": null,
     "sighashAllAnyone": null,
     "sighashNoneAnyone": null,
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -607,7 +635,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashSingle": null,
     "sighashAllAnyone": null,
     "sighashNoneAnyone": null,
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -629,7 +657,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
         "411508bb7b2194f617adc6c782bb7720c8dfc25fef3bc48ec731a24aa2c1c105",
     "sighashNoneAnyone":
         "b4253a25bf7ee6cd209c5f07666fea853e4b800862a29aa5a8961f953203a3b0",
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -647,7 +675,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashSingle": null,
     "sighashAllAnyone": null,
     "sighashNoneAnyone": null,
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -665,7 +693,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashSingle": null,
     "sighashAllAnyone": null,
     "sighashNoneAnyone": null,
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -683,7 +711,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashSingle": null,
     "sighashAllAnyone": null,
     "sighashNoneAnyone": null,
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -707,7 +735,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashNoneAnyone":
         "dff0eb1e03b9c2fe301db9b0183583618893c8474ef565921d5f2832ede3bf49",
     "sighashSingleAnyone":
-        "1de607f188a40b5c152226d94e44411b6902947d42fbb25fb86c9a4e77a4f35b"
+        "1de607f188a40b5c152226d94e44411b6902947d42fbb25fb86c9a4e77a4f35b",
   },
   {
     "tx":
@@ -731,7 +759,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashNoneAnyone":
         "f35ea9beb0b7ed682d27ef78dde1178d6a55f307c85121cd830258d89d33cdd1",
     "sighashSingleAnyone":
-        "aece3f45769876d87b50478b90cd5e3b37b7f4c55b38f756a57486a31061dfa8"
+        "aece3f45769876d87b50478b90cd5e3b37b7f4c55b38f756a57486a31061dfa8",
   },
   {
     "tx":
@@ -753,7 +781,7 @@ const List<Map<String, dynamic>> _testVector0244 = [
         "e711834b5a4eb84aa2986a53c2b2ba2fd6374e666f0311bfca8cbceefdde1e38",
     "sighashNoneAnyone":
         "5c3a0839fdc73417ae7d5f15dceed6c1a4cbe80c6c25ce0386fef7c058a8b943",
-    "sighashSingleAnyone": null
+    "sighashSingleAnyone": null,
   },
   {
     "tx":
@@ -777,6 +805,6 @@ const List<Map<String, dynamic>> _testVector0244 = [
     "sighashNoneAnyone":
         "1497bf31df9b0f6e77e1173a9eb408ef5e19d844aa9a85b6e7546f30de1f0be2",
     "sighashSingleAnyone":
-        "39acb5fd91a12dd40736fc6aba53fdf52f05838094c3aa6ef345d94a1a0724bf"
-  }
+        "39acb5fd91a12dd40736fc6aba53fdf52f05838094c3aa6ef345d94a1a0724bf",
+  },
 ];

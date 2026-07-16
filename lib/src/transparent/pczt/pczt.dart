@@ -14,7 +14,7 @@ import 'package:zcash_dart/src/transparent/transaction/output.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
 class TransparentPcztInput with LayoutSerializable {
-  final ZCashTxId prevoutTxid;
+  final ZcashTxId prevoutTxid;
   final int prevoutIndex;
   final int? sequence;
   final BigInt value;
@@ -61,8 +61,10 @@ class TransparentPcztInput with LayoutSerializable {
   int getTimelock() {
     final timelock = _requiredTimeLockTime;
     if (timelock == null) {
-      throw TransparentPcztException.operationFailed("getTimelock",
-          reason: "Missing input time lock.");
+      throw TransparentPcztException.operationFailed(
+        "getTimelock",
+        reason: "Missing input time lock.",
+      );
     }
     return timelock;
   }
@@ -71,8 +73,10 @@ class TransparentPcztInput with LayoutSerializable {
   int getHeightlock() {
     final timelock = _requiredHeightLockTime;
     if (timelock == null) {
-      throw TransparentPcztException.operationFailed("getHeightlock",
-          reason: "Missing input height lock.");
+      throw TransparentPcztException.operationFailed(
+        "getHeightlock",
+        reason: "Missing input height lock.",
+      );
     }
     return timelock;
   }
@@ -81,136 +85,167 @@ class TransparentPcztInput with LayoutSerializable {
   Future<void> sign({
     required List<int> sighash,
     required ZECPrivate sk,
-    required ZCashCryptoContext context,
+    required ZcashCryptoContext context,
   }) async {
     final signature = TransparentPcztPartialSignatures(
-        publicKey: sk.toPublicKey().toBytes(mode: PubKeyModes.compressed),
-        signature:
-            await context.signEcdsaDer(sk, sighash, sighash: sighashType));
+      publicKey: sk.toPublicKey().toBytes(mode: PubKeyModes.compressed),
+      signature: await context.signEcdsaDer(sk, sighash, sighash: sighashType),
+    );
     addPrtialSignature(signature);
   }
 
-  TransparentPcztInput(
-      {required this.prevoutTxid,
-      required this.prevoutIndex,
-      this.sequence,
-      required this.value,
-      required this.scriptPubkey,
-      required this.sighashType,
-      int? requiredTimeLockTime,
-      int? requiredHeightLockTime,
-      Script? scriptSig,
-      Script? redeemScript,
-      Set<TransparentPcztPartialSignatures> partialSignatures = const {},
-      Set<TransparentPcztBip32Derivation> bip32Derivation = const {},
-      Set<TransparentPcztInputRipemd160> ripemd160Preimages = const {},
-      Set<TransparentPcztInputSha256> sha256Preimages = const {},
-      Set<TransparentPcztInputHash160> hash160Preimages = const {},
-      Set<TransparentPcztInputHash256> hash256Preimages = const {},
-      Map<String, List<int>> proprietary = const {}})
-      : _partialSignatures = partialSignatures.immutable,
-        _bip32Derivation = bip32Derivation.immutable,
-        _ripemd160Preimages = ripemd160Preimages.immutable,
-        _sha256Preimages = sha256Preimages.immutable,
-        _hash160Preimages = hash160Preimages.immutable,
-        _hash256Preimages = hash256Preimages.immutable,
-        _scriptSig = scriptSig,
-        _requiredHeightLockTime = requiredHeightLockTime,
-        _requiredTimeLockTime = requiredTimeLockTime,
-        _proprietary =
-            proprietary.map((k, v) => MapEntry(k, v.toImutableBytes)).immutable,
-        _redeemScript = redeemScript;
+  TransparentPcztInput({
+    required this.prevoutTxid,
+    required this.prevoutIndex,
+    this.sequence,
+    required this.value,
+    required this.scriptPubkey,
+    required this.sighashType,
+    int? requiredTimeLockTime,
+    int? requiredHeightLockTime,
+    Script? scriptSig,
+    Script? redeemScript,
+    Set<TransparentPcztPartialSignatures> partialSignatures = const {},
+    Set<TransparentPcztBip32Derivation> bip32Derivation = const {},
+    Set<TransparentPcztInputRipemd160> ripemd160Preimages = const {},
+    Set<TransparentPcztInputSha256> sha256Preimages = const {},
+    Set<TransparentPcztInputHash160> hash160Preimages = const {},
+    Set<TransparentPcztInputHash256> hash256Preimages = const {},
+    Map<String, List<int>> proprietary = const {},
+  }) : _partialSignatures = partialSignatures.immutable,
+       _bip32Derivation = bip32Derivation.immutable,
+       _ripemd160Preimages = ripemd160Preimages.immutable,
+       _sha256Preimages = sha256Preimages.immutable,
+       _hash160Preimages = hash160Preimages.immutable,
+       _hash256Preimages = hash256Preimages.immutable,
+       _scriptSig = scriptSig,
+       _requiredHeightLockTime = requiredHeightLockTime,
+       _requiredTimeLockTime = requiredTimeLockTime,
+       _proprietary =
+           proprietary.map((k, v) => MapEntry(k, v.toImutableBytes)).immutable,
+       _redeemScript = redeemScript;
   factory TransparentPcztInput.deserializeJson(Map<String, dynamic> json) {
     return TransparentPcztInput(
-        prevoutTxid: ZCashTxId.deserializeJson(json.valueAs("prevout_txid")),
-        prevoutIndex: json.valueAs("prevout_index"),
-        sequence: json.valueAs("sequence"),
-        requiredTimeLockTime: json.valueAs("required_time_lock_time"),
-        requiredHeightLockTime: json.valueAs("required_height_lock_time"),
-        scriptSig: json.valueTo<Script?, List<int>>(
-            key: "script_sig", parse: (v) => Script.deserialize(bytes: v)),
-        value: json.valueAs("value"),
-        scriptPubkey:
-            Script.deserialize(bytes: json.valueAsBytes("script_pubkey")),
-        redeemScript: json.valueTo<Script?, List<int>>(
-            key: "redeem_script", parse: (v) => Script.deserialize(bytes: v)),
-        partialSignatures: json
-            .valueEnsureAsList<Map<String, dynamic>>("partial_signatures")
-            .map((e) => TransparentPcztPartialSignatures.deserializeJson(e))
-            .toSet(),
-        sighashType: json.valueAs("sighash_type"),
-        bip32Derivation: json
-            .valueEnsureAsList<Map<String, dynamic>>("bip32_derivation")
-            .map((e) => TransparentPcztBip32Derivation.deserializeJson(e))
-            .toSet(),
-        ripemd160Preimages: json
-            .valueEnsureAsList<Map<String, dynamic>>("ripemd160_preimages")
-            .map((e) => TransparentPcztInputRipemd160.deserializeJson(e))
-            .toSet(),
-        hash256Preimages: json
-            .valueEnsureAsList<Map<String, dynamic>>("hash256_preimages")
-            .map((e) => TransparentPcztInputHash256.deserializeJson(e))
-            .toSet(),
-        hash160Preimages: json
-            .valueEnsureAsList<Map<String, dynamic>>("hash160_preimages")
-            .map((e) => TransparentPcztInputHash160.deserializeJson(e))
-            .toSet(),
-        sha256Preimages: json
-            .valueEnsureAsList<Map<String, dynamic>>("sha256_preimages")
-            .map((e) => TransparentPcztInputSha256.deserializeJson(e))
-            .toSet(),
-        proprietary: json.valueEnsureAsMap<String, List<int>>("proprietary"));
+      prevoutTxid: ZcashTxId.deserializeJson(json.valueAs("prevout_txid")),
+      prevoutIndex: json.valueAs("prevout_index"),
+      sequence: json.valueAs("sequence"),
+      requiredTimeLockTime: json.valueAs("required_time_lock_time"),
+      requiredHeightLockTime: json.valueAs("required_height_lock_time"),
+      scriptSig: json.valueTo<Script?, List<int>>(
+        key: "script_sig",
+        parse: (v) => Script.deserialize(bytes: v),
+      ),
+      value: json.valueAs("value"),
+      scriptPubkey: Script.deserialize(
+        bytes: json.valueAsBytes("script_pubkey"),
+      ),
+      redeemScript: json.valueTo<Script?, List<int>>(
+        key: "redeem_script",
+        parse: (v) => Script.deserialize(bytes: v),
+      ),
+      partialSignatures:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("partial_signatures")
+              .map((e) => TransparentPcztPartialSignatures.deserializeJson(e))
+              .toSet(),
+      sighashType: json.valueAs("sighash_type"),
+      bip32Derivation:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("bip32_derivation")
+              .map((e) => TransparentPcztBip32Derivation.deserializeJson(e))
+              .toSet(),
+      ripemd160Preimages:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("ripemd160_preimages")
+              .map((e) => TransparentPcztInputRipemd160.deserializeJson(e))
+              .toSet(),
+      hash256Preimages:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("hash256_preimages")
+              .map((e) => TransparentPcztInputHash256.deserializeJson(e))
+              .toSet(),
+      hash160Preimages:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("hash160_preimages")
+              .map((e) => TransparentPcztInputHash160.deserializeJson(e))
+              .toSet(),
+      sha256Preimages:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("sha256_preimages")
+              .map((e) => TransparentPcztInputSha256.deserializeJson(e))
+              .toSet(),
+      proprietary: json.valueEnsureAsMap<String, List<int>>("proprietary"),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
-      ZCashTxId.layout(property: "prevout_txid"),
+      ZcashTxId.layout(property: "prevout_txid"),
       LayoutConst.lebU32(property: "prevout_index"),
       LayoutConst.optional(LayoutConst.lebU32(), property: "sequence"),
-      LayoutConst.optional(LayoutConst.lebU32(),
-          property: "required_time_lock_time"),
-      LayoutConst.optional(LayoutConst.lebU32(),
-          property: "required_height_lock_time"),
+      LayoutConst.optional(
+        LayoutConst.lebU32(),
+        property: "required_time_lock_time",
+      ),
+      LayoutConst.optional(
+        LayoutConst.lebU32(),
+        property: "required_height_lock_time",
+      ),
       LayoutConst.optional(LayoutConst.bcsBytes(), property: "script_sig"),
       LayoutConst.lebU64(property: "value"),
       LayoutConst.bcsBytes(property: "script_pubkey"),
       LayoutConst.optional(LayoutConst.bcsBytes(), property: "redeem_script"),
-      LayoutConst.bcsVector(TransparentPcztPartialSignatures.layout(),
-          property: "partial_signatures"),
+      LayoutConst.bcsVector(
+        TransparentPcztPartialSignatures.layout(),
+        property: "partial_signatures",
+      ),
       LayoutConst.u8(property: "sighash_type"),
-      LayoutConst.bcsVector(TransparentPcztBip32Derivation.layout(),
-          property: "bip32_derivation"),
-      LayoutConst.bcsVector(TransparentPcztInputRipemd160.layout(),
-          property: "ripemd160_preimages"),
-      LayoutConst.bcsVector(TransparentPcztInputSha256.layout(),
-          property: "sha256_preimages"),
-      LayoutConst.bcsVector(TransparentPcztInputHash160.layout(),
-          property: "hash160_preimages"),
-      LayoutConst.bcsVector(TransparentPcztInputHash256.layout(),
-          property: "hash256_preimages"),
+      LayoutConst.bcsVector(
+        TransparentPcztBip32Derivation.layout(),
+        property: "bip32_derivation",
+      ),
+      LayoutConst.bcsVector(
+        TransparentPcztInputRipemd160.layout(),
+        property: "ripemd160_preimages",
+      ),
+      LayoutConst.bcsVector(
+        TransparentPcztInputSha256.layout(),
+        property: "sha256_preimages",
+      ),
+      LayoutConst.bcsVector(
+        TransparentPcztInputHash160.layout(),
+        property: "hash160_preimages",
+      ),
+      LayoutConst.bcsVector(
+        TransparentPcztInputHash256.layout(),
+        property: "hash256_preimages",
+      ),
       LayoutConst.bscMap<String, List<int>>(
-          LayoutConst.bcsString(), LayoutConst.bcsBytes(),
-          property: "proprietary")
+        LayoutConst.bcsString(),
+        LayoutConst.bcsBytes(),
+        property: "proprietary",
+      ),
     ], property: property);
   }
 
   TransparentPcztInput clone() => TransparentPcztInput(
-      prevoutTxid: prevoutTxid,
-      prevoutIndex: prevoutIndex,
-      value: value,
-      scriptPubkey: scriptPubkey,
-      sighashType: sighashType,
-      bip32Derivation: bip32Derivation,
-      hash160Preimages: hash160Preimages,
-      hash256Preimages: hash256Preimages,
-      partialSignatures: partialSignatures,
-      proprietary: proprietary,
-      redeemScript: redeemScript,
-      requiredHeightLockTime: requiredHeightLockTime,
-      requiredTimeLockTime: requiredHeightLockTime,
-      ripemd160Preimages: ripemd160Preimages,
-      scriptSig: scriptSig,
-      sequence: sequence,
-      sha256Preimages: sha256Preimages);
+    prevoutTxid: prevoutTxid,
+    prevoutIndex: prevoutIndex,
+    value: value,
+    scriptPubkey: scriptPubkey,
+    sighashType: sighashType,
+    bip32Derivation: bip32Derivation,
+    hash160Preimages: hash160Preimages,
+    hash256Preimages: hash256Preimages,
+    partialSignatures: partialSignatures,
+    proprietary: proprietary,
+    redeemScript: redeemScript,
+    requiredHeightLockTime: requiredHeightLockTime,
+    requiredTimeLockTime: requiredHeightLockTime,
+    ripemd160Preimages: ripemd160Preimages,
+    scriptSig: scriptSig,
+    sequence: sequence,
+    sha256Preimages: sha256Preimages,
+  );
 
   /// Adds a proprietary key-value pair to the input.
   void addProprietary(String name, List<int> value) {
@@ -227,14 +262,18 @@ class TransparentPcztInput with LayoutSerializable {
   /// /// Sets the redeem script for a P2SH input, validating correctness.
   void setRedeemScript(Script? redeemScript) {
     if (redeemScript != null && !BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed("setRedeemScript",
-          reason: "No P2sh input.");
+      throw TransparentPcztException.operationFailed(
+        "setRedeemScript",
+        reason: "No P2sh input.",
+      );
     }
     if (redeemScript != null &&
         P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
             scriptPubkey) {
-      throw TransparentPcztException.operationFailed("setRedeemScript",
-          reason: "Invalid redeem script.");
+      throw TransparentPcztException.operationFailed(
+        "setRedeemScript",
+        reason: "Invalid redeem script.",
+      );
     }
     _redeemScript = redeemScript;
   }
@@ -281,22 +320,30 @@ class TransparentPcztInput with LayoutSerializable {
     if (BitcoinScriptUtils.isP2pkh(scriptPubkey) ||
         BitcoinScriptUtils.isP2pk(scriptPubkey)) {
       if (redeemScript != null) {
-        throw TransparentPcztException.operationFailed("verify",
-            reason: "Invalid input scipts.");
+        throw TransparentPcztException.operationFailed(
+          "verify",
+          reason: "Invalid input scipts.",
+        );
       }
     } else if (redeemScript != null) {
       if (!BitcoinScriptUtils.isP2sh(scriptPubkey) ||
           P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
               scriptPubkey) {
-        throw TransparentPcztException.operationFailed("verify",
-            reason: "Invalid p2sh input redeem script.");
+        throw TransparentPcztException.operationFailed(
+          "verify",
+          reason: "Invalid p2sh input redeem script.",
+        );
       }
     } else if (BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed("verify",
-          reason: "Missing input redeem script.");
+      throw TransparentPcztException.operationFailed(
+        "verify",
+        reason: "Missing input redeem script.",
+      );
     } else {
-      throw TransparentPcztException.operationFailed("verify",
-          reason: "Unsupported script pub key.");
+      throw TransparentPcztException.operationFailed(
+        "verify",
+        reason: "Unsupported script pub key.",
+      );
     }
   }
 
@@ -346,7 +393,7 @@ class TransparentPcztInput with LayoutSerializable {
           hash160Preimages.map((e) => e.toSerializeJson()).toList(),
       "hash256_preimages":
           hash256Preimages.map((e) => e.toSerializeJson()).toList(),
-      "proprietary": proprietary
+      "proprietary": proprietary,
     };
   }
 
@@ -354,7 +401,9 @@ class TransparentPcztInput with LayoutSerializable {
   bool canMerge(TransparentPcztInput other) {
     return PcztUtils.canMerge(sequence, other.sequence) &&
         PcztUtils.canMerge(
-            requiredHeightLockTime, other.requiredHeightLockTime) &&
+          requiredHeightLockTime,
+          other.requiredHeightLockTime,
+        ) &&
         PcztUtils.canMerge(requiredTimeLockTime, other.requiredTimeLockTime) &&
         PcztUtils.canMerge(redeemScript, other.redeemScript) &&
         PcztUtils.canMerge(scriptSig, other.scriptSig) &&
@@ -375,20 +424,34 @@ class TransparentPcztInput with LayoutSerializable {
         this.requiredTimeLockTime ?? other.requiredTimeLockTime;
     Script? redeemScript = this.redeemScript ?? other.redeemScript;
     Script? scriptSig = this.scriptSig ?? other.scriptSig;
-    final proprietary =
-        PcztUtils.mergeProprietary(this.proprietary, other.proprietary);
-    final bip32Derivation =
-        PcztUtils.mergeSet(this.bip32Derivation, other.bip32Derivation);
-    final ripemd160Preimages =
-        PcztUtils.mergeSet(this.ripemd160Preimages, other.ripemd160Preimages);
-    final sha256Preimages =
-        PcztUtils.mergeSet(this.sha256Preimages, other.sha256Preimages);
-    final hash160Preimages =
-        PcztUtils.mergeSet(this.hash160Preimages, other.hash160Preimages);
-    final hash256Preimages =
-        PcztUtils.mergeSet(this.hash256Preimages, other.hash256Preimages);
-    final partialSignatures =
-        PcztUtils.mergeSet(this.partialSignatures, other.partialSignatures);
+    final proprietary = PcztUtils.mergeProprietary(
+      this.proprietary,
+      other.proprietary,
+    );
+    final bip32Derivation = PcztUtils.mergeSet(
+      this.bip32Derivation,
+      other.bip32Derivation,
+    );
+    final ripemd160Preimages = PcztUtils.mergeSet(
+      this.ripemd160Preimages,
+      other.ripemd160Preimages,
+    );
+    final sha256Preimages = PcztUtils.mergeSet(
+      this.sha256Preimages,
+      other.sha256Preimages,
+    );
+    final hash160Preimages = PcztUtils.mergeSet(
+      this.hash160Preimages,
+      other.hash160Preimages,
+    );
+    final hash256Preimages = PcztUtils.mergeSet(
+      this.hash256Preimages,
+      other.hash256Preimages,
+    );
+    final partialSignatures = PcztUtils.mergeSet(
+      this.partialSignatures,
+      other.partialSignatures,
+    );
     if (proprietary == null ||
         bip32Derivation == null ||
         ripemd160Preimages == null ||
@@ -399,23 +462,24 @@ class TransparentPcztInput with LayoutSerializable {
       return null;
     }
     return TransparentPcztInput(
-        prevoutTxid: prevoutTxid,
-        prevoutIndex: prevoutIndex,
-        value: value,
-        scriptPubkey: scriptPubkey,
-        sighashType: sighashType,
-        bip32Derivation: bip32Derivation,
-        hash160Preimages: hash160Preimages,
-        hash256Preimages: hash256Preimages,
-        partialSignatures: partialSignatures,
-        proprietary: proprietary,
-        redeemScript: redeemScript,
-        requiredHeightLockTime: requiredHeightLockTime,
-        requiredTimeLockTime: requiredTimeLockTime,
-        ripemd160Preimages: ripemd160Preimages,
-        scriptSig: scriptSig,
-        sequence: sequence,
-        sha256Preimages: sha256Preimages);
+      prevoutTxid: prevoutTxid,
+      prevoutIndex: prevoutIndex,
+      value: value,
+      scriptPubkey: scriptPubkey,
+      sighashType: sighashType,
+      bip32Derivation: bip32Derivation,
+      hash160Preimages: hash160Preimages,
+      hash256Preimages: hash256Preimages,
+      partialSignatures: partialSignatures,
+      proprietary: proprietary,
+      redeemScript: redeemScript,
+      requiredHeightLockTime: requiredHeightLockTime,
+      requiredTimeLockTime: requiredTimeLockTime,
+      ripemd160Preimages: ripemd160Preimages,
+      scriptSig: scriptSig,
+      sequence: sequence,
+      sha256Preimages: sha256Preimages,
+    );
   }
 }
 
@@ -430,32 +494,36 @@ class TransparentPcztOutput with LayoutSerializable {
   String? get userAddress => _userAddress;
   Map<String, List<int>> _proprietary;
   Map<String, List<int>> get proprietary => _proprietary;
-  TransparentPcztOutput(
-      {required this.value,
-      required this.scriptPubkey,
-      Script? redeemScript,
-      Set<TransparentPcztBip32Derivation> bip32Derivation = const {},
-      String? userAddress,
-      Map<String, List<int>> proprietary = const {}})
-      : _bip32Derivation = bip32Derivation.immutable,
-        _proprietary = proprietary
-            .map((k, v) => MapEntry(k, v.asImmutableBytes))
-            .immutable,
-        _redeemScript = redeemScript,
-        _userAddress = userAddress;
+  TransparentPcztOutput({
+    required this.value,
+    required this.scriptPubkey,
+    Script? redeemScript,
+    Set<TransparentPcztBip32Derivation> bip32Derivation = const {},
+    String? userAddress,
+    Map<String, List<int>> proprietary = const {},
+  }) : _bip32Derivation = bip32Derivation.immutable,
+       _proprietary =
+           proprietary.map((k, v) => MapEntry(k, v.asImmutableBytes)).immutable,
+       _redeemScript = redeemScript,
+       _userAddress = userAddress;
   factory TransparentPcztOutput.deserializeJson(Map<String, dynamic> json) {
     return TransparentPcztOutput(
-        value: json.valueAs("value"),
-        bip32Derivation: json
-            .valueEnsureAsList<Map<String, dynamic>>("bip32_derivation")
-            .map((e) => TransparentPcztBip32Derivation.deserializeJson(e))
-            .toSet(),
-        scriptPubkey:
-            Script.deserialize(bytes: json.valueAsBytes("script_pubkey")),
-        redeemScript: json.valueTo<Script?, List<int>>(
-            key: "redeem_script", parse: (v) => Script.deserialize(bytes: v)),
-        userAddress: json.valueAsString("user_address"),
-        proprietary: json.valueEnsureAsMap<String, List<int>>("proprietary"));
+      value: json.valueAs("value"),
+      bip32Derivation:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("bip32_derivation")
+              .map((e) => TransparentPcztBip32Derivation.deserializeJson(e))
+              .toSet(),
+      scriptPubkey: Script.deserialize(
+        bytes: json.valueAsBytes("script_pubkey"),
+      ),
+      redeemScript: json.valueTo<Script?, List<int>>(
+        key: "redeem_script",
+        parse: (v) => Script.deserialize(bytes: v),
+      ),
+      userAddress: json.valueAsString("user_address"),
+      proprietary: json.valueEnsureAsMap<String, List<int>>("proprietary"),
+    );
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -463,40 +531,51 @@ class TransparentPcztOutput with LayoutSerializable {
       LayoutConst.lebU64(property: "value"),
       LayoutConst.bcsBytes(property: "script_pubkey"),
       LayoutConst.optional(LayoutConst.bcsBytes(), property: "redeem_script"),
-      LayoutConst.bcsVector(TransparentPcztBip32Derivation.layout(),
-          property: "bip32_derivation"),
+      LayoutConst.bcsVector(
+        TransparentPcztBip32Derivation.layout(),
+        property: "bip32_derivation",
+      ),
       LayoutConst.optional(LayoutConst.bcsString(), property: "user_address"),
       LayoutConst.bscMap<String, List<int>>(
-          LayoutConst.bcsString(), LayoutConst.bcsBytes(),
-          property: "proprietary")
+        LayoutConst.bcsString(),
+        LayoutConst.bcsBytes(),
+        property: "proprietary",
+      ),
     ], property: property);
   }
 
   TransparentPcztOutput clone() => TransparentPcztOutput(
-      value: value,
-      scriptPubkey: scriptPubkey,
-      bip32Derivation: bip32Derivation,
-      proprietary: proprietary,
-      redeemScript: redeemScript,
-      userAddress: userAddress);
+    value: value,
+    scriptPubkey: scriptPubkey,
+    bip32Derivation: bip32Derivation,
+    proprietary: proprietary,
+    redeemScript: redeemScript,
+    userAddress: userAddress,
+  );
 
   void verify() {
     final redeemScript = this.redeemScript;
     if (BitcoinScriptUtils.isP2pkh(scriptPubkey)) {
       if (redeemScript != null) {
-        throw TransparentPcztException.operationFailed("verify",
-            reason: "No P2sh output.");
+        throw TransparentPcztException.operationFailed(
+          "verify",
+          reason: "No P2sh output.",
+        );
       }
     } else if (redeemScript != null) {
       if (!BitcoinScriptUtils.isP2sh(scriptPubkey) ||
           P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
               scriptPubkey) {
-        throw TransparentPcztException.operationFailed("verify",
-            reason: "Invalid p2sh output.");
+        throw TransparentPcztException.operationFailed(
+          "verify",
+          reason: "Invalid p2sh output.",
+        );
       }
     } else {
-      throw TransparentPcztException.operationFailed("verify",
-          reason: "Unsupported output script pub key.");
+      throw TransparentPcztException.operationFailed(
+        "verify",
+        reason: "Unsupported output script pub key.",
+      );
     }
   }
 
@@ -513,18 +592,24 @@ class TransparentPcztOutput with LayoutSerializable {
 
   void setRedeemScript(Script? redeemScript) {
     if (redeemScript != null && !BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed("setRedeemScript",
-          reason: "No P2sh output.");
+      throw TransparentPcztException.operationFailed(
+        "setRedeemScript",
+        reason: "No P2sh output.",
+      );
     }
     if (!BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed("setRedeemScript",
-          reason: "No P2sh output.");
+      throw TransparentPcztException.operationFailed(
+        "setRedeemScript",
+        reason: "No P2sh output.",
+      );
     }
     if (redeemScript != null &&
         P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
             scriptPubkey) {
-      throw TransparentPcztException.operationFailed("setRedeemScript",
-          reason: "Invalid redeem script.");
+      throw TransparentPcztException.operationFailed(
+        "setRedeemScript",
+        reason: "Invalid redeem script.",
+      );
     }
     _redeemScript = redeemScript;
   }
@@ -547,7 +632,7 @@ class TransparentPcztOutput with LayoutSerializable {
       "bip32_derivation":
           bip32Derivation.map((e) => e.toSerializeJson()).toList(),
       "user_address": userAddress,
-      "proprietary": proprietary
+      "proprietary": proprietary,
     };
   }
 
@@ -565,53 +650,65 @@ class TransparentPcztOutput with LayoutSerializable {
     if (!canMerge(other)) return null;
     final userAddress = this.userAddress ?? other.userAddress;
     final redeemScript = this.redeemScript ?? other.redeemScript;
-    final proprietary =
-        PcztUtils.mergeProprietary(this.proprietary, other.proprietary);
-    final bip32Derivation =
-        PcztUtils.mergeSet(this.bip32Derivation, other.bip32Derivation);
+    final proprietary = PcztUtils.mergeProprietary(
+      this.proprietary,
+      other.proprietary,
+    );
+    final bip32Derivation = PcztUtils.mergeSet(
+      this.bip32Derivation,
+      other.bip32Derivation,
+    );
     if (proprietary == null || bip32Derivation == null) {
       return null;
     }
     return TransparentPcztOutput(
-        value: value,
-        scriptPubkey: scriptPubkey,
-        bip32Derivation: bip32Derivation,
-        proprietary: proprietary,
-        redeemScript: redeemScript,
-        userAddress: userAddress);
+      value: value,
+      scriptPubkey: scriptPubkey,
+      bip32Derivation: bip32Derivation,
+      proprietary: proprietary,
+      redeemScript: redeemScript,
+      userAddress: userAddress,
+    );
   }
 }
 
 class TransparentPcztBundle
-    with
-        LayoutSerializable
+    with LayoutSerializable
     implements
-        PcztBundle<TransparentBundle, TransparentExtractedBundle,
-            TransparentPcztBundle> {
+        PcztBundle<
+          TransparentBundle,
+          TransparentExtractedBundle,
+          TransparentPcztBundle
+        > {
   final List<TransparentPcztInput> inputs;
   final List<TransparentPcztOutput> outputs;
 
-  TransparentPcztBundle(
-      {List<TransparentPcztInput> inputs = const [],
-      List<TransparentPcztOutput> outputs = const []})
-      : inputs = inputs.immutable,
-        outputs = outputs.immutable;
+  TransparentPcztBundle({
+    List<TransparentPcztInput> inputs = const [],
+    List<TransparentPcztOutput> outputs = const [],
+  }) : inputs = inputs.immutable,
+       outputs = outputs.immutable;
   factory TransparentPcztBundle.deserializeJson(Map<String, dynamic> json) {
     return TransparentPcztBundle(
-      inputs: json
-          .valueEnsureAsList<Map<String, dynamic>>("inputs")
-          .map((e) => TransparentPcztInput.deserializeJson(e))
-          .toList(),
-      outputs: json
-          .valueEnsureAsList<Map<String, dynamic>>("outputs")
-          .map((e) => TransparentPcztOutput.deserializeJson(e))
-          .toList(),
+      inputs:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("inputs")
+              .map((e) => TransparentPcztInput.deserializeJson(e))
+              .toList(),
+      outputs:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>("outputs")
+              .map((e) => TransparentPcztOutput.deserializeJson(e))
+              .toList(),
     );
   }
   static Layout<Map<String, dynamic>> layout({String? propery}) {
     return LayoutConst.struct([
       LayoutConst.bcsVector(TransparentPcztInput.layout(), property: "inputs"),
-      LayoutConst.bcsVector(TransparentPcztOutput.layout(), property: "outputs")
+      LayoutConst.bcsVector(
+        TransparentPcztOutput.layout(),
+        property: "outputs",
+      ),
     ], property: propery);
   }
 
@@ -625,23 +722,31 @@ class TransparentPcztBundle
   TransparentExtractedBundle extract() =>
       TransparentExtractedBundle(bundle: _toTxData(), valueSum: valueSum);
   TransparentBundle _toTxData({bool extract = true}) {
-    final inputs = this.inputs.map((e) {
-      final scriptSig = e.scriptSig;
-      if (extract && scriptSig == null) {
-        throw TransparentPcztException.operationFailed("extract",
-            reason: "Missing input scriptsig.");
-      }
-      final sequence = e.sequence;
-      return TransparentTxInput(
-          txId: e.prevoutTxid.txId,
-          txIndex: e.prevoutIndex,
-          scriptSig: scriptSig,
-          sequance: sequence);
-    }).toList();
+    final inputs =
+        this.inputs.map((e) {
+          final scriptSig = e.scriptSig;
+          if (extract && scriptSig == null) {
+            throw TransparentPcztException.operationFailed(
+              "extract",
+              reason: "Missing input scriptsig.",
+            );
+          }
+          final sequence = e.sequence;
+          return TransparentTxInput(
+            txId: e.prevoutTxid,
+            txIndex: e.prevoutIndex,
+            scriptSig: scriptSig,
+            sequance: sequence,
+          );
+        }).toList();
 
-    final outputs = this.outputs.map((e) {
-      return TransparentTxOutput(amount: e.value, scriptPubKey: e.scriptPubkey);
-    }).toList();
+    final outputs =
+        this.outputs.map((e) {
+          return TransparentTxOutput(
+            amount: e.value,
+            scriptPubKey: e.scriptPubkey,
+          );
+        }).toList();
     return TransparentBundle(vin: inputs, vout: outputs);
   }
 
@@ -662,15 +767,16 @@ class TransparentPcztBundle
   Map<String, dynamic> toSerializeJson() {
     return {
       "inputs": inputs.map((e) => e.toSerializeJson()).toList(),
-      "outputs": outputs.map((e) => e.toSerializeJson()).toList()
+      "outputs": outputs.map((e) => e.toSerializeJson()).toList(),
     };
   }
 
   /// Attempts to merge with another; returns null if merging is not possible.
-  TransparentPcztBundle? merge(
-      {required TransparentPcztBundle other,
-      required PcztGlobal global,
-      required PcztGlobal otherGlobal}) {
+  TransparentPcztBundle? merge({
+    required TransparentPcztBundle other,
+    required PcztGlobal global,
+    required PcztGlobal otherGlobal,
+  }) {
     List<TransparentPcztInput> inputs = this.inputs;
     List<TransparentPcztOutput> outputs = this.outputs;
     List<TransparentPcztInput> otherInputs = other.inputs;
@@ -731,24 +837,30 @@ class TransparentPcztPartialSignatures
   TransparentPcztPartialSignatures({
     required List<int> publicKey,
     required List<int> signature,
-  })  : publicKey = publicKey
-            .exc(
-                length: EcdsaKeysConst.pubKeyCompressedByteLen,
-                operation: "TransparentPcztPartialSignatures",
-                reason: "Invalid compressed public key bytes length.")
-            .asImmutableBytes,
-        signature = signature.asImmutableBytes;
+  }) : publicKey =
+           publicKey
+               .exc(
+                 length: EcdsaKeysConst.pubKeyCompressedByteLen,
+                 operation: "TransparentPcztPartialSignatures",
+                 reason: "Invalid compressed public key bytes length.",
+               )
+               .asImmutableBytes,
+       signature = signature.asImmutableBytes;
 
   factory TransparentPcztPartialSignatures.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return TransparentPcztPartialSignatures(
-        publicKey: json.valueAsBytes("public_key"),
-        signature: json.valueAsBytes("signature"));
+      publicKey: json.valueAsBytes("public_key"),
+      signature: json.valueAsBytes("signature"),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
-      LayoutConst.fixedBlobN(EcdsaKeysConst.pubKeyCompressedByteLen,
-          property: "public_key"),
+      LayoutConst.fixedBlobN(
+        EcdsaKeysConst.pubKeyCompressedByteLen,
+        property: "public_key",
+      ),
       LayoutConst.bcsBytes(property: "signature"),
     ], property: property);
   }
@@ -779,38 +891,47 @@ class TransparentPcztBip32Derivation with PartialEquality, LayoutSerializable {
   final List<int> publicKey;
   final List<int> seedFingerprint;
   final List<Bip32KeyIndex> derivationPath;
-  TransparentPcztBip32Derivation(
-      {required List<int> seedFingerprint,
-      required List<Bip32KeyIndex> derivationPath,
-      required List<int> publicKey})
-      : seedFingerprint = seedFingerprint
-            .exc(
-                length: 32,
-                operation: "TransparentPcztBip32Derivation",
-                reason: "Invalid seed fingerprint bytes length.")
-            .asImmutableBytes,
-        publicKey = publicKey
-            .exc(
-                length: EcdsaKeysConst.pubKeyCompressedByteLen,
-                operation: "TransparentPcztBip32Derivation",
-                reason: "Invalid public key bytes length.")
-            .asImmutableBytes,
-        derivationPath = derivationPath.immutable;
+  TransparentPcztBip32Derivation({
+    required List<int> seedFingerprint,
+    required List<Bip32KeyIndex> derivationPath,
+    required List<int> publicKey,
+  }) : seedFingerprint =
+           seedFingerprint
+               .exc(
+                 length: 32,
+                 operation: "TransparentPcztBip32Derivation",
+                 reason: "Invalid seed fingerprint bytes length.",
+               )
+               .asImmutableBytes,
+       publicKey =
+           publicKey
+               .exc(
+                 length: EcdsaKeysConst.pubKeyCompressedByteLen,
+                 operation: "TransparentPcztBip32Derivation",
+                 reason: "Invalid public key bytes length.",
+               )
+               .asImmutableBytes,
+       derivationPath = derivationPath.immutable;
 
   factory TransparentPcztBip32Derivation.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return TransparentPcztBip32Derivation(
-        publicKey: json.valueAsBytes("public_key"),
-        seedFingerprint: json.valueAsBytes("seed_fingerprint"),
-        derivationPath: json
-            .valueEnsureAsList<int>("derivation_path")
-            .map((e) => Bip32KeyIndex(e))
-            .toList());
+      publicKey: json.valueAsBytes("public_key"),
+      seedFingerprint: json.valueAsBytes("seed_fingerprint"),
+      derivationPath:
+          json
+              .valueEnsureAsList<int>("derivation_path")
+              .map((e) => Bip32KeyIndex(e))
+              .toList(),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
-      LayoutConst.fixedBlobN(EcdsaKeysConst.pubKeyCompressedByteLen,
-          property: "public_key"),
+      LayoutConst.fixedBlobN(
+        EcdsaKeysConst.pubKeyCompressedByteLen,
+        property: "public_key",
+      ),
       LayoutConst.fixedBlob32(property: "seed_fingerprint"),
       LayoutConst.bcsVector(LayoutConst.lebU32(), property: "derivation_path"),
     ], property: property);
@@ -826,7 +947,7 @@ class TransparentPcztBip32Derivation with PartialEquality, LayoutSerializable {
     return {
       "public_key": publicKey,
       "seed_fingerprint": seedFingerprint,
-      "derivation_path": derivationPath.map((e) => e.index).toList()
+      "derivation_path": derivationPath.map((e) => e.index).toList(),
     };
   }
 
@@ -847,29 +968,36 @@ class TransparentPcztInputRipemd160 with PartialEquality, LayoutSerializable {
     return BytesUtils.toHexString(preimage);
   }
 
-  TransparentPcztInputRipemd160(
-      {required List<int> preimage, required List<int> hash})
-      : preimage = preimage.asImmutableBytes,
-        hash = hash
-            .exc(
-                length: QuickCrypto.hash160DigestSize,
-                operation: "TransparentPcztInputRipemd160",
-                reason: "Invalid hash bytes length")
-            .asImmutableBytes;
+  TransparentPcztInputRipemd160({
+    required List<int> preimage,
+    required List<int> hash,
+  }) : preimage = preimage.asImmutableBytes,
+       hash =
+           hash
+               .exc(
+                 length: QuickCrypto.hash160DigestSize,
+                 operation: "TransparentPcztInputRipemd160",
+                 reason: "Invalid hash bytes length",
+               )
+               .asImmutableBytes;
   factory TransparentPcztInputRipemd160.fromPreImage(List<int> preimage) {
     return TransparentPcztInputRipemd160(
-        preimage: preimage, hash: QuickCrypto.ripemd160Hash(preimage));
+      preimage: preimage,
+      hash: QuickCrypto.ripemd160Hash(preimage),
+    );
   }
   factory TransparentPcztInputRipemd160.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return TransparentPcztInputRipemd160(
-        preimage: json.valueAsBytes("preimage"),
-        hash: json.valueAsBytes("hash"));
+      preimage: json.valueAsBytes("preimage"),
+      hash: json.valueAsBytes("hash"),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.fixedBlobN(QuickCrypto.hash160DigestSize, property: "hash"),
-      LayoutConst.bcsBytes(property: "preimage")
+      LayoutConst.bcsBytes(property: "preimage"),
     ], property: property);
   }
 
@@ -904,29 +1032,35 @@ class TransparentPcztInputSha256 with PartialEquality, LayoutSerializable {
   TransparentPcztInputSha256({
     required List<int> preimage,
     required List<int> hash,
-  })  : preimage = preimage.asImmutableBytes,
-        hash = hash
-            .exc(
-                length: QuickCrypto.sha256DigestSize,
-                operation: "TransparentPcztInputSha256",
-                reason: "Invalid hash bytes length.")
-            .asImmutableBytes;
+  }) : preimage = preimage.asImmutableBytes,
+       hash =
+           hash
+               .exc(
+                 length: QuickCrypto.sha256DigestSize,
+                 operation: "TransparentPcztInputSha256",
+                 reason: "Invalid hash bytes length.",
+               )
+               .asImmutableBytes;
 
   factory TransparentPcztInputSha256.fromPreImage(List<int> preimage) {
     return TransparentPcztInputSha256(
-        preimage: preimage, hash: QuickCrypto.sha256Hash(preimage));
+      preimage: preimage,
+      hash: QuickCrypto.sha256Hash(preimage),
+    );
   }
 
   factory TransparentPcztInputSha256.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return TransparentPcztInputSha256(
-        preimage: json.valueAsBytes("preimage"),
-        hash: json.valueAsBytes("hash"));
+      preimage: json.valueAsBytes("preimage"),
+      hash: json.valueAsBytes("hash"),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.fixedBlobN(QuickCrypto.sha256DigestSize, property: "hash"),
-      LayoutConst.bcsBytes(property: "preimage")
+      LayoutConst.bcsBytes(property: "preimage"),
     ], property: property);
   }
 
@@ -961,28 +1095,34 @@ class TransparentPcztInputHash160 with PartialEquality, LayoutSerializable {
   TransparentPcztInputHash160({
     required List<int> preimage,
     required List<int> hash,
-  })  : preimage = preimage.asImmutableBytes,
-        hash = hash
-            .exc(
-                length: QuickCrypto.hash160DigestSize,
-                operation: "TransparentPcztInputHash160",
-                reason: "Invalid hash bytes length.")
-            .asImmutableBytes;
+  }) : preimage = preimage.asImmutableBytes,
+       hash =
+           hash
+               .exc(
+                 length: QuickCrypto.hash160DigestSize,
+                 operation: "TransparentPcztInputHash160",
+                 reason: "Invalid hash bytes length.",
+               )
+               .asImmutableBytes;
 
   factory TransparentPcztInputHash160.fromPreImage(List<int> preimage) {
     return TransparentPcztInputHash160(
-        preimage: preimage, hash: QuickCrypto.hash160(preimage));
+      preimage: preimage,
+      hash: QuickCrypto.hash160(preimage),
+    );
   }
   factory TransparentPcztInputHash160.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return TransparentPcztInputHash160(
-        preimage: json.valueAsBytes("preimage"),
-        hash: json.valueAsBytes("hash"));
+      preimage: json.valueAsBytes("preimage"),
+      hash: json.valueAsBytes("hash"),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.fixedBlobN(QuickCrypto.hash160DigestSize, property: "hash"),
-      LayoutConst.bcsBytes(property: "preimage")
+      LayoutConst.bcsBytes(property: "preimage"),
     ], property: property);
   }
 
@@ -1016,29 +1156,35 @@ class TransparentPcztInputHash256 with PartialEquality, LayoutSerializable {
   TransparentPcztInputHash256({
     required List<int> preimage,
     required List<int> hash,
-  })  : preimage = preimage.asImmutableBytes,
-        hash = hash
-            .exc(
-                length: QuickCrypto.sha256DigestSize,
-                operation: "TransparentPcztInputHash256",
-                reason: "Invalid hash bytes length.")
-            .asImmutableBytes;
+  }) : preimage = preimage.asImmutableBytes,
+       hash =
+           hash
+               .exc(
+                 length: QuickCrypto.sha256DigestSize,
+                 operation: "TransparentPcztInputHash256",
+                 reason: "Invalid hash bytes length.",
+               )
+               .asImmutableBytes;
 
   factory TransparentPcztInputHash256.fromPreImage(List<int> preimage) {
     return TransparentPcztInputHash256(
-        preimage: preimage, hash: QuickCrypto.sha256DoubleHash(preimage));
+      preimage: preimage,
+      hash: QuickCrypto.sha256DoubleHash(preimage),
+    );
   }
 
   factory TransparentPcztInputHash256.deserializeJson(
-      Map<String, dynamic> json) {
+    Map<String, dynamic> json,
+  ) {
     return TransparentPcztInputHash256(
-        preimage: json.valueAsBytes("preimage"),
-        hash: json.valueAsBytes("hash"));
+      preimage: json.valueAsBytes("preimage"),
+      hash: json.valueAsBytes("hash"),
+    );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.fixedBlobN(QuickCrypto.sha256DigestSize, property: "hash"),
-      LayoutConst.bcsBytes(property: "preimage")
+      LayoutConst.bcsBytes(property: "preimage"),
     ], property: property);
   }
 
@@ -1062,8 +1208,10 @@ class TransparentPcztInputHash256 with PartialEquality, LayoutSerializable {
 class TransparentExtractedBundle implements ExtractedBundle<TransparentBundle> {
   @override
   final TransparentBundle bundle;
-  const TransparentExtractedBundle(
-      {required this.bundle, required this.valueSum});
+  const TransparentExtractedBundle({
+    required this.bundle,
+    required this.valueSum,
+  });
 
   @override
   final ZAmount valueSum;

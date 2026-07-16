@@ -5,14 +5,30 @@
   "packages": [
     {
       "name": "zcash_dart",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": [
         "bitcoin_base",
         "blockchain_utils"
       ],
       "devDependencies": [
+        "flutter_lints",
         "lints",
+        "onchain_proto",
         "test"
+      ]
+    },
+    {
+      "name": "onchain_proto",
+      "version": "0.2.0",
+      "dependencies": [
+        "blockchain_utils"
+      ]
+    },
+    {
+      "name": "flutter_lints",
+      "version": "6.0.0",
+      "dependencies": [
+        "lints"
       ]
     },
     {
@@ -53,17 +69,15 @@
     },
     {
       "name": "bitcoin_base",
-      "version": "7.1.0",
+      "version": "7.3.0",
       "dependencies": [
         "blockchain_utils"
       ]
     },
     {
       "name": "blockchain_utils",
-      "version": "6.0.0",
-      "dependencies": [
-        "pointycastle"
-      ]
+      "version": "7.1.0",
+      "dependencies": []
     },
     {
       "name": "yaml",
@@ -311,14 +325,6 @@
         "source_span",
         "watcher",
         "yaml"
-      ]
-    },
-    {
-      "name": "pointycastle",
-      "version": "4.0.0",
-      "dependencies": [
-        "collection",
-        "convert"
       ]
     },
     {
