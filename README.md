@@ -106,15 +106,7 @@ Wallet integration support through:
 
 # Examples
 
-See the `example` folder for usage examples.
-
-Examples include:
-
-- Address generation
-- Key derivation
-- Transaction handling
-- Proof generation
-- Wallet integration
+See the [example](https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib) folder for usage examples.
 
 ---
 
