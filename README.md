@@ -67,7 +67,6 @@ cd zk
 cargo build --release [target]
 
 ```
-
 Compile the prover for your required target:
 
 - Native platforms
