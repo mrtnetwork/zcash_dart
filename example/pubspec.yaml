@@ -11,12 +11,8 @@ dependencies:
   http: ^1.6.0
   zcash_dart: 
     path: ../
-  blockchain_utils:
-    git:
-      url: https://github.com/mrtnetwork/blockchain_utils
-  bitcoin_base:
-    git:
-      url: https://github.com/mrtnetwork/bitcoin_base 
+  blockchain_utils: ^8.0.1
+  bitcoin_base: ^8.0.0
   # blockchain_utils:
   #   path: ../../blockchain_utils
   # # blockchain_utils_connector:
@@ -27,4 +23,5 @@ dependencies:
 
 dev_dependencies:
   lints: ^6.0.0
+  flutter_lints: ^6.0.0
 

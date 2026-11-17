@@ -51,7 +51,7 @@ Future<void> main() async {
     print(field('  result', 'accepted (unexpected)'));
   } on BuError catch (error) {
     print(field('  result', 'rejected'));
-    print(field('  reason', '${error.details?['reason'] ?? error.message}'));
+    print(field('  reason', error.details?['reason'] ?? error.message));
   }
   print('');
 

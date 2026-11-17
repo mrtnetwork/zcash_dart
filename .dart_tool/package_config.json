@@ -27,19 +27,19 @@
     },
     {
       "name": "bitcoin_base",
-      "rootUri": "file:///home/mohsen/.pub-cache/git/bitcoin_base-7705f8a87374aa4c4b579b4bc42f60ef96fd9a3d/",
+      "rootUri": "file:///home/mohsen/.pub-cache/hosted/pub.dev/bitcoin_base-8.0.0",
       "packageUri": "lib/",
       "languageVersion": "3.7"
     },
     {
       "name": "blockchain_utils",
-      "rootUri": "file:///home/mohsen/.pub-cache/git/blockchain_utils-a0a4d5c3df3c9e47894fc8bf7f787fb8aedfeb37/",
+      "rootUri": "file:///home/mohsen/.pub-cache/hosted/pub.dev/blockchain_utils-8.0.1",
       "packageUri": "lib/",
       "languageVersion": "3.7"
     },
     {
       "name": "blockchain_utils_connector",
-      "rootUri": "file:///home/mohsen/.pub-cache/git/blockchain_utils_connector-ffc44d44b200627174d04eade11a16b240fd7627/",
+      "rootUri": "file:///home/mohsen/.pub-cache/hosted/pub.dev/blockchain_utils_connector-0.1.1",
       "packageUri": "lib/",
       "languageVersion": "3.7"
     },
@@ -159,7 +159,7 @@
     },
     {
       "name": "onchain_proto",
-      "rootUri": "file:///home/mohsen/.pub-cache/git/onchain_proto-29952a5c0f86a76228ac27663c26e232e5cb6801/",
+      "rootUri": "file:///home/mohsen/.pub-cache/git/onchain_proto-c16e618b3f323d4c3af0f6ec4808bcf3520336af/",
       "packageUri": "lib/",
       "languageVersion": "3.12"
     },

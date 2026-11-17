@@ -79,7 +79,7 @@ Future<void> main() async {
   );
 
   Future<void> probe(String label, DefaultMerkleController c) async {
-    final tree = await c.getSaplingShardTree();
+    final tree = c.getSaplingShardTree();
     final cps =
         tree.store.getCheckpoints()..sort((a, b) => a.key.compareTo(b.key));
     final txt = cps

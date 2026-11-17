@@ -51,7 +51,7 @@ Future<void> main(List<String> args) async {
     gathered += u.utxo.amount.value;
     if (gathered >= need * BigInt.from(2)) break;
   }
-  print('selected ${selected.length} utxo(s), total ${gathered} zatoshis');
+  print('selected ${selected.length} utxo(s), total $gathered zatoshis');
 
   final builder = TransactionBuilder(
     targetHeight: target,

@@ -626,7 +626,10 @@ class _WalletdClient extends Client with ZcashWalletdServiceProvider {
 /// (gitignored). Override with the `ZCASH_PARAMS_DIR` environment variable
 /// (runtime) or `--define=ZCASH_PARAMS_DIR=...` (compile time).
 String saplingParamsDir() {
-  const defineDir = String.fromEnvironment('ZCASH_PARAMS_DIR', defaultValue: '');
+  const defineDir = String.fromEnvironment(
+    'ZCASH_PARAMS_DIR',
+    defaultValue: '',
+  );
   return Platform.environment['ZCASH_PARAMS_DIR'] ??
       (defineDir.isNotEmpty ? defineDir : '.dart_tool/sapling_params');
 }

@@ -14,7 +14,7 @@ Future<void> main() async {
 
   print('Zcash regtest: transparent pool');
   print(field('lightwalletd', '$zcashLightwalletdHost:$zcashLightwalletdPort'));
-  print(field('branch', '${net.branch.name}'));
+  print(field('branch', net.branch.name));
   print(field('alice', alice.transparentAddress.address));
   print(field('bob', bob.transparentAddress.address));
   print('');

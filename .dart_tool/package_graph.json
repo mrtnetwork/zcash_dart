@@ -20,7 +20,7 @@
     },
     {
       "name": "blockchain_utils_connector",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": []
     },
     {
@@ -82,7 +82,7 @@
     },
     {
       "name": "blockchain_utils",
-      "version": "8.0.0",
+      "version": "8.0.1",
       "dependencies": [
         "blockchain_utils_connector"
       ]

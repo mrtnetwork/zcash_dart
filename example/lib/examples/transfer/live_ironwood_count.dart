@@ -16,7 +16,7 @@ import 'package:zcash_dart/zcash.dart';
 /// "7 actions fail, 6 succeed" report without touching wallet code.
 ///
 /// Usage (from the example package):
-///   LWD_PORT=9073 ZEBRA_RPC=http://127.0.0.1:18235 ZCASH_RUST_LIBRARY=<path-to-.so> \
+///   LWD_PORT=9073 ZEBRA_RPC=http://127.0.0.1:18235 ZCASH_RUST_LIBRARY=<'path-to-.so> \
 ///   dart run lib/examples/transfer/live_ironwood_count.dart
 ///
 /// NOTE: throwaway diagnostic script (delete after use).

@@ -12,14 +12,8 @@ environment:
   sdk: '>=3.7.0 <4.0.0'
 # Add regular dependencies here.
 dependencies:
-  blockchain_utils:
-    git:
-      url: https://github.com/mrtnetwork/blockchain_utils
-  bitcoin_base:
-    git:
-      url: https://github.com/mrtnetwork/bitcoin_base
-  # bitcoin_base: ^7.3.0
-  # blockchain_utils: ^7.1.0
+  blockchain_utils: ^8.0.1
+  bitcoin_base: ^8.0.0
     
 dev_dependencies:
   lints: ^6.0.0
@@ -28,6 +22,4 @@ dev_dependencies:
   onchain_proto:
     git:
       url: https://github.com/mrtnetwork/onchain_proto
-  blockchain_utils_connector:
-    git:
-      url: https://github.com/mrtnetwork/blockchain_utils_connector
+  blockchain_utils_connector: ^0.1.1

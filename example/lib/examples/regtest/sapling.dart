@@ -23,7 +23,7 @@ Future<void> main() async {
   final bob = ZcashExampleAccount.fromSeed(net.context, index: 1);
 
   print('Zcash regtest: Sapling pool');
-  print(field('branch', '${net.branch.name}'));
+  print(field('branch', net.branch.name));
   print(field('alice sapling', alice.saplingAddress));
   print(field('bob transparent', bob.transparentAddress.address));
   print('');
