@@ -1,7 +1,5 @@
 name: zcash_dart
-description: >
-  zcash_dart is a Dart package that implements Zcash cryptography and transaction
-  management, including Sapling, Orchard, and transparent transactions.
+description: "Zcash SDK for Dart: transparent, Sapling, and Orchard transactions with zero-knowledge proving."
 version: 0.3.0
 homepage: "https://github.com/mrtnetwork/zcash_dart"
 repository: "https://github.com/mrtnetwork/zcash_dart"

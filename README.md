@@ -22,6 +22,10 @@ the Rust core is maintained at
 > blockchainUtils.setRustApi();
 > ```
 
+## Breaking changes
+
+- **All legacy exception classes removed — every error is `BuError`.** Failures throw `BuError` with a `ZcashErrorType` taxonomy value (`domain: 'zcash'`: plugin, unified receivers, scanner, Merkle, notes, Sapling/Orchard/transparent builders, PCZT, serialization, walletd, …). Update `catch` clauses and `on` filters to `BuError`.
+
 ## Supported networks
 
 | Network | Transparent | Sapling | Orchard |
