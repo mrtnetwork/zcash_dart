@@ -1,4 +1,4 @@
-import 'package:blockchain_utils/cbor/serialization/cbor/tag.dart';
+import 'package:blockchain_utils/encoding/encoding.dart';
 
 enum ZcashSerializationIdentifier implements SerializationIdentifier {
   zcashPluginError(id: 23001),
@@ -45,6 +45,7 @@ enum ZcashSerializationIdentifier implements SerializationIdentifier {
   scannedProtocolBundles(id: 23046),
   subtreeHashes(id: 23047),
   scannedBlockBundles(id: 23048),
+  nativeMerkleState(id: 23064),
 
   ///
   zkRequest(id: 23035),

@@ -4,17 +4,18 @@ import 'package:zcash_dart/src/serialization/tags/tags.dart';
 
 class SaplingVerifyInputs with LayoutSerializable, CborTagSerializable {
   final GrothProofBytes proof;
-  final List<JubJubNativeFq> inputs;
-  SaplingVerifyInputs._({
-    required this.proof,
-    required List<JubJubNativeFq> inputs,
-  }) : inputs = inputs.immutable;
+  final List<JubJubFq> inputs;
+  SaplingVerifyInputs._({required this.proof, required List<JubJubFq> inputs})
+    : inputs = inputs.immutable;
   factory SaplingVerifyInputs({
     required GrothProofBytes proof,
-    required List<JubJubNativeFq> inputs,
+    required List<JubJubFq> inputs,
   }) {
     if (inputs.length != 5 && inputs.length != 7) {
-      throw SaplingException("Invalid sapling proof public inputs length.");
+      throw BuError(
+        DefaultErrorType.invalidLength,
+        "Invalid sapling proof public inputs length.",
+      );
     }
     return SaplingVerifyInputs._(proof: proof, inputs: inputs);
   }

@@ -1,7 +1,7 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
-import 'package:zcash_dart/src/transparent/exception/exception.dart';
 
 abstract class TransparentMultiSignatureSigner {}
 
@@ -32,7 +32,7 @@ class TransparentMultiSignatureSignerDefault
     required int weight,
   }) {
     if (weight > 16 || weight < 1) {
-      throw TransparentExceptoion.multisigFailed(
+      throw ZcashErrors.transparentMultisigFailed(
         'The weight should be between 1 and 16',
       );
     }
@@ -81,17 +81,17 @@ class TransparentMultiSignatureAddress {
     final opN = BitcoinOpcode.opNum(threshold);
     final opW = BitcoinOpcode.opNum(sumWeight);
     if (opN == null || threshold == 0) {
-      throw TransparentExceptoion.multisigFailed(
+      throw ZcashErrors.transparentMultisigFailed(
         'The threshold should be between 1 and 16',
       );
     }
     if (opW == null) {
-      throw TransparentExceptoion.multisigFailed(
+      throw ZcashErrors.transparentMultisigFailed(
         'The total weight of the owners should not exceed 16',
       );
     }
     if (sumWeight < threshold) {
-      throw TransparentExceptoion.multisigFailed(
+      throw ZcashErrors.transparentMultisigFailed(
         'The total weight of the signatories should reach the threshold',
       );
     }

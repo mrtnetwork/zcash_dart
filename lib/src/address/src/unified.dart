@@ -1,5 +1,5 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/address/exception/exception.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
 
 /// Represents a Zcash Unified Address composed of one or more receivers.
@@ -36,11 +36,11 @@ class ZcashUnifiedAddress extends ZcashAddress
   }) {
     if (receivers.isEmpty ||
         receivers.map((e) => e.type).toSet().length != receivers.length) {
-      throw ZcashAddressException.invalidUnifiedReceivers;
+      throw ZcashErrors.invalidUnifiedReceivers;
     }
     if (receivers.any((e) => e.type == Typecode.p2pkh) &&
         receivers.any((e) => e.type == Typecode.p2sh)) {
-      throw ZcashAddressException.invalidUnifiedReceivers;
+      throw ZcashErrors.invalidUnifiedReceivers;
     }
     address ??= ZcashUnifiedAddrEncoder().encodeUnifiedReceivers(
       receivers,
@@ -128,7 +128,8 @@ class ZcashUnifiedAddress extends ZcashAddress
         .firstWhere(
           (e) => e.type == type,
           orElse: () {
-            throw ZcashAddressException(
+            throw BuError(
+              DefaultErrorType.notFound,
               "No receiver found matching this Unified NodeAddress typecode.",
             );
           },
@@ -256,7 +257,7 @@ class ZcashUnifiedAddress extends ZcashAddress
 
   /// Serializes the ZcashUnifiedAddress into its binary form.
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return toSerializeBytes();
   }
 

@@ -5,15 +5,19 @@ import 'package:zcash_dart/src/sapling/sapling.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
 abstract class SaplingTrapdoor with Equality {
-  JubJubNativeFr get value;
+  BuBytes get value;
   const SaplingTrapdoor();
 
   SaplingTrapdoorSum operator +(SaplingTrapdoor other) {
-    return SaplingTrapdoorSum(value + other.value);
+    return SaplingTrapdoorSum(
+      blockchainUtils.api.jubjub.scAdd(value, other.value),
+    );
   }
 
   SaplingTrapdoorSum operator -(SaplingTrapdoor other) {
-    return SaplingTrapdoorSum(value - other.value);
+    return SaplingTrapdoorSum(
+      blockchainUtils.api.jubjub.scSub(value, other.value),
+    );
   }
 
   @override
@@ -22,31 +26,48 @@ abstract class SaplingTrapdoor with Equality {
 
 class SaplingTrapdoorSum extends SaplingTrapdoor {
   @override
-  final JubJubNativeFr value;
+  final BuBytes value;
   const SaplingTrapdoorSum(this.value);
 
-  factory SaplingTrapdoorSum.zero() =>
-      SaplingTrapdoorSum(JubJubNativeFr.zero());
-  SaplingBindingAuthorizingKey toBsk() =>
-      SaplingBindingAuthorizingKey.fromBytes(value.toBytes());
+  factory SaplingTrapdoorSum.zero() => SaplingTrapdoorSum(BuBytes.zero(32));
+  RedJubJubBindingPrivateKey toBsk() =>
+      RedJubJubBindingPrivateKey.fromBytes(value);
 }
 
 class SaplingValueCommitTrapdoor extends SaplingTrapdoor
     with LayoutSerializable {
   @override
-  final JubJubNativeFr value;
+  final BuBytes value;
   const SaplingValueCommitTrapdoor(this.value);
 
+  static BuBytes _checkScalar(List<int> bytes) {
+    final b = bytes.exc(
+      length: 32,
+      operation: "SaplingValueCommitTrapdoor",
+      reason: "Invalid trapdoor bytes length.",
+    );
+    if (!blockchainUtils.api.jubjub.scCheck(b)) {
+      throw ZcashErrors.saplingFailed(
+        "SaplingValueCommitTrapdoor",
+        reason: "Invalid scalar encoding bytes.",
+      );
+    }
+    return BuBytes.from(b);
+  }
+
   factory SaplingValueCommitTrapdoor.fromBytes(List<int> bytes) {
-    return SaplingValueCommitTrapdoor(JubJubNativeFr.fromBytes(bytes));
+    return SaplingValueCommitTrapdoor(_checkScalar(bytes));
   }
   factory SaplingValueCommitTrapdoor.deserializeJson(
     Map<String, dynamic> json,
   ) {
     return SaplingValueCommitTrapdoor.fromBytes(json.valueAsBytes("inner"));
   }
-  factory SaplingValueCommitTrapdoor.random() =>
-      SaplingValueCommitTrapdoor(JubJubNativeFr.random());
+  factory SaplingValueCommitTrapdoor.random() => SaplingValueCommitTrapdoor(
+    blockchainUtils.api.jubjub.scReduce64(
+      QuickCrypto.generateRandom(length: 64),
+    ),
+  );
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
@@ -61,54 +82,77 @@ class SaplingValueCommitTrapdoor extends SaplingTrapdoor
 
   @override
   Map<String, dynamic> toSerializeJson() {
-    return {"inner": value.toBytes()};
+    return {"inner": value.cloneBytes()};
   }
 
-  List<int> toBytes() => value.toBytes();
+  BuBytes toBytes() => value.cloneBytes();
 }
 
 abstract class SaplingBaseValueCommitment with Equality {
-  JubJubNativePoint get inner;
+  BuBytes get inner;
   const SaplingBaseValueCommitment();
 
   SaplingCommitmentSum operator +(SaplingBaseValueCommitment other) {
-    return SaplingCommitmentSum(inner + other.inner);
+    return SaplingCommitmentSum(
+      blockchainUtils.api.jubjub.add(inner, other.inner),
+    );
   }
 
   SaplingCommitmentSum operator -(SaplingBaseValueCommitment other) {
-    return SaplingCommitmentSum(inner - other.inner);
+    return SaplingCommitmentSum(
+      blockchainUtils.api.jubjub.sub(inner, other.inner),
+    );
   }
 }
 
 class SaplingValueCommitment extends SaplingBaseValueCommitment
     with LayoutSerializable {
   @override
-  final JubJubNativePoint inner;
+  final BuBytes inner;
   const SaplingValueCommitment(this.inner);
   factory SaplingValueCommitment.deserializeJson(Map<String, dynamic> json) {
-    return SaplingValueCommitment(
-      JubJubNativePoint.fromBytes(json.valueAsBytes("inner")),
-    );
+    return SaplingValueCommitment.fromBytes(json.valueAsBytes("inner"));
   }
   factory SaplingValueCommitment.fromBytes(List<int> bytes) {
-    final point = JubJubNativePoint.fromBytes(bytes);
+    final b = bytes.exc(
+      length: 32,
+      operation: "SaplingValueCommitment",
+      reason: "Invalid value commitment bytes length.",
+    );
+    final point = JubJubPoint.fromBytes(b);
     if (point.isSmallOrder()) {
-      throw SaplingException.operationFailed(
+      throw ZcashErrors.saplingFailed(
         "SaplingValueCommitment",
         reason: "Invalid value commitment point encoding bytes.",
       );
     }
-    return SaplingValueCommitment(point);
+    return SaplingValueCommitment(BuBytes.from(b));
   }
   factory SaplingValueCommitment.derive({
     required ZAmount value,
     required SaplingValueCommitTrapdoor rcv,
   }) {
-    final cv =
-        (SaplingUtils.valueCommitmentValueGeneratorNative *
-            JubJubNativeFr(value.value)) +
-        (SaplingUtils.valueCommitmentRandomnessGeneratorNative * rcv.value);
-    return SaplingValueCommitment(cv);
+    var n = value.value;
+    if (n.isNegative) {
+      throw ZcashErrors.saplingFailed(
+        "SaplingValueCommitment.derive",
+        reason: "Negative value.",
+      );
+    }
+    final vBytes = List<int>.filled(32, 0);
+    for (var i = 0; i < 8; i++) {
+      vBytes[i] = (n & BigInt.from(0xff)).toInt();
+      n >>= 8;
+    }
+    final vG = blockchainUtils.api.jubjub.mult(
+      vBytes,
+      SaplingUtils.valueCommitmentValueGeneratorBytes,
+    );
+    final rG = blockchainUtils.api.jubjub.mult(
+      rcv.value,
+      SaplingUtils.valueCommitmentRandomnessGeneratorBytes,
+    );
+    return SaplingValueCommitment(blockchainUtils.api.jubjub.add(vG, rG));
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -130,25 +174,35 @@ class SaplingValueCommitment extends SaplingBaseValueCommitment
     return layout(property: property);
   }
 
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.cloneBytes();
 }
 
 class SaplingCommitmentSum extends SaplingBaseValueCommitment {
   @override
-  final JubJubNativePoint inner;
+  final BuBytes inner;
   const SaplingCommitmentSum(this.inner);
 
   factory SaplingCommitmentSum.zero() =>
-      SaplingCommitmentSum(JubJubNativePoint.identity());
+      SaplingCommitmentSum(blockchainUtils.api.jubjub.identity());
 
-  SaplingBindingVerificationKey toBvk(ZAmount valueBalance) {
+  RedJubJubBindingPublicKey toBvk(ZAmount valueBalance) {
     final vBigint = valueBalance.toI64();
-    JubJubNativeFr v = JubJubNativeFr(vBigint.abs());
-    if (vBigint.isNegative) {
-      v = -v;
+    var n = vBigint.abs();
+    final vBytes = List<int>.filled(32, 0);
+    for (var i = 0; i < 8; i++) {
+      vBytes[i] = (n & BigInt.from(0xff)).toInt();
+      n >>= 8;
     }
-    final bvk = inner - SaplingUtils.valueCommitmentValueGeneratorNative * v;
-    return SaplingBindingVerificationKey.fromBytes(bvk.toBytes());
+    BuBytes v = BuBytes.from(vBytes);
+    if (vBigint.isNegative) {
+      v = blockchainUtils.api.jubjub.scNeg(v);
+    }
+    final vG = blockchainUtils.api.jubjub.mult(
+      v,
+      SaplingUtils.valueCommitmentValueGeneratorBytes,
+    );
+    final bvk = blockchainUtils.api.jubjub.sub(inner, vG);
+    return RedJubJubBindingPublicKey.fromBytes(bvk);
   }
 
   @override
@@ -156,30 +210,36 @@ class SaplingCommitmentSum extends SaplingBaseValueCommitment {
 }
 
 class SaplingNoteCommitTrapdoor with Equality {
-  final JubJubNativeFr inner;
+  final BuBytes inner;
   const SaplingNoteCommitTrapdoor(this.inner);
 
   @override
   List<dynamic> get variables => [inner];
 
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.cloneBytes();
 }
 
 class SaplingNoteCommitment with Equality {
-  final JubJubNativePoint inner;
+  final BuBytes inner;
   const SaplingNoteCommitment(this.inner);
   factory SaplingNoteCommitment.fromBytes(List<int> bytes) {
-    return SaplingNoteCommitment(JubJubNativePoint.fromBytes(bytes));
+    final b = bytes.exc(
+      length: 32,
+      operation: "SaplingNoteCommitment",
+      reason: "Invalid note commitment bytes length.",
+    );
+    JubJubPoint.fromBytes(b);
+    return SaplingNoteCommitment(BuBytes.from(b));
   }
 
-  static JubJubNativePoint _derive({
+  static BuBytes _derive({
     required List<int> gD,
     required List<int> pkD,
     required ZAmount v,
     required SaplingNoteCommitTrapdoor rcm,
     required ZcashCryptoContext context,
   }) {
-    return SaplingUtils.windowedPedersenCommitNative(
+    return SaplingUtils.windowedPedersenCommitBytes(
       personalization: PersonalizationNoteCommitment(),
       context: context,
       s: [
@@ -199,7 +259,7 @@ class SaplingNoteCommitment with Equality {
           ),
         ),
       ],
-      r: rcm.inner,
+      r32: rcm.inner,
     );
   }
 
@@ -214,8 +274,8 @@ class SaplingNoteCommitment with Equality {
     return SaplingNoteCommitment(result);
   }
 
-  List<int> toBytes() {
-    return inner.toBytes();
+  BuBytes toBytes() {
+    return inner.cloneBytes();
   }
 
   @override
@@ -223,10 +283,10 @@ class SaplingNoteCommitment with Equality {
 }
 
 class SaplingExtractedNoteCommitment with Equality, LayoutSerializable {
-  final JubJubNativeFq inner;
+  final JubJubFq inner;
   const SaplingExtractedNoteCommitment(this.inner);
   factory SaplingExtractedNoteCommitment.fromBytes(List<int> bytes) {
-    return SaplingExtractedNoteCommitment(JubJubNativeFq.fromBytes(bytes));
+    return SaplingExtractedNoteCommitment(JubJubFq.fromBytes(bytes));
   }
 
   factory SaplingExtractedNoteCommitment.deserializeJson(
@@ -237,7 +297,9 @@ class SaplingExtractedNoteCommitment with Equality, LayoutSerializable {
   factory SaplingExtractedNoteCommitment.fromNoteCommitment(
     SaplingNoteCommitment com,
   ) {
-    return SaplingExtractedNoteCommitment(com.inner.toAffine().u);
+    return SaplingExtractedNoteCommitment(
+      JubJubPoint.fromBytes(com.inner).toAffine().u,
+    );
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -246,7 +308,7 @@ class SaplingExtractedNoteCommitment with Equality, LayoutSerializable {
     ], property: property);
   }
 
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return inner.toBytes();
   }
 
@@ -272,7 +334,12 @@ enum SaplingRSeedType {
   const SaplingRSeedType(this.value);
   static SaplingRSeedType fromValue(int? value) => values.firstWhere(
     (e) => e.value == value,
-    orElse: () => throw ItemNotFoundException(value: value),
+    orElse:
+        () =>
+            throw BuError(
+              DefaultErrorType.notFound,
+              "No matching item found for the given value. $value",
+            ),
   );
 }
 
@@ -280,8 +347,8 @@ sealed class SaplingRSeed with Equality, LayoutSerializable {
   final SaplingRSeedType type;
   const SaplingRSeed(this.type);
   SaplingNoteCommitTrapdoor rcm();
-  JubJubNativeFr? deriveEsk();
-  List<int> toBytes();
+  BuBytes? deriveEsk();
+  BuBytes toBytes();
 
   factory SaplingRSeed.deserializeJson(Map<String, dynamic> json) {
     final type = SaplingRSeedType.fromValue(json.valueAsInt("type"));
@@ -313,11 +380,22 @@ sealed class SaplingRSeed with Equality, LayoutSerializable {
 }
 
 class SaplingRSeedBeforeZip212 extends SaplingRSeed {
-  final JubJubNativeFr inner;
+  final BuBytes inner;
   const SaplingRSeedBeforeZip212(this.inner)
     : super(SaplingRSeedType.beforeZip212);
   factory SaplingRSeedBeforeZip212.fromBytes(List<int> bytes) {
-    return SaplingRSeedBeforeZip212(JubJubNativeFr.fromBytes(bytes));
+    final b = bytes.exc(
+      length: 32,
+      operation: "SaplingRSeedBeforeZip212",
+      reason: "Invalid rseed bytes length.",
+    );
+    if (!blockchainUtils.api.jubjub.scCheck(b)) {
+      throw ZcashErrors.saplingFailed(
+        "SaplingRSeedBeforeZip212",
+        reason: "Invalid scalar encoding bytes.",
+      );
+    }
+    return SaplingRSeedBeforeZip212(BuBytes.from(b));
   }
 
   @override
@@ -326,13 +404,13 @@ class SaplingRSeedBeforeZip212 extends SaplingRSeed {
   }
 
   @override
-  JubJubNativeFr? deriveEsk() {
+  BuBytes? deriveEsk() {
     return null;
   }
 
   @override
-  List<int> toBytes() {
-    return inner.toBytes();
+  BuBytes toBytes() {
+    return inner.cloneBytes();
   }
 
   @override
@@ -340,30 +418,35 @@ class SaplingRSeedBeforeZip212 extends SaplingRSeed {
 }
 
 class SaplingRSeedAfterZip212 extends SaplingRSeed {
-  final List<int> inner;
+  final BuBytes inner;
   SaplingRSeedAfterZip212(List<int> bytes)
-    : inner = bytes.exc(
-        length: 32,
-        operation: "SaplingRSeedAfterZip212",
-        reason: "Invalid rseed bytes length.",
-      ),
+    : inner =
+          bytes
+              .exc(
+                length: 32,
+                operation: "SaplingRSeedAfterZip212",
+                reason: "Invalid rseed bytes length.",
+              )
+              .asImmutableBytes,
       super(SaplingRSeedType.afterZip212);
   factory SaplingRSeedAfterZip212.random() =>
       SaplingRSeedAfterZip212(QuickCrypto.generateRandom());
   @override
   SaplingNoteCommitTrapdoor rcm() {
     return SaplingNoteCommitTrapdoor(
-      JubJubNativeFr.fromBytes64(PrfExpand.saplingRcm.apply(inner)),
+      blockchainUtils.api.jubjub.scReduce64(PrfExpand.saplingRcm.apply(inner)),
     );
   }
 
   @override
-  JubJubNativeFr deriveEsk() {
-    return JubJubNativeFr.fromBytes64(PrfExpand.saplingEsk.apply(inner));
+  BuBytes deriveEsk() {
+    return blockchainUtils.api.jubjub.scReduce64(
+      PrfExpand.saplingEsk.apply(inner),
+    );
   }
 
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return inner.clone();
   }
 
@@ -371,21 +454,23 @@ class SaplingRSeedAfterZip212 extends SaplingRSeed {
   List<dynamic> get variables => [inner];
 }
 
-class SaplingNullifier extends Nullifier<List<int>> {
+class SaplingNullifier extends Nullifier<BuBytes> {
   SaplingNullifier(List<int> bytes)
     : super(
-        bytes.exc(
-          length: 32,
-          operation: "SaplingNullifier",
-          reason: "Invalid sapling nullifier bytes length.",
-        ),
+        bytes
+            .exc(
+              length: 32,
+              operation: "SaplingNullifier",
+              reason: "Invalid sapling nullifier bytes length.",
+            )
+            .asImmutableBytes,
       );
   factory SaplingNullifier.deserializeJson(Map<String, dynamic> json) {
     return SaplingNullifier(json.valueAsBytes("inner"));
   }
 
   @override
-  List<int> toBytes() => inner.clone();
+  BuBytes toBytes() => inner.clone();
   @override
   ZcashProtocol get protocol => ZcashProtocol.sapling;
 }

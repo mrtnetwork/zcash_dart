@@ -1,14 +1,15 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/expect.dart';
 import 'package:test/scaffolding.dart';
-import 'package:zcash_dart/src/merkle/exception/exception.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/merkle/tree/shard_tree.dart';
 import 'package:zcash_dart/src/merkle/store/memory.dart';
 
 import 'types.dart';
 
-void main() {
+import '../utils.dart';
+
+void storeTest() {
   test("store", () {
     checkWitnesses();
     _checkRootHashes();
@@ -17,6 +18,14 @@ void main() {
     _checkShardSizes();
     _insert();
   });
+}
+
+void incrementalmerkletreeStoreTest() {
+  ZcashTestApi.runTest(storeTest, "Store");
+}
+
+void main() {
+  ZcashTestApi.runTest(incrementalmerkletreeStoreTest, "Store");
 }
 
 void checkWitnesses() {
@@ -308,7 +317,7 @@ void _append() {
       value: StringHashable.fromU64(16),
       retention: RetentionEphemeral(),
     ),
-    throwsA(isA<MerkleTreeException>()),
+    throwsA(isA<BuError>()),
   );
 }
 
@@ -323,7 +332,7 @@ List<SerialzableString>? _witness(
       position: position,
     );
     return r?.authPath;
-  } on MerkleTreeException {
+  } on BuError {
     return null;
   }
 }
@@ -544,10 +553,7 @@ void _insert() {
   }
   // return;
   {
-    expect(
-      () => tree.rootAtCheckpointDepth(),
-      throwsA(isA<MerkleTreeException>()),
-    );
+    expect(() => tree.rootAtCheckpointDepth(), throwsA(isA<BuError>()));
   }
   {
     final r = tree.truncateToCheckpointDepth(0);

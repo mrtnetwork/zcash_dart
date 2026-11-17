@@ -5,12 +5,13 @@
   "packages": [
     {
       "name": "zcash_dart",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": [
         "bitcoin_base",
         "blockchain_utils"
       ],
       "devDependencies": [
+        "blockchain_utils_connector",
         "flutter_lints",
         "lints",
         "onchain_proto",
@@ -18,8 +19,13 @@
       ]
     },
     {
+      "name": "blockchain_utils_connector",
+      "version": "0.1.0",
+      "dependencies": []
+    },
+    {
       "name": "onchain_proto",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": [
         "blockchain_utils"
       ]
@@ -69,15 +75,17 @@
     },
     {
       "name": "bitcoin_base",
-      "version": "7.3.0",
+      "version": "8.0.0",
       "dependencies": [
         "blockchain_utils"
       ]
     },
     {
       "name": "blockchain_utils",
-      "version": "7.1.0",
-      "dependencies": []
+      "version": "8.0.0",
+      "dependencies": [
+        "blockchain_utils_connector"
+      ]
     },
     {
       "name": "yaml",

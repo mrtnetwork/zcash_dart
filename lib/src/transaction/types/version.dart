@@ -1,5 +1,4 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/exception/exception.dart';
 import 'package:zcash_dart/src/note/note.dart';
 
 enum ZcashNetworkProtocol implements Comparable<ZcashNetworkProtocol> {
@@ -55,6 +54,26 @@ enum ZcashNetworkProtocol implements Comparable<ZcashNetworkProtocol> {
   nu6_1(
     branchId: 0x4dec4df0,
     activation: ProtocolActivationHeights(mainnet: 3146400, testnet: 3536500),
+  ),
+
+  /// The consensus rules deployed by `NetworkUpgrade::Nu6_2`.
+  nu6_2(
+    branchId: 0x5437f330,
+    activation: ProtocolActivationHeights(mainnet: 3364600, testnet: 4052000),
+  ),
+
+  /// The consensus rules deployed by `NetworkUpgrade::Nu6_3` (Ironwood).
+  nu6_3(
+    branchId: 0x37a5165b,
+    activation: ProtocolActivationHeights(mainnet: 3428143, testnet: 4134000),
+  ),
+
+  /// The consensus rules deployed by `NetworkUpgrade::Nu7` (ZIP 259:
+  /// 25-second blocks, v4/Sprout disabled; no new shielded pool or
+  /// transaction format — v6 stays the suggested version).
+  nu7(
+    branchId: 0x77190AD9,
+    activation: ProtocolActivationHeights(mainnet: 3543405, testnet: 4465026),
   );
 
   final int branchId;
@@ -68,7 +87,12 @@ enum ZcashNetworkProtocol implements Comparable<ZcashNetworkProtocol> {
   static ZcashNetworkProtocol fromId(int? id) {
     return values.firstWhere(
       (e) => e.branchId == id,
-      orElse: () => throw ItemNotFoundException(value: id),
+      orElse:
+          () =>
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching item found for the given value. $id",
+              ),
     );
   }
 
@@ -85,6 +109,7 @@ enum ZcashNetworkProtocol implements Comparable<ZcashNetworkProtocol> {
   bool hasSapling() => this >= sapling;
   bool hasOrchard() => this >= nu5;
   bool hasCanopy() => this >= canopy;
+  bool hasIronwood() => this >= nu6_3;
 }
 
 abstract class UpgradeActivationProvider {
@@ -133,14 +158,37 @@ class DefaultUpgradeActivationProvider implements UpgradeActivationProvider {
     ZcashNetworkProtocol.nu5: ProtocolActivationHeights(
       mainnet: 1687104,
       testnet: 1842420,
+      regtest: 1,
     ),
     ZcashNetworkProtocol.nu6: ProtocolActivationHeights(
       mainnet: 2726400,
       testnet: 2976000,
+      regtest: 1,
     ),
     ZcashNetworkProtocol.nu6_1: ProtocolActivationHeights(
       mainnet: 3146400,
       testnet: 3536500,
+      regtest: 1,
+    ),
+    ZcashNetworkProtocol.nu6_2: ProtocolActivationHeights(
+      mainnet: 3364600,
+      testnet: 4052000,
+      regtest: 1,
+    ),
+    // NU6.3 (Ironwood) is not active on regtest: no released node
+    // (zcashd v6.20.0 tops out at NU6.2) implements it, so a regtest chain
+    // is a NU6.2 chain. Keeping the mainnet height here makes
+    // `protocolFromHeight` resolve regtest to NU6.2, which is the branch a
+    // regtest node actually reports.
+    ZcashNetworkProtocol.nu6_3: ProtocolActivationHeights(
+      mainnet: 3428143,
+      testnet: 4134000,
+      regtest: 1,
+    ),
+    ZcashNetworkProtocol.nu7: ProtocolActivationHeights(
+      mainnet: 3543405,
+      testnet: 4465026,
+      regtest: 1,
     ),
   };
 
@@ -148,7 +196,8 @@ class DefaultUpgradeActivationProvider implements UpgradeActivationProvider {
   int activationHeight(ZcashNetworkProtocol protocol, ZcashNetwork network) {
     final activation = upgrades[protocol];
     if (activation == null) {
-      throw DartZcashPluginException(
+      throw BuError(
+        DefaultErrorType.unsupported,
         "Unsupported protocol '${protocol.name}' for network '${network.name}'.",
       );
     }
@@ -158,7 +207,10 @@ class DefaultUpgradeActivationProvider implements UpgradeActivationProvider {
   @override
   ZcashNetworkProtocol protocolFromHeight(ZcashNetwork network, int height) {
     if (height.isNegative) {
-      throw DartZcashPluginException("Height must be non-negative");
+      throw BuError(
+        DefaultErrorType.invalidArgument,
+        "Height must be non-negative",
+      );
     }
     for (final i in ZcashNetworkProtocol.values.reversed) {
       final activeHeight = activationHeight(i, network);
@@ -191,11 +243,65 @@ class DefaultUpgradeActivationProvider implements UpgradeActivationProvider {
   }
 }
 
+class LightwalletdBranchActivationProvider
+    implements UpgradeActivationProvider {
+  /// The active branch (tip branch reported by lightwalletd).
+  final ZcashNetworkProtocol branch;
+
+  /// Static defaults for everything except the pinned branch.
+  final UpgradeActivationProvider fallback;
+
+  const LightwalletdBranchActivationProvider(
+    this.branch, {
+    this.fallback = const DefaultUpgradeActivationProvider(),
+  });
+
+  /// Parses a lightwalletd `consensusBranchId` hex string (with or without
+  /// `0x` prefix) into its protocol. Returns null when missing,
+  /// malformed, or unknown — callers fall back to static defaults.
+  static ZcashNetworkProtocol? tryParseBranchId(String? hex) {
+    if (hex == null) return null;
+    var s = hex.trim().toLowerCase();
+    if (s.startsWith('0x')) s = s.substring(2);
+    final id = int.tryParse(s, radix: 16);
+    if (id == null) return null;
+    try {
+      return ZcashNetworkProtocol.fromId(id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  int activationHeight(ZcashNetworkProtocol protocol, ZcashNetwork network) {
+    return fallback.activationHeight(protocol, network);
+  }
+
+  @override
+  ZcashNetworkProtocol protocolFromHeight(ZcashNetwork network, int height) {
+    return branch;
+  }
+
+  @override
+  Zip212Enforcement zip212Enforcement(
+    ZcashNetwork network,
+    int height, {
+    ZcashNetworkProtocol? protocol,
+  }) {
+    return fallback.zip212Enforcement(
+      network,
+      height,
+      protocol: protocol ?? branch,
+    );
+  }
+}
+
 enum TxVersionType {
   sprout(groupId: null, txVesion: 0),
   v3(groupId: 0x03C48270, txVesion: 3),
   v4(groupId: 0x892F2085, txVesion: 4),
-  v5(groupId: 0x26A7270A, txVesion: 5);
+  v5(groupId: 0x26A7270A, txVesion: 5),
+  v6(groupId: 0xD884B698, txVesion: 6);
 
   final int? groupId;
   final int txVesion;
@@ -218,7 +324,12 @@ enum TxVersionType {
   static TxVersionType fromName(String? name) {
     return values.firstWhere(
       (e) => e.name == name,
-      orElse: () => throw ItemNotFoundException(value: name),
+      orElse:
+          () =>
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching item found for the given value. $name",
+              ),
     );
   }
 
@@ -231,9 +342,40 @@ enum TxVersionType {
   TxVersion toVersion() {
     return switch (this) {
       TxVersionType.v5 => TxVersionV5(),
+      TxVersionType.v6 => TxVersionV6(),
       TxVersionType.v4 => TxVersionV4(),
       TxVersionType.v3 => TxVersionV3(),
       TxVersionType.sprout => TxVersionSprout(version: 0),
+    };
+  }
+
+  /// Suggests the transaction version for a consensus branch.
+  /// Mirrors `TxVersion::suggested_for_branch` in librustzcash.
+  TxVersion suggestedVersionForBranch(ZcashNetworkProtocol branch) {
+    return switch (branch) {
+      ZcashNetworkProtocol.sprout => TxVersionSprout(version: 2),
+      ZcashNetworkProtocol.overwinter => TxVersionV3(),
+      ZcashNetworkProtocol.sapling ||
+      ZcashNetworkProtocol.blossom ||
+      ZcashNetworkProtocol.heartwood ||
+      ZcashNetworkProtocol.canopy => TxVersionV4(),
+      ZcashNetworkProtocol.nu5 ||
+      ZcashNetworkProtocol.nu6 ||
+      ZcashNetworkProtocol.nu6_1 ||
+      ZcashNetworkProtocol.nu6_2 => TxVersionV5(),
+      ZcashNetworkProtocol.nu6_3 || ZcashNetworkProtocol.nu7 => TxVersionV6(),
+    };
+  }
+
+  /// Returns true if this transaction version is valid in the given branch.
+  /// Mirrors `TxVersion::valid_in_branch` in librustzcash.
+  bool validInBranch(ZcashNetworkProtocol branch) {
+    return switch (this) {
+      TxVersionType.sprout => branch == ZcashNetworkProtocol.sprout,
+      TxVersionType.v3 => branch == ZcashNetworkProtocol.overwinter,
+      TxVersionType.v4 => branch >= ZcashNetworkProtocol.sapling,
+      TxVersionType.v5 => branch >= ZcashNetworkProtocol.nu5,
+      TxVersionType.v6 => branch >= ZcashNetworkProtocol.nu6_3,
     };
   }
 }
@@ -258,6 +400,7 @@ sealed class TxVersion with LayoutSerializable {
       TxVersionType.v3 => TxVersionV3(),
       TxVersionType.v4 => TxVersionV4(),
       TxVersionType.v5 => TxVersionV5(),
+      TxVersionType.v6 => TxVersionV6(),
     };
   }
 
@@ -311,6 +454,7 @@ sealed class TxVersion with LayoutSerializable {
   bool hasOverwinter() => true;
   bool hasSapling() => true;
   bool hasOrchard() => false;
+  bool hasIronwood() => false;
   bool hasSprout() => true;
 
   int header() => (1 << 31) | type.txVesion;
@@ -361,6 +505,24 @@ class TxVersionV5 extends TxVersion {
   const TxVersionV5() : super(type: TxVersionType.v5);
   @override
   bool hasOrchard() {
+    return true;
+  }
+
+  @override
+  bool hasSprout() {
+    return false;
+  }
+}
+
+class TxVersionV6 extends TxVersion {
+  const TxVersionV6() : super(type: TxVersionType.v6);
+  @override
+  bool hasOrchard() {
+    return true;
+  }
+
+  @override
+  bool hasIronwood() {
     return true;
   }
 

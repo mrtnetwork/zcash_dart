@@ -1,0 +1,54 @@
+import 'utils.dart';
+import 'reddsa/redjubjub_test.dart' as f0;
+import 'reddsa/redpallas_test.dart' as f1;
+import 'address/address_test.dart' as f2;
+import 'ironwood/nu63_test.dart' as f3;
+import 'note/orchard_test.dart' as f4;
+import 'note/sapling_test.dart' as f5;
+import 'transaction/serialization_test.dart' as f6;
+import 'transaction/ironwood_spend_test.dart' as f22;
+import 'incrementalmerkletree/address_test.dart' as f7;
+import 'incrementalmerkletree/prunable_test.dart' as f8;
+import 'incrementalmerkletree/store_test.dart' as f9;
+import 'merkle/native_ironwood_test.dart' as f10;
+import 'merkle/native_journal_restore_test.dart' as f11;
+import 'pczt/pczt_bundle_test.dart' as f12;
+import 'sapling/builder_test.dart' as f13;
+import 'sapling/packed_test.dart' as f14;
+import 'orchard/builder_test.dart' as f15;
+import 'orchard/tree_test.dart' as f16;
+import 'zip32/orchard_test.dart' as f17;
+import 'zip32/sapling_test.dart' as f18;
+import 'zip32/unified_spend_key_test.dart' as f19;
+import 'serialization/serialization_test.dart' as f20;
+import 'bundle/bundle_test.dart' as f21;
+import 'backend_identity_test.dart' as f22;
+
+Future<void> runOneShotSuite() async {
+  ZcashTestApi.runTest(() {
+    f22.backendIdentityTest();
+    f0.reddsaRedjubjubTest();
+    f1.reddsaRedpallasTest();
+    f2.addressTest();
+    f3.nu63Test();
+    f4.orchardTest();
+    f5.saplingTest();
+    f6.transactionSerializationTest();
+    f22.ironwoodSpendTest();
+    f7.incrementalmerkletreeAddressTest();
+    f8.incrementalmerkletreePrunableTest();
+    f9.incrementalmerkletreeStoreTest();
+    f10.nativeIronwoodTest();
+    f11.nativeJournalRestoreTest();
+    f12.pcztBundleTest();
+    f13.builderTest();
+    f14.packedTest();
+    f15.orchardBuilderTest();
+    f16.orchardTreeTest();
+    f17.zip32OrchardTest();
+    f18.zip32SaplingTest();
+    f19.zip32UnifiedSpendKeyTest();
+    f20.serializationTest();
+    f21.bundleTest();
+  }, "all tests");
+}

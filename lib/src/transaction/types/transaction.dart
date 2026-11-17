@@ -14,6 +14,7 @@ class TransactionData with LayoutSerializable {
   final SproutBundle? sproutBundle;
   final SaplingBundle? saplingBundle;
   final OrchardBundle? orchardBundle;
+  final OrchardBundle? ironwoodBundle;
 
   const TransactionData({
     required this.version,
@@ -24,6 +25,7 @@ class TransactionData with LayoutSerializable {
     this.sproutBundle,
     this.saplingBundle,
     this.orchardBundle,
+    this.ironwoodBundle,
   });
   factory TransactionData.deserialize(List<int> bytes) {
     final version = TxVersion.deserialize(bytes);
@@ -31,6 +33,7 @@ class TransactionData with LayoutSerializable {
       bytes: bytes,
       layout: switch (version.type) {
         TxVersionType.v5 => layoutV5(),
+        TxVersionType.v6 => layoutV6(),
         _ => layout(),
       },
     );
@@ -46,6 +49,17 @@ class TransactionData with LayoutSerializable {
       key: "consensus_branch_id",
       parse: (v) => ZcashNetworkProtocol.fromId(v),
     );
+    final branch = consensusBranchId;
+    OrchardBundleVersion orchardVersion = OrchardBundleVersion.orchardV1;
+    OrchardBundleVersion ironwoodVersion = OrchardBundleVersion.ironwoodV3;
+    if (branch != null) {
+      orchardVersion =
+          OrchardBundleVersion.forBranch(branch) ??
+          OrchardBundleVersion.orchardV1;
+      ironwoodVersion =
+          OrchardBundleVersion.forBranch(branch, isIronwoodPool: true) ??
+          OrchardBundleVersion.ironwoodV3;
+    }
     return TransactionData(
       version: TxVersion.deserializeJson(json.valueAs("version")),
       consensusBranchId: consensusBranchId,
@@ -66,7 +80,11 @@ class TransactionData with LayoutSerializable {
           ?.copyWith(authorization: sBindingSig),
       orchardBundle: json.valueTo<OrchardBundle?, Map<String, dynamic>>(
         key: "orchard_bundle",
-        parse: (v) => OrchardBundle.deserializeJson(v),
+        parse: (v) => OrchardBundle.deserializeJson(v, orchardVersion),
+      ),
+      ironwoodBundle: json.valueTo<OrchardBundle?, Map<String, dynamic>>(
+        key: "ironwood_bundle",
+        parse: (v) => OrchardBundle.deserializeJson(v, ironwoodVersion),
       ),
     );
   }
@@ -143,13 +161,111 @@ class TransactionData with LayoutSerializable {
     ], property: property);
   }
 
+  static Layout<Map<String, dynamic>> layoutV6({String? property}) {
+    // V6 wire format mirrors V5 header + transparent + sapling,
+    // followed by two Orchard slots: orchard then ironwood.
+    // Mirrors `write_v6` / `read_v6` in librustzcash.
+    return LayoutConst.lazyStruct([
+      LazyStructLayoutBuilder<Map<String, dynamic>, LayoutRepository>(
+        layout: (property, _) => TxVersion.layout(property: property),
+        property: 'version',
+      ),
+      LazyStructLayoutBuilder(
+        layout: (property, params) => LayoutConst.u32(property: property),
+        property: 'consensus_branch_id',
+      ),
+      LazyStructLayoutBuilder(
+        layout: (property, params) => LayoutConst.u32(property: property),
+        property: 'lock_time',
+      ),
+      LazyStructLayoutBuilder(
+        layout: (property, params) {
+          return LayoutConst.u32(property: property);
+        },
+        property: 'expiry_height',
+      ),
+      LazyStructLayoutBuilder(
+        layout:
+            (property, params) => TransparentBundle.layout(property: property),
+        property: "transparent_bundle",
+      ),
+      LazyStructLayoutBuilder<Map<String, dynamic>?, LayoutRepository>(
+        layout: (property, params) {
+          if (params.action.isEncode &&
+              !params.sourceOrResult.hasValue("sapling_bundle")) {
+            return LayoutConst.optional<Map<String, dynamic>>(
+              LayoutConst.noArgs(),
+              discriminator: LayoutConst.u16(),
+            );
+          }
+          return SaplingBundle.layoutV5(property: property);
+        },
+        property: 'sapling_bundle',
+        finalizeDecode: (layoutResult, structResult, repository) {
+          assert(
+            layoutResult != null && layoutResult.containsKey("binding_sig"),
+          );
+          if (layoutResult == null || !layoutResult.hasValue("binding_sig")) {
+            return null;
+          }
+          return layoutResult;
+        },
+      ),
+      LazyStructLayoutBuilder<Map<String, dynamic>?, LayoutRepository>(
+        layout: (property, params) {
+          if (params.action.isEncode &&
+              !params.sourceOrResult.hasValue("orchard_bundle")) {
+            return LayoutConst.optional<Map<String, dynamic>>(
+              LayoutConst.noArgs(),
+            );
+          }
+          return OrchardBundle.layout(property: property);
+        },
+        property: 'orchard_bundle',
+        finalizeDecode: (layoutResult, structResult, repository) {
+          assert(
+            layoutResult != null &&
+                layoutResult.containsKey("binding_signature"),
+          );
+          if (layoutResult == null) return null;
+          if (!layoutResult.hasValue("binding_signature")) {
+            return null;
+          }
+          return layoutResult;
+        },
+      ),
+      LazyStructLayoutBuilder<Map<String, dynamic>?, LayoutRepository>(
+        layout: (property, params) {
+          if (params.action.isEncode &&
+              !params.sourceOrResult.hasValue("ironwood_bundle")) {
+            return LayoutConst.optional<Map<String, dynamic>>(
+              LayoutConst.noArgs(),
+            );
+          }
+          return OrchardBundle.layout(property: property);
+        },
+        property: 'ironwood_bundle',
+        finalizeDecode: (layoutResult, structResult, repository) {
+          assert(
+            layoutResult != null &&
+                layoutResult.containsKey("binding_signature"),
+          );
+          if (layoutResult == null) return null;
+          if (!layoutResult.hasValue("binding_signature")) {
+            return null;
+          }
+          return layoutResult;
+        },
+      ),
+    ], property: property);
+  }
+
   static Layout<Map<String, dynamic>> layout({
     TxVersion? txVersion,
     String? property,
   }) {
     TxVersion getTxVersionOrError({
-      ZTransactionSerializationError err =
-          ZTransactionSerializationError.unxpectedErrorDuringDeserialization,
+      BuError err = ZcashErrors.txSerializationUnexpected,
     }) {
       final version = txVersion;
       if (version == null) throw err;
@@ -264,6 +380,7 @@ class TransactionData with LayoutSerializable {
     SproutBundle? sproutBundle,
     SaplingBundle? saplingBundle,
     OrchardBundle? orchardBundle,
+    OrchardBundle? ironwoodBundle,
   }) {
     return TransactionData(
       version: version ?? this.version,
@@ -271,6 +388,7 @@ class TransactionData with LayoutSerializable {
       locktime: locktime ?? this.locktime,
       expiryHeight: expiryHeight ?? this.expiryHeight,
       orchardBundle: orchardBundle ?? this.orchardBundle,
+      ironwoodBundle: ironwoodBundle ?? this.ironwoodBundle,
       saplingBundle: saplingBundle ?? this.saplingBundle,
       sproutBundle: sproutBundle ?? this.sproutBundle,
       transparentBundle: transparentBundle ?? this.transparentBundle,
@@ -289,6 +407,7 @@ class TransactionData with LayoutSerializable {
       "sprout_bundle": (sproutBundle ?? SproutBundle.empty()).toSerializeJson(),
       "binding_sig": saplingBundle?.authorization?.toSerializeJson(),
       "orchard_bundle": orchardBundle?.toSerializeJson(),
+      "ironwood_bundle": ironwoodBundle?.toSerializeJson(),
       "consensus_branch_id": consensusBranchId?.branchId,
     };
   }
@@ -298,11 +417,14 @@ class TransactionData with LayoutSerializable {
     if (version.type == TxVersionType.v5) {
       return layoutV5(property: property);
     }
+    if (version.type == TxVersionType.v6) {
+      return layoutV6(property: property);
+    }
     return layout(txVersion: version, property: property);
   }
 
   ZcashTxId toTxId() {
-    if (version.type == TxVersionType.v5) {
+    if (version.type == TxVersionType.v5 || version.type == TxVersionType.v6) {
       return TxIdDigester.txToTxId(this);
     }
     return ZcashTxId(QuickCrypto.sha256Hash(toSerializeBytes()));

@@ -1,4 +1,4 @@
-export 'exception/exception.dart';
+export '../error/zcash_error.dart';
 export 'pczt/combiner.dart';
 export 'constants/cosntants.dart';
 export 'pczt/extractor.dart';

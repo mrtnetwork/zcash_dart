@@ -1,24 +1,7 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/serialization/protobuf/protobuf.dart';
-import 'package:zcash_dart/src/exception/exception.dart';
 
 enum DefaultZcashProtoTypeUrl implements ZcashProtoTypeUrl {
-  cashZWalletSdkRpcChainMetadata(
-    typeUrl: '/cash.z.wallet.sdk.rpc.ChainMetadata',
-  ),
-  cashZWalletSdkRpcCompactBlock(typeUrl: '/cash.z.wallet.sdk.rpc.CompactBlock'),
-  cashZWalletSdkRpcCompactTx(typeUrl: '/cash.z.wallet.sdk.rpc.CompactTx'),
-  cashZWalletSdkRpcCompactTxIn(typeUrl: '/cash.z.wallet.sdk.rpc.CompactTxIn'),
-  cashZWalletSdkRpcTxOut(typeUrl: '/cash.z.wallet.sdk.rpc.TxOut'),
-  cashZWalletSdkRpcCompactSaplingSpend(
-    typeUrl: '/cash.z.wallet.sdk.rpc.CompactSaplingSpend',
-  ),
-  cashZWalletSdkRpcCompactSaplingOutput(
-    typeUrl: '/cash.z.wallet.sdk.rpc.CompactSaplingOutput',
-  ),
-  cashZWalletSdkRpcCompactOrchardAction(
-    typeUrl: '/cash.z.wallet.sdk.rpc.CompactOrchardAction',
-  ),
   cashZWalletSdkRpcBlockID(typeUrl: '/cash.z.wallet.sdk.rpc.BlockID'),
   cashZWalletSdkRpcBlockRange(typeUrl: '/cash.z.wallet.sdk.rpc.BlockRange'),
   cashZWalletSdkRpcTxFilter(typeUrl: '/cash.z.wallet.sdk.rpc.TxFilter'),
@@ -137,6 +120,22 @@ enum DefaultZcashProtoTypeUrl implements ZcashProtoTypeUrl {
   cashZWalletSdkRpcPing(
     typeUrl: '/cash.z.wallet.sdk.rpc.Ping',
     serviceUrl: "/cash.z.wallet.sdk.rpc.CompactTxStreamer/Ping",
+  ),
+  cashZWalletSdkRpcChainMetadata(
+    typeUrl: '/cash.z.wallet.sdk.rpc.ChainMetadata',
+  ),
+  cashZWalletSdkRpcCompactBlock(typeUrl: '/cash.z.wallet.sdk.rpc.CompactBlock'),
+  cashZWalletSdkRpcCompactTx(typeUrl: '/cash.z.wallet.sdk.rpc.CompactTx'),
+  cashZWalletSdkRpcCompactTxIn(typeUrl: '/cash.z.wallet.sdk.rpc.CompactTxIn'),
+  cashZWalletSdkRpcTxOut(typeUrl: '/cash.z.wallet.sdk.rpc.TxOut'),
+  cashZWalletSdkRpcCompactSaplingSpend(
+    typeUrl: '/cash.z.wallet.sdk.rpc.CompactSaplingSpend',
+  ),
+  cashZWalletSdkRpcCompactSaplingOutput(
+    typeUrl: '/cash.z.wallet.sdk.rpc.CompactSaplingOutput',
+  ),
+  cashZWalletSdkRpcCompactOrchardAction(
+    typeUrl: '/cash.z.wallet.sdk.rpc.CompactOrchardAction',
   );
 
   @override
@@ -154,7 +153,8 @@ enum DefaultZcashProtoTypeUrl implements ZcashProtoTypeUrl {
   String getServiceUrl() {
     final serviceUrl = this.serviceUrl;
     if (serviceUrl == null) {
-      throw DartZcashPluginException(
+      throw BuError(
+        DefaultErrorType.invalidState,
         "Missing proto service url.",
         details: {"type_url": typeUrl},
       );

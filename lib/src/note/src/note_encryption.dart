@@ -29,7 +29,7 @@ class NoteEncryptionConst {
 }
 
 abstract class NoteDomain<
-  ENCSECRET extends Object,
+  ENCSECRET extends List<int>,
   ENCSECRETAGGPK extends Object,
   DECPK,
   DEC extends Object,
@@ -50,6 +50,22 @@ abstract class NoteDomain<
   >
 > {
   final List<int> _nonce = const [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+  /// Backend-selected ChaCha20-Poly1305 decrypt (null on auth failure).
+  static List<int>? _aeadDecrypt(
+    List<int> key,
+    List<int> nonce,
+    List<int> ciphertext,
+  ) {
+    final aead = blockchainUtils.api.aed.chacha20Poly1305(key);
+    try {
+      final dec = aead.decrypt(nonce, ciphertext);
+      return dec;
+    } finally {
+      aead.clean();
+    }
+  }
+
   ZcashCryptoContext get context;
 
   /// Derives the EphemeralSecretKey corresponding to this note.
@@ -169,15 +185,18 @@ abstract class NoteDomain<
     required List<int> key,
   }) {
     final plaintext = output.encCiphertextCompact;
-    final result = List<int>.filled(plaintext.length, 0);
-    ChaCha20.streamXOR(key, _nonce, plaintext, result, seekBytes: 64);
-    return _parseNotePlaintextWithoutMemoIvk(
-      ivk: ivk,
-      ephemeralKey: ephemeralKey,
-      cm: output.cmstar(),
-      plaintext: result,
-      output: output,
-    );
+    final chacha = blockchainUtils.api.streamCipher.chacha20(key);
+    try {
+      return _parseNotePlaintextWithoutMemoIvk(
+        ivk: ivk,
+        ephemeralKey: ephemeralKey,
+        cm: output.cmstar(),
+        plaintext: chacha.process(plaintext, nonce: _nonce, seekBytes: 64),
+        output: output,
+      );
+    } finally {
+      chacha.clean();
+    }
   }
 
   (NOTE, RECIPIENT, List<int>)? tryNoteDecryptionInner({
@@ -188,7 +207,13 @@ abstract class NoteDomain<
   }) {
     final plain = output.splitCiphertextAtTag();
     if (plain == null) return null;
-    final dec = ChaCha20Poly1305(key).decrypt(_nonce, plain.$2);
+    final aead = blockchainUtils.api.aed.chacha20Poly1305(key);
+    List<int>? dec;
+    try {
+      dec = aead.decrypt(_nonce, plain.$2);
+    } finally {
+      aead.clean();
+    }
     if (dec == null) return null;
     final compact = splitPlaintextAtMemo(dec);
     if (compact == null) return null;
@@ -338,18 +363,25 @@ abstract class NoteDomain<
     required OUTPUT output,
     required List<int> outCiphertext,
   }) {
-    assert(ock.length == NoteEncryptionConst.outGoingCypherKey);
-    assert(outCiphertext.length == NoteEncryptionConst.outCiphertextSize);
     if (ock.length != NoteEncryptionConst.outGoingCypherKey ||
         outCiphertext.length != NoteEncryptionConst.outCiphertextSize) {
       return null;
     }
-    final dec = ChaCha20Poly1305(ock).decrypt(_nonce, outCiphertext);
+    final dec = _aeadDecrypt(ock, _nonce, outCiphertext);
     if (dec == null) return null;
     final pkD = extractPkD(dec);
     final esk = extractEsk(dec);
     if (pkD == null || esk == null) return null;
     return _tryOutputRecoveryWithPkdEsk(pkD: pkD, esk: esk, output: output);
+  }
+
+  /// Value comparison for esk scalars: raw bytes ([BuBytes] has identity
+  /// equality), so compare contents instead of `==`. Typed on [ENCSECRET]
+  /// (bound to [List<int>]) so a future non-bytes esk fails to compile
+  /// here instead of silently falling back to identity equality.
+  bool eskEqual(ENCSECRET a, ENCSECRET b) {
+    if (identical(a, b)) return true;
+    return BytesUtils.bytesEqual(a, b);
   }
 
   (NOTE, RECIPIENT, List<int>?)? _tryOutputRecoveryWithPkdEsk({
@@ -361,16 +393,15 @@ abstract class NoteDomain<
     final sharedSecret = kaAgreeEnc(esk, pkD);
     final key = encKdf(sharedSecret, ephemeralKey);
     final plaintext = output.splitCiphertextAtTag();
-    assert(plaintext != null);
     if (plaintext == null) return null;
-    final dec = ChaCha20Poly1305(key).decrypt(_nonce, plaintext.$2);
+    final dec = _aeadDecrypt(key, _nonce, plaintext.$2);
     if (dec == null) return null;
     final compact = splitPlaintextAtMemo(dec);
     if (compact == null) return null;
     final note = parseNotePlaintextWithoutMemoOvk(pkD, compact.$1, output);
     if (note == null) return null;
     final derivedEsk = deriveEsk(note.$1);
-    if (derivedEsk != null && derivedEsk != esk) {
+    if (derivedEsk != null && !eskEqual(derivedEsk, esk)) {
       {
         return null;
       }
@@ -402,8 +433,12 @@ abstract class NoteDomain<
     final sharedSecret = kaAgreeEnc(encryptedNote.esk, pkD);
     final key = encKdf(sharedSecret, epkBytes(encryptedNote.epk));
     final input = notePlaintextBytes(encryptedNote.note, encryptedNote.memo);
-    final enc = ChaCha20Poly1305(key).encrypt(_nonce, input);
-    return enc;
+    final aead = blockchainUtils.api.aed.chacha20Poly1305(key);
+    try {
+      return aead.encrypt(_nonce, input);
+    } finally {
+      aead.clean();
+    }
   }
 
   List<int> encryptOutgoingPlaintext({
@@ -419,9 +454,15 @@ abstract class NoteDomain<
       input = outgoingPlaintextBytes(encryotedNote.note, encryotedNote.esk);
     } else {
       ock = QuickCrypto.generateRandom();
-      input = QuickCrypto.generateRandom(NoteEncryptionConst.outPlaintextSize);
+      input = QuickCrypto.generateRandom(
+        length: NoteEncryptionConst.outPlaintextSize,
+      );
     }
-    final chacha = ChaCha20Poly1305(ock);
-    return chacha.encrypt(_nonce, input);
+    final chacha = blockchainUtils.api.aed.chacha20Poly1305(ock);
+    try {
+      return chacha.encrypt(_nonce, input);
+    } finally {
+      chacha.clean();
+    }
   }
 }

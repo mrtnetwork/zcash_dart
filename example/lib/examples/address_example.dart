@@ -1,6 +1,6 @@
 // ignore_for_file: unused_local_variable
 
-import 'package:blockchain_utils/bip/bip/bip39/bip39.dart';
+import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/zcash.dart';
 
 /// Example: Creating a Zcash account and deriving keys & addresses

@@ -1,6 +1,6 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/transparent/builder/exception.dart';
+import 'package:zcash_dart/src/pczt/types/types.dart';
 import 'package:zcash_dart/src/transparent/pczt/pczt.dart';
 import 'package:zcash_dart/src/transparent/pczt/utils.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
@@ -34,7 +34,9 @@ class TransparentBuilder
         BundleBuilder<
           TransparentBundle,
           TransparentExtractedBundle,
+          DefaultExtractBundleParams,
           TransparentPcztBundle,
+
           List<TransparentUtxoWithOwner>
         > {
   List<TransparentSigningInput> _inputs;
@@ -44,6 +46,7 @@ class TransparentBuilder
   PcztBundleWithMetadata<
     TransparentBundle,
     TransparentExtractedBundle,
+    DefaultExtractBundleParams,
     TransparentPcztBundle
   >?
   _cachedPczt;
@@ -69,13 +72,13 @@ class TransparentBuilder
   int addInput(TransparentSigningInput input) {
     if (input.input.ownerDetails.toAddress() !=
         input.input.ownerDetails.address) {
-      throw TransparentBuilderException.operationFailed(
+      throw ZcashErrors.transparentBuilderFailed(
         "addInput",
         reason: "Invalid input address.",
       );
     }
     if (_inputs.any((e) => e.input.utxo == input.input.utxo)) {
-      throw TransparentBuilderException.operationFailed(
+      throw ZcashErrors.transparentBuilderFailed(
         "addInput",
         reason: "Duplicate transparent input.",
       );
@@ -120,6 +123,7 @@ class TransparentBuilder
   PcztBundleWithMetadata<
     TransparentBundle,
     TransparentExtractedBundle,
+    DefaultExtractBundleParams,
     TransparentPcztBundle
   >
   toPczt() {
@@ -151,6 +155,7 @@ class TransparentBuilder
           return PcztBundleWithMetadata<
             TransparentBundle,
             TransparentExtractedBundle,
+            DefaultExtractBundleParams,
             TransparentPcztBundle
           >(
             metadata: BundleMetadata(

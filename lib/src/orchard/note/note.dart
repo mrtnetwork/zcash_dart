@@ -1,11 +1,29 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
-import 'package:zcash_dart/src/exception/zcash.dart';
 import 'package:zcash_dart/src/note/note.dart';
-import 'package:zcash_dart/src/orchard/exception/exception.dart';
 import 'package:zcash_dart/src/orchard/transaction/commitment.dart';
 import 'package:zcash_dart/src/orchard/utils/utils.dart';
 import 'package:zcash_dart/src/value/value.dart';
+
+enum OrchardNoteVersion {
+  v2(2),
+  v3(3);
+
+  const OrchardNoteVersion(this.value);
+  final int value;
+  static OrchardNoteVersion fromValue(int? value) {
+    return values.firstWhere(
+      (e) => e.value == value,
+      orElse:
+          () => throw BuError(DefaultErrorType.notFound, "OrchardNoteVersion"),
+    );
+  }
+
+  static OrchardNoteVersion? fromValueOrNull(int? value) {
+    return values.firstWhereNullable((e) => e.value == value);
+  }
+}
 
 abstract class OrchardShildOutput
     with ShieldedOutput<OrchardExtractedNoteCommitment> {
@@ -14,15 +32,30 @@ abstract class OrchardShildOutput
 }
 
 class OrchardRho with Equality, LayoutSerializable {
-  final PallasNativeFp inner;
-  const OrchardRho(this.inner);
-  factory OrchardRho.random() =>
-      OrchardRho(PallasNativePoint.random().toAffine().x);
-  factory OrchardRho.fromBytes(List<int> bytes) =>
-      OrchardRho(PallasNativeFp.fromBytes(bytes));
+  final BuBytes inner;
+  OrchardRho(List<int> bytes)
+    : inner =
+          bytes
+              .exc(
+                length: 32,
+                operation: "OrchardRho",
+                reason: "Invalid OrchardRho bytes length.",
+              )
+              .asImmutableBytes {
+    PallasFp.fromBytes(inner);
+  }
+  factory OrchardRho.random() {
+    final scalar = blockchainUtils.api.pallas.scReduce64(
+      QuickCrypto.generateRandom(length: 64),
+    );
+    final pt = blockchainUtils.api.pallas.multBase(scalar);
+    final x = PallasPoint.fromBytes(pt).toAffine().x.toBytes();
+    return OrchardRho(x);
+  }
+  factory OrchardRho.fromBytes(List<int> bytes) => OrchardRho(bytes);
   factory OrchardRho.deserializeJson(Map<String, dynamic> json) =>
       OrchardRho.fromBytes(json.valueAsBytes("inner"));
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.clone();
 
   @override
   List<dynamic> get variables => [inner];
@@ -39,7 +72,7 @@ class OrchardRho with Equality, LayoutSerializable {
 
   @override
   Map<String, dynamic> toSerializeJson() {
-    return {"inner": inner.toBytes()};
+    return {"inner": inner.clone()};
   }
 }
 
@@ -60,7 +93,7 @@ class OrchardNoteRandomSeed with Equality, LayoutSerializable {
         final rSeed = OrchardNoteRandomSeed(QuickCrypto.generateRandom());
         rSeed.esk(rho);
         return rSeed;
-      } on BaseDartZcashPluginException {
+      } on BuError {
         continue;
       }
     }
@@ -73,24 +106,47 @@ class OrchardNoteRandomSeed with Equality, LayoutSerializable {
     return rSeed;
   }
 
-  VestaNativeFq esk(OrchardRho rho) {
+  BuBytes esk(OrchardRho rho) {
     return OrchardUtils.toNonZeroScalar(
       PrfExpand.orchardEsk.apply(inner, data: [rho.toBytes()]),
     );
   }
 
-  PallasNativeFp psi(OrchardRho rho) {
-    return PallasNativeFp.fromBytes64(
+  BuBytes psi(OrchardRho rho) {
+    return PallasFp.fromBytes64(
       PrfExpand.psi.apply(inner, data: [rho.toBytes()]),
-    );
+    ).toBytes();
   }
 
-  OrchardNoteCommitTrapdoor rcm(OrchardRho rho) {
+  OrchardNoteCommitTrapdoor rcmV2(OrchardRho rho) {
     return OrchardNoteCommitTrapdoor(
-      VestaNativeFq.fromBytes64(
+      blockchainUtils.api.pallas.scReduce64(
         PrfExpand.orchardRcm.apply(inner, data: [rho.toBytes()]),
       ),
     );
+  }
+
+  OrchardNoteCommitTrapdoor rcmV3({
+    required OrchardRho rho,
+    required List<int> gd,
+    required List<int> pkd,
+    required BigInt value,
+    required List<int> psi,
+  }) {
+    const String prfExpandPersonalization = "Zcash_ExpandSeed";
+    final h = QuickCrypto.blake2b512Hash(
+      inner,
+      personalization: StringUtils.encode(prfExpandPersonalization),
+      extraBlocks: [
+        [0x0B],
+        gd,
+        pkd,
+        value.toU64LeBytes(),
+        rho.toBytes(),
+        psi,
+      ],
+    );
+    return OrchardNoteCommitTrapdoor(blockchainUtils.api.pallas.scReduce64(h));
   }
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -119,6 +175,7 @@ class OrchardNote extends Note {
   final ZAmount value;
   final OrchardNoteRandomSeed rseed;
   final OrchardRho rho;
+  final OrchardNoteVersion version;
   factory OrchardNote.deserialize(List<int> bytes) {
     final json = LayoutSerializable.deserialize(bytes: bytes, layout: layout());
     return OrchardNote.deserializeJson(json);
@@ -131,6 +188,7 @@ class OrchardNote extends Note {
       value: ZAmount(json.valueAs("value")),
       rseed: OrchardNoteRandomSeed.deserializeJson(json.valueAs("rseed")),
       rho: OrchardRho.deserializeJson(json.valueAs("rho")),
+      version: OrchardNoteVersion.fromValue(json.valueAsInt("version")),
     );
   }
 
@@ -140,6 +198,7 @@ class OrchardNote extends Note {
       LayoutConst.lebI128(property: "value"),
       OrchardNoteRandomSeed.layout(property: "rseed"),
       OrchardRho.layout(property: "rho"),
+      LayoutConst.u8(property: "version"),
     ], property: property);
   }
 
@@ -148,6 +207,7 @@ class OrchardNote extends Note {
     required this.value,
     required this.rseed,
     required this.rho,
+    required this.version,
   });
   factory OrchardNote.build({
     required OrchardAddress recipient,
@@ -155,15 +215,17 @@ class OrchardNote extends Note {
     required OrchardNoteRandomSeed rseed,
     required OrchardRho rho,
     required ZcashCryptoContext context,
+    OrchardNoteVersion version = OrchardNoteVersion.v2,
   }) {
     final note = OrchardNote._(
       recipient: recipient,
       value: value,
       rseed: rseed,
       rho: rho,
+      version: version,
     );
     if (!note.hasValidCommitment(context)) {
-      throw OrchardException.operationFailed(
+      throw ZcashErrors.orchardFailed(
         "build",
         reason: "Invalid orchard note commitment.",
       );
@@ -175,16 +237,19 @@ class OrchardNote extends Note {
     required ZAmount value,
     required OrchardNoteRandomSeed rseed,
     required OrchardRho rho,
+    OrchardNoteVersion version = OrchardNoteVersion.v2,
   }) {
     return OrchardNote._(
       recipient: recipient,
       value: value,
       rseed: rseed,
       rho: rho,
+      version: version,
     );
   }
   static (OrchardSpendingKey, OrchardFullViewingKey, OrchardNote) dummy(
     ZcashCryptoContext context, {
+    OrchardNoteVersion version = OrchardNoteVersion.v2,
     OrchardRho? rho,
     OrchardSpendingKey? sk,
     ZAmount? amount,
@@ -210,6 +275,7 @@ class OrchardNote extends Note {
       recipient: recipient,
       value: amount ?? ZAmount.zero(),
       rseed: OrchardNoteRandomSeed.random(rho),
+      version: version,
       rho: rho,
       context: context,
     );
@@ -217,17 +283,20 @@ class OrchardNote extends Note {
   }
 
   OrchardNoteCommitment? _commitmentInner(ZcashCryptoContext context) {
-    // final domain = context.getCommitDomain(OrchardUtils.noteCommitmentPersonalization);
-    final gD = recipient.gD();
-    final result = context.sinsemillaCommit(
+    final gDBytes = recipient.gD();
+    final rcmBytes = rcm().toBytes();
+    final psiBytes = psi();
+    final result = blockchainUtils.api.hash.sinsemillaCommit(
+      r: rcmBytes,
       bits: [
-        ...BytesUtils.bytesToBits(gD.toBytes()),
+        ...BytesUtils.bytesToBits(gDBytes),
         ...BytesUtils.bytesToBits(recipient.transmissionKey.toBytes()),
         ...value.toBits(),
-        ...rho.inner.toBits().take(OrchardUtils.lOrchardBase),
-        ...psi().toBits().take(OrchardUtils.lOrchardBase),
+        ...BytesUtils.bytesToBits(
+          rho.toBytes(),
+        ).take(OrchardUtils.lOrchardBase),
+        ...BytesUtils.bytesToBits(psiBytes).take(OrchardUtils.lOrchardBase),
       ],
-      r: rcm().inner,
       domain: OrchardUtils.noteCommitmentPersonalization,
     );
     if (result == null) {
@@ -238,7 +307,7 @@ class OrchardNote extends Note {
 
   OrchardNoteCommitment? _commitment;
   OrchardNullifier? _nullifier;
-  PallasNativeFp? _psi;
+  BuBytes? _psi;
   OrchardNoteCommitTrapdoor? _rcm;
 
   OrchardNullifier nullifier({
@@ -249,7 +318,7 @@ class OrchardNote extends Note {
         _nullifier ??= OrchardNullifier(
           OrchardUtils.deriveNullfierKey(
             nk: fvk.nk,
-            rho: rho.inner,
+            rho: rho.toBytes(),
             psi: psi(),
             cm: commitment(context),
             context: context,
@@ -261,7 +330,7 @@ class OrchardNote extends Note {
   OrchardNoteCommitment commitment(ZcashCryptoContext context) {
     final commitment = _commitment ??= _commitmentInner(context);
     if (commitment == null) {
-      throw OrchardException.operationFailed(
+      throw ZcashErrors.orchardFailed(
         "commitment",
         reason: "Failed to derive note commitment.",
       );
@@ -273,19 +342,32 @@ class OrchardNote extends Note {
     try {
       commitment(context);
       return true;
-    } on BaseDartZcashPluginException {
+    } on BuError {
       return false;
     }
   }
 
-  PallasNativeFp psi() {
+  BuBytes psi() {
     final psi = _psi ??= rseed.psi(rho);
-    return psi;
+    return psi.clone();
   }
 
   OrchardNoteCommitTrapdoor rcm() {
-    final rcm = _rcm ??= rseed.rcm(rho);
-    return rcm;
+    switch (version) {
+      case OrchardNoteVersion.v2:
+        return _rcm ??= rseed.rcmV2(rho);
+      case OrchardNoteVersion.v3:
+        final gd = recipient.gD();
+        final pkd = recipient.transmissionKey.toBytes();
+        final psi = this.psi();
+        return _rcm ??= rseed.rcmV3(
+          gd: gd,
+          pkd: pkd,
+          psi: psi,
+          value: value.value,
+          rho: rho,
+        );
+    }
   }
 
   @override
@@ -303,6 +385,7 @@ class OrchardNote extends Note {
       "value": value.value,
       "rseed": rseed.toSerializeJson(),
       "rho": rho.toSerializeJson(),
+      "version": version.value,
     };
   }
 }
@@ -310,8 +393,8 @@ class OrchardNote extends Note {
 class OrchardEncryptedNote
     extends
         NoteEncryption<
-          VestaNativeFq,
-          PallasNativePoint,
+          BuBytes,
+          BuBytes,
           OrchardNote,
           OrchardOutgoingViewingKey
         > {
@@ -324,14 +407,14 @@ class OrchardEncryptedNote
   });
 }
 
-class OrchardDomainNative
+class OrchardDomain
     extends
         NoteDomain<
-          VestaNativeFq,
-          PallasNativePoint,
-          PallasNativePoint,
-          PallasNativePoint,
-          PallasNativePoint,
+          BuBytes,
+          BuBytes,
+          BuBytes,
+          BuBytes,
+          BuBytes,
           OrchardNote,
           OrchardAddress,
           OrchardDiversifiedTransmissionKey,
@@ -345,14 +428,16 @@ class OrchardDomainNative
   final List<int> _orchardKdf = "Zcash_OrchardKDF".codeUnits.immutable;
   @override
   final ZcashCryptoContext context;
-  OrchardDomainNative(this.context);
+  final OrchardNoteVersion version;
+
+  OrchardDomain(this.context, {this.version = OrchardNoteVersion.v2});
   @override
   OrchardExtractedNoteCommitment cmstar(OrchardNote note) {
     return note.commitment(context).toExtractedNoteCommitment();
   }
 
   @override
-  VestaNativeFq deriveEsk(OrchardNote note) {
+  BuBytes deriveEsk(OrchardNote note) {
     return note.rseed.esk(note.rho);
   }
 
@@ -372,24 +457,26 @@ class OrchardDomainNative
   }
 
   @override
-  PallasNativePoint? decEpk(EphemeralKeyBytes ephemeralKey) {
+  BuBytes? decEpk(EphemeralKeyBytes ephemeralKey) {
     try {
-      final pk = PallasNativePoint.fromBytes(ephemeralKey.inner);
-      if (pk.isIdentity()) return null;
-      return pk;
+      final pt = PallasPoint.fromBytes(ephemeralKey.inner);
+      if (pt.isIdentity()) return null;
+      return BuBytes.from(ephemeralKey.inner);
     } catch (_) {
       return null;
     }
   }
 
   @override
-  EphemeralKeyBytes epkBytes(PallasNativePoint epk) {
-    return EphemeralKeyBytes(epk.toBytes());
+  EphemeralKeyBytes epkBytes(BuBytes epk) {
+    return EphemeralKeyBytes(epk);
   }
 
   @override
-  VestaNativeFq extractEsk(List<int> outPlaintext) {
-    return VestaNativeFq.fromBytes(outPlaintext.sublist(32, 64));
+  BuBytes extractEsk(List<int> outPlaintext) {
+    final bytes = outPlaintext.sublist(32, 64);
+    VestaFq.fromBytes(bytes);
+    return BuBytes.from(bytes);
   }
 
   @override
@@ -410,39 +497,28 @@ class OrchardDomainNative
   }
 
   @override
-  PallasNativePoint kaAgreeDec(
-    OrchardKeyAgreementPrivateKey ivk,
-    PallasNativePoint epk,
-  ) {
-    final PallasNativePoint p = epk * ivk.scalar;
-    // OrchardUtils.kaOrchard(base: base, sk: sk)
-    if (p.isIdentity()) {
-      throw OrchardException.operationFailed(
-        "kaAgreeDec",
-        reason: "Scalar multiplication resulted in the identity point",
-      );
-    }
-    return p;
+  BuBytes kaAgreeDec(OrchardKeyAgreementPrivateKey ivk, BuBytes epk) {
+    return OrchardUtils.kaOrchardBytes(base: epk, sk: ivk.toBytes());
   }
 
   @override
-  PallasNativePoint kaAgreeEnc(
-    VestaNativeFq esk,
+  BuBytes kaAgreeEnc(
+    BuBytes esk,
     OrchardDiversifiedTransmissionKey pkD, {
     bool encrypt = true,
   }) {
-    return OrchardUtils.kaOrchardNative(base: pkD.toPoint(), sk: esk);
+    return OrchardUtils.kaOrchardBytes(base: pkD.toBytes(), sk: esk);
   }
 
   @override
-  PallasNativePoint kaDerivePublic(OrchardNote note, VestaNativeFq esk) {
-    return OrchardUtils.kaOrchardNative(base: note.recipient.gD(), sk: esk);
+  BuBytes kaDerivePublic(OrchardNote note, BuBytes esk) {
+    return OrchardUtils.kaOrchardBytes(base: note.recipient.gD(), sk: esk);
   }
 
   @override
-  List<int> kdf(PallasNativePoint secret, EphemeralKeyBytes ephemeralKey) {
+  List<int> kdf(BuBytes secret, EphemeralKeyBytes ephemeralKey) {
     return QuickCrypto.blake2b256Hash(
-      secret.toBytes(),
+      secret,
       extraBlocks: [ephemeralKey.inner],
       personalization: _orchardKdf,
     );
@@ -451,7 +527,7 @@ class OrchardDomainNative
   @override
   List<int> notePlaintextBytes(OrchardNote note, List<int> memo) {
     return [
-      0x02,
+      version.value,
       ...note.recipient.diversifier.inner,
       ...note.value.toBytes(),
       ...note.rseed.inner,
@@ -460,8 +536,8 @@ class OrchardDomainNative
   }
 
   @override
-  List<int> outgoingPlaintextBytes(OrchardNote note, VestaNativeFq esk) {
-    return [...note.recipient.transmissionKey.toBytes(), ...esk.toBytes()];
+  List<int> outgoingPlaintextBytes(OrchardNote note, BuBytes esk) {
+    return [...note.recipient.transmissionKey.toBytes(), ...esk];
   }
 
   ({OrchardNote note, List<int>? memo})? orchardParseNotePlaintextWithoutMemo({
@@ -472,8 +548,11 @@ class OrchardDomainNative
     )
     pkd,
   }) {
-    if (plaintext.length < NoteEncryptionConst.compactNoteSize ||
-        plaintext[0] != 0x02) {
+    final version = OrchardNoteVersion.fromValueOrNull(
+      plaintext.elementAtOrNull(0),
+    );
+    if (version == null ||
+        plaintext.length < NoteEncryptionConst.compactNoteSize) {
       return null;
     }
     try {
@@ -490,6 +569,7 @@ class OrchardDomainNative
         rseed: r,
         rho: OrchardRho(output.nf.inner),
         context: context,
+        version: version,
       );
       return (
         note: note,
@@ -498,7 +578,7 @@ class OrchardDomainNative
                 ? plaintext.sublist(NoteEncryptionConst.compactNoteSize)
                 : null,
       );
-    } on IException {
+    } on BuError {
       return null;
     }
   }
@@ -538,7 +618,7 @@ class OrchardDomainNative
       output: output,
       pkd: (diversifier) {
         try {
-          OrchardKeyUtils.diversifyHashNative(diversifier.inner);
+          OrchardKeyUtils.diversifyHash(diversifier.inner);
           return pkD;
         } catch (_) {
           return null;
@@ -572,20 +652,21 @@ class OrchardDomainNative
     required List<int> esk,
     OrchardOutgoingViewingKey? ovk,
   }) {
-    final eskScalar = VestaNativeFq.fromBytes(esk);
+    VestaFq.fromBytes(esk);
+    final eskBytes = BuBytes.from(esk);
     return OrchardEncryptedNote(
       ovk: ovk,
       memo: memo,
       note: note,
-      esk: eskScalar,
-      epk: kaDerivePublic(note, eskScalar),
+      esk: eskBytes,
+      epk: kaDerivePublic(note, eskBytes),
     );
   }
 
   @override
-  List<int> encKdf(PallasNativePoint secret, EphemeralKeyBytes ephemeralKey) {
+  List<int> encKdf(BuBytes secret, EphemeralKeyBytes ephemeralKey) {
     return QuickCrypto.blake2b256Hash(
-      secret.toBytes(),
+      secret,
       extraBlocks: [ephemeralKey.inner],
       personalization: _orchardKdf,
     );

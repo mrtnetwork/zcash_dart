@@ -1,23 +1,17 @@
 import 'dart:async';
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/crypto/src/crypto.dart';
-import 'package:zcash_dart/src/note/note.dart';
-import 'package:zcash_dart/src/orchard/orchard.dart';
-import 'package:zcash_dart/src/pczt/types/global.dart';
-import 'package:zcash_dart/src/pczt/types/types.dart';
-import 'package:zcash_dart/src/pczt/pczt/utils.dart';
-import 'package:zcash_dart/src/value/value.dart';
+import 'package:zcash_dart/zcash.dart';
 
 class OrchardPcztSpend with LayoutSerializable {
   final OrchardNullifier nullifier;
-  final OrchardSpendVerificationKey rk;
+  final RedPallasSpendPublicKey rk;
   final OrchardAddress? recipient;
   final ZAmount? value;
   final OrchardRho? rho;
   final OrchardNoteRandomSeed? rseed;
   final OrchardFullViewingKey? fvk;
   final OrchardMerklePath? witness;
-  final VestaNativeFq? alpha;
+  final BuBytes? alpha;
   final OrchardSpendingKey? dummySk;
 
   ReddsaSignature? _spendAuthSig;
@@ -49,7 +43,7 @@ class OrchardPcztSpend with LayoutSerializable {
       nullifier: OrchardNullifier.deserializeJson(
         json.valueEnsureAsMap<String, dynamic>("nullifier"),
       ),
-      rk: OrchardSpendVerificationKey.deserializeJson(
+      rk: RedPallasSpendPublicKey.deserializeJson(
         json.valueEnsureAsMap<String, dynamic>("rk"),
       ),
       spendAuthSig: json.valueTo<ReddsaSignature?, Map<String, dynamic>>(
@@ -80,9 +74,12 @@ class OrchardPcztSpend with LayoutSerializable {
         key: "witness",
         parse: (v) => OrchardMerklePath.deserializeJson(v),
       ),
-      alpha: json.valueTo<VestaNativeFq?, List<int>>(
+      alpha: json.valueTo<BuBytes?, List<int>>(
         key: "alpha",
-        parse: (v) => VestaNativeFq.fromBytes(v),
+        parse: (v) {
+          VestaFq.fromBytes(v);
+          return BuBytes.from(v);
+        },
       ),
       zip32derivation: json.valueTo<PcztZip32Derivation?, Map<String, dynamic>>(
         key: "zip32_derivation",
@@ -98,7 +95,7 @@ class OrchardPcztSpend with LayoutSerializable {
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       Nullifier.layout(property: "nullifier"),
-      OrchardSpendVerificationKey.layout(property: "rk"),
+      RedPallasSpendPublicKey.layout(property: "rk"),
       LayoutConst.optional(
         ReddsaSignature.layout(),
         property: "spend_auth_sig",
@@ -115,7 +112,7 @@ class OrchardPcztSpend with LayoutSerializable {
         property: "zip32_derivation",
       ),
       LayoutConst.optional(LayoutConst.fixedBlob32(), property: "dummy_sk"),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -141,7 +138,7 @@ class OrchardPcztSpend with LayoutSerializable {
 
   OrchardPcztSpend copyWith({
     OrchardNullifier? nullifier,
-    OrchardSpendVerificationKey? rk,
+    RedPallasSpendPublicKey? rk,
     ReddsaSignature? spendAuthSig,
     OrchardAddress? recipient,
     ZAmount? value,
@@ -149,7 +146,7 @@ class OrchardPcztSpend with LayoutSerializable {
     OrchardNoteRandomSeed? rseed,
     OrchardFullViewingKey? fvk,
     OrchardMerklePath? witness,
-    VestaNativeFq? alpha,
+    BuBytes? alpha,
     PcztZip32Derivation? zip32derivation,
     OrchardSpendingKey? dummySk,
     Map<String, List<int>>? proprietary,
@@ -174,7 +171,7 @@ class OrchardPcztSpend with LayoutSerializable {
   ZAmount getValue() {
     final value = this.value;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getValue",
         reason: "Missing spend value.",
       );
@@ -185,7 +182,7 @@ class OrchardPcztSpend with LayoutSerializable {
   OrchardAddress getRecipient() {
     final value = recipient;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getRecipient",
         reason: "Missing spend recipient.",
       );
@@ -196,7 +193,7 @@ class OrchardPcztSpend with LayoutSerializable {
   OrchardRho getRho() {
     final value = rho;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getRho",
         reason: "Missing spend rho.",
       );
@@ -207,7 +204,7 @@ class OrchardPcztSpend with LayoutSerializable {
   OrchardNoteRandomSeed getRseed() {
     final value = rseed;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getRseed",
         reason: "Missing spend rseed.",
       );
@@ -218,7 +215,7 @@ class OrchardPcztSpend with LayoutSerializable {
   OrchardFullViewingKey getFvk() {
     final value = fvk;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getFvk",
         reason: "Missing spend full view key.",
       );
@@ -229,7 +226,7 @@ class OrchardPcztSpend with LayoutSerializable {
   OrchardMerklePath getWitness() {
     final value = witness;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getWitness",
         reason: "Missing spend witness.",
       );
@@ -237,10 +234,10 @@ class OrchardPcztSpend with LayoutSerializable {
     return value;
   }
 
-  VestaNativeFq getAlpha() {
+  BuBytes getAlpha() {
     final value = alpha;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getAlpha",
         reason: "Missing spend alpha.",
       );
@@ -251,7 +248,7 @@ class OrchardPcztSpend with LayoutSerializable {
   OrchardSpendingKey getDummySk() {
     final value = dummySk;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getDummySk",
         reason: "Missing spend dummy secret key.",
       );
@@ -278,14 +275,14 @@ class OrchardPcztSpend with LayoutSerializable {
     final sFvk = this.fvk;
     if (fvk != null && sFvk != null) {
       if (fvk == sFvk) return fvk;
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "findFvk",
         reason: "Mismatch full viewing key.",
       );
     }
     if (fvk != null) return fvk;
     if (sFvk != null) return sFvk;
-    throw OrchardPcztException.operationFailed(
+    throw ZcashErrors.orchardPcztFailed(
       "findFvk",
       reason: "Missing orchard full viewing key.",
     );
@@ -294,6 +291,11 @@ class OrchardPcztSpend with LayoutSerializable {
   void verifyNullifier(
     ZcashCryptoContext context, {
     OrchardFullViewingKey? fvk,
+    // Note version of the pool the spend belongs to
+    // (orchard v2, ironwood v3). The rebuilt note must use the same
+    // version it was created with, or the recomputed nullifier can never
+    // match. Defaults to v2 for version-less legacy data.
+    OrchardNoteVersion version = OrchardNoteVersion.v2,
   }) {
     fvk = findFvk(fvk: fvk);
     final note = OrchardNote.build(
@@ -302,16 +304,17 @@ class OrchardPcztSpend with LayoutSerializable {
       rseed: getRseed(),
       rho: getRho(),
       context: context,
+      version: version,
     );
     final addr = fvk.scopeForAddress(address: getRecipient(), context: context);
     if (addr == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "verifyNullifier",
         reason: "Invalid full viewing key for note.",
       );
     }
     if (note.nullifier(context: context, fvk: fvk) != nullifier) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "verifyNullifier",
         reason: "Invalid orchard spend nullifier.",
       );
@@ -329,7 +332,7 @@ class OrchardPcztSpend with LayoutSerializable {
       "proprietary": proprietary,
       "dummy_sk": dummySk?.toBytes(),
       "zip32_derivation": zip32derivation?.toSerializeJson(),
-      "alpha": alpha?.toBytes(),
+      "alpha": alpha,
       "witness": witness?.toSerializeJson(),
       "fvk": fvk?.toBytes(),
       "rseed": rseed?.toSerializeJson(),
@@ -509,7 +512,7 @@ class OrchardPcztOutput with LayoutSerializable {
         property: "zip32_derivation",
       ),
       LayoutConst.optional(LayoutConst.bcsString(), property: "user_address"),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -535,7 +538,7 @@ class OrchardPcztOutput with LayoutSerializable {
   OrchardAddress getRecipient() {
     final value = recipient;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getRecipient",
         reason: "Missing output recipient.",
       );
@@ -546,7 +549,7 @@ class OrchardPcztOutput with LayoutSerializable {
   ZAmount getValue() {
     final value = this.value;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getValue",
         reason: "Missing output value.",
       );
@@ -557,7 +560,7 @@ class OrchardPcztOutput with LayoutSerializable {
   OrchardNoteRandomSeed getRseed() {
     final value = rseed;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getRseed",
         reason: "Missing output random seed.",
       );
@@ -568,7 +571,7 @@ class OrchardPcztOutput with LayoutSerializable {
   OrchardNoteRandomSeed getOck() {
     final value = rseed;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getOck",
         reason: "Missing output outgoing cipher key.",
       );
@@ -697,7 +700,7 @@ class OrchardPcztAction with LayoutSerializable {
   OrchardValueCommitTrapdoor getRcv() {
     final value = rcv;
     if (value == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         reason: "getRcv",
         "Missing value commit trapdoor.",
       );
@@ -714,15 +717,15 @@ class OrchardPcztAction with LayoutSerializable {
       rcv: rcv,
     );
     if (cvNet != this.cvNet) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "verifyCvNet",
         reason: "Invalid value commitment.",
       );
     }
   }
 
-  OrchardSpendAuthorizingKey _validateAndGetRsk({
-    required OrchardSpendAuthorizingKey ask,
+  RedPallasSpendPrivateKey _validateAndGetRsk({
+    required RedPallasSpendPrivateKey ask,
     required List<int> sighash,
     bool verifyRsk = true,
   }) {
@@ -733,9 +736,9 @@ class OrchardPcztAction with LayoutSerializable {
     );
     final alpha = spend.getAlpha();
     final rk = spend.rk;
-    final rsk = ask.randomize(VestaFq.fromBytes(alpha.toBytes()));
-    if (verifyRsk && rsk.toVerificationKey() != rk) {
-      throw OrchardPcztException.operationFailed(
+    final rsk = ask.randomize(alpha);
+    if (verifyRsk && rsk.publicKey != rk) {
+      throw ZcashErrors.orchardPcztFailed(
         "sign",
         reason: "Invalid spend authorization key.",
       );
@@ -745,7 +748,7 @@ class OrchardPcztAction with LayoutSerializable {
 
   FutureOr<void> sign({
     required List<int> sighash,
-    required OrchardSpendAuthorizingKey ask,
+    required RedPallasSpendPrivateKey ask,
     required ZcashCryptoContext context,
     bool verifyRsk = true,
   }) async {
@@ -770,7 +773,7 @@ class OrchardPcztAction with LayoutSerializable {
           signature: signature,
           message: sighash,
         )) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         reason: "applySignature",
         "Invalid external signature.",
       );
@@ -832,46 +835,122 @@ class OrchardPcztAction with LayoutSerializable {
   }
 }
 
+class OrchardPcztBundleParams implements ExtractBundleParams {
+  final OrchardProtocolVersion version;
+  final bool isIronwoodPool;
+  const OrchardPcztBundleParams(this.version, {this.isIronwoodPool = false});
+
+  /// Full bundle version (pool + protocol), distinguishing orchardV3 from
+  /// ironwoodV3 which share circuit V3 but differ in note version and flags.
+  OrchardBundleVersion get bundleVersion => OrchardBundleVersion(
+    valuePool:
+        isIronwoodPool ? OrchardValuePool.ironwood : OrchardValuePool.orchard,
+    protocolVersion: version,
+  );
+
+  static OrchardPcztBundleParams forBranch({
+    required ZcashNetworkProtocol branch,
+    required bool isIronwoodPool,
+  }) {
+    if (branch < ZcashNetworkProtocol.nu5) {
+      throw ZcashErrors.orchardFailed(
+        "OrchardPcztBundleParams.forBranch",
+        reason: "Unsupported orchard version",
+      );
+    }
+    if (isIronwoodPool && branch < ZcashNetworkProtocol.nu6_3) {
+      throw ZcashErrors.orchardFailed(
+        "OrchardPcztBundleParams.forBranch",
+        reason: "Network does not support iroonwood pool.",
+      );
+    }
+    if (isIronwoodPool) {
+      const params = OrchardPcztBundleParams(
+        OrchardProtocolVersion.v3,
+        isIronwoodPool: true,
+      );
+      return params;
+    }
+    // Must stay consistent with [OrchardBundleVersion.forBranch]:
+    // NU5/NU6/NU6.1 use the V1 circuit, NU6.2 the V2 circuit and NU6.3 the
+    // V3 circuit. Extracting a bundle with a different protocol version than
+    // the one the bundle was built with makes the flag byte unrepresentable.
+    final OrchardPcztBundleParams params;
+    if (branch < ZcashNetworkProtocol.nu6_2) {
+      params = const OrchardPcztBundleParams(
+        OrchardProtocolVersion.insecureV1,
+        isIronwoodPool: false,
+      );
+    } else if (branch < ZcashNetworkProtocol.nu6_3) {
+      params = const OrchardPcztBundleParams(
+        OrchardProtocolVersion.v2,
+        isIronwoodPool: false,
+      );
+    } else {
+      params = const OrchardPcztBundleParams(
+        OrchardProtocolVersion.v3,
+        isIronwoodPool: false,
+      );
+    }
+    return params;
+  }
+}
+
 class OrchardPcztBundle
     with LayoutSerializable
     implements
-        PcztBundle<OrchardBundle, OrchardExtractedBundle, OrchardPcztBundle> {
+        PcztBundle<
+          OrchardBundle,
+          OrchardExtractedBundle,
+          OrchardPcztBundleParams,
+          OrchardPcztBundle
+        > {
   final List<OrchardPcztAction> actions;
   final OrchardBundleFlags flags;
   @override
   final ZAmount valueSum;
   final OrchardAnchor anchor;
+
+  /// Bundle version (pool + protocol) for flag interpretation, mirroring
+  /// official `pczt::Bundle::bundle_version`. Non-serialized context:
+  /// pool is known by slot, protocol by global branch.
+  final OrchardBundleVersion bundleVersion;
   OrchardProof? _zkproof;
   OrchardProof? get zkproof => _zkproof;
-  OrchardBindingAuthorizingKey? _bsk;
-  OrchardBindingAuthorizingKey? get bsk => _bsk;
+  RedPallasBindingPrivateKey? _bsk;
+  RedPallasBindingPrivateKey? get bsk => _bsk;
   OrchardPcztBundle({
     required List<OrchardPcztAction> actions,
     required this.flags,
     required this.valueSum,
     required this.anchor,
     OrchardProof? zkproof,
-    OrchardBindingAuthorizingKey? bsk,
+    RedPallasBindingPrivateKey? bsk,
+    this.bundleVersion = OrchardBundleVersion.orchardV1,
   }) : actions = actions.immutable,
        _zkproof = zkproof,
        _bsk = bsk;
-  factory OrchardPcztBundle.deserializeJson(Map<String, dynamic> json) {
+  factory OrchardPcztBundle.deserializeJson(
+    Map<String, dynamic> json, [
+    OrchardBundleVersion version = OrchardBundleVersion.orchardV1,
+  ]) {
     return OrchardPcztBundle(
       actions:
           json
               .valueEnsureAsList<Map<String, dynamic>>("actions")
               .map((e) => OrchardPcztAction.deserializeJson(e))
               .toList(),
-      flags: OrchardBundleFlags.deserializeJson(json.valueAs("flags")),
+      flags: OrchardBundleFlags.deserializeJson(json.valueAs("flags"), version),
       valueSum: ZAmount.deserializeJson(json.valueAs("value_sum")),
       anchor: OrchardAnchor.deserializeJson(json.valueAs("anchor")),
+      bundleVersion: version,
       zkproof: json.valueTo<OrchardProof?, Map<String, dynamic>>(
         key: "zkproof",
         parse: (v) => OrchardProof.deserializeJson(v),
       ),
-      bsk: json.valueTo<OrchardBindingAuthorizingKey?, List<int>>(
+      bsk: json.valueTo<RedPallasBindingPrivateKey?, List<int>>(
         key: "bsk",
-        parse: (v) => OrchardBindingAuthorizingKey.fromBytes(v),
+        parse: (v) => RedPallasBindingPrivateKey.fromBytes(v),
       ),
     );
   }
@@ -882,7 +961,8 @@ class OrchardPcztBundle
     ZAmount? valueSum,
     OrchardAnchor? anchor,
     OrchardProof? zkproof,
-    OrchardBindingAuthorizingKey? bsk,
+    RedPallasBindingPrivateKey? bsk,
+    OrchardBundleVersion? bundleVersion,
   }) {
     return OrchardPcztBundle(
       actions: actions ?? this.actions,
@@ -891,6 +971,7 @@ class OrchardPcztBundle
       anchor: anchor ?? this.anchor,
       bsk: bsk ?? this.bsk,
       zkproof: zkproof ?? this.zkproof,
+      bundleVersion: bundleVersion ?? this.bundleVersion,
     );
   }
 
@@ -916,12 +997,13 @@ class OrchardPcztBundle
     anchor: anchor,
     bsk: bsk,
     zkproof: zkproof,
+    bundleVersion: bundleVersion,
   );
 
-  OrchardBindingAuthorizingKey getBsk() {
+  RedPallasBindingPrivateKey getBsk() {
     final bsk = this.bsk;
     if (bsk == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getBsk",
         reason: "Missing bundle binding signing key.",
       );
@@ -932,7 +1014,7 @@ class OrchardPcztBundle
   OrchardProof getZkproof() {
     final zkproof = this.zkproof;
     if (zkproof == null) {
-      throw OrchardPcztException.operationFailed(
+      throw ZcashErrors.orchardPcztFailed(
         "getZkproof",
         reason: "Missing bundle proof.",
       );
@@ -940,7 +1022,7 @@ class OrchardPcztBundle
     return zkproof;
   }
 
-  void setBsk(OrchardBindingAuthorizingKey? bsk) {
+  void setBsk(RedPallasBindingPrivateKey? bsk) {
     _bsk = bsk;
   }
 
@@ -949,8 +1031,8 @@ class OrchardPcztBundle
   }
 
   @override
-  OrchardExtractedBundle? extract() {
-    final bundle = _toTxData();
+  OrchardExtractedBundle? extract({required OrchardPcztBundleParams params}) {
+    final bundle = _toTxData(version: params.bundleVersion);
     if (bundle == null) return null;
     final bsk = getBsk();
     final zkproof = getZkproof();
@@ -962,15 +1044,76 @@ class OrchardPcztBundle
   }
 
   @override
-  OrchardBundle? extractEffects() => _toTxData(extract: false);
+  OrchardBundle? extractEffects({required OrchardPcztBundleParams params}) {
+    return _toTxData(version: params.bundleVersion, extract: false);
+  }
 
-  OrchardBundle? _toTxData({bool extract = true}) {
+  /// Verifies the cross-address restriction for this bundle, mirroring
+  /// official `Bundle::verify_cross_address_restriction`.
+  ///
+  /// If the bundle disables cross-address transfers, every action's
+  /// output must be addressed to the same expanded receiver (`g_d`,
+  /// `pk_d`) as its spent note. This is a no-op for bundles that permit
+  /// cross-address transfers. Requires spend and output recipients on
+  /// every action. Signers must call this before signing.
+  void verifyCrossAddressRestriction() {
+    if (flags.crossAddressEnabled) return;
+    for (final (index, action) in actions.indexed) {
+      final spendRecipient = action.spend.getRecipient();
+      final outputRecipient = action.output.getRecipient();
+      if (!OrchardUtils.sameExpandedReceiver(spendRecipient, outputRecipient)) {
+        throw ZcashErrors.orchardPcztFailed(
+          "verifyCrossAddressRestriction",
+          reason: "Disallowed cross-address transfer.",
+          details: {"index": index.toString()},
+        );
+      }
+    }
+  }
+
+  /// Verifies that this bundle's flags are encodable for [version]:
+  /// mirrors official `Flags::to_byte` returning `None`.
+  /// Throws on (Orchard,V3)+cross_true, pre-V3+cross_false, Ironwood+pre-V3.
+  void verifyFlagsForVersion(OrchardBundleVersion version) {
+    final pool = version.valuePool;
+    final protocol = version.protocolVersion;
+    if (pool == OrchardValuePool.orchard &&
+        protocol == OrchardProtocolVersion.v3) {
+      if (flags.crossAddressEnabled) {
+        throw ZcashErrors.orchardPcztFailed(
+          "verifyFlagsForVersion",
+          reason: "Cross-address bit set for the Orchard pool.",
+        );
+      }
+      return;
+    }
+    if (pool == OrchardValuePool.ironwood) {
+      if (protocol != OrchardProtocolVersion.v3) {
+        throw ZcashErrors.orchardPcztFailed(
+          "verifyFlagsForVersion",
+          reason: "The Ironwood pool exists only from NU6.3 (protocol v3).",
+        );
+      }
+      return;
+    }
+    if (!flags.crossAddressEnabled) {
+      throw ZcashErrors.orchardPcztFailed(
+        "verifyFlagsForVersion",
+        reason: "Unrepresentable flags for pre-NU6.3 version.",
+      );
+    }
+  }
+
+  OrchardBundle? _toTxData({
+    bool extract = true,
+    required OrchardBundleVersion version,
+  }) {
     if (this.actions.isEmpty) return null;
     final actions =
         this.actions.map((e) {
           final authorization = e.spend.spendAuthSig;
           if (extract && authorization == null) {
-            throw OrchardPcztException.operationFailed(
+            throw ZcashErrors.orchardPcztFailed(
               "extract",
               reason: "Missing spend auth signature.",
             );
@@ -991,51 +1134,64 @@ class OrchardPcztBundle
       balance: valueSum,
       anchor: anchor,
       authorization: null,
+      bundleVersion: version,
     );
   }
 
-  List<OrchardTransfableCircuit> toCircuits(ZcashCryptoContext context) =>
-      actions.map((e) {
-        final fvk = e.spend.getFvk();
-        final recipient = e.spend.getRecipient();
-        final value = e.spend.getValue();
-        final rho = e.spend.getRho();
-        final rseed = e.spend.getRseed();
-        final note = OrchardNote.build(
-          recipient: recipient,
-          value: value,
-          rseed: rseed,
-          rho: rho,
-          context: context,
-        );
-        final witness = e.spend.getWitness();
-        final spendInfo = OrchardSpendInfo(
-          fvk: fvk,
-          note: note,
-          merklePath: witness,
-        );
-        final outRecipient = e.output.getRecipient();
-        final outputValue = e.output.getValue();
-        final outputRseed = e.output.getRseed();
-        final alpha = e.spend.getAlpha();
-        final outputNote = OrchardNote.build(
-          recipient: outRecipient,
-          value: outputValue,
-          rseed: outputRseed,
-          context: context,
-          rho: OrchardRho(e.spend.nullifier.inner),
-        );
-        final rcv = e.getRcv();
-        return OrchardTransfableCircuit.fromActionContext(
-          spend: spendInfo,
-          outputNote: outputNote,
-          alpha: alpha,
-          rcv: rcv,
-          context: context,
-        );
-      }).toList();
+  List<OrchardTransfableCircuit> toCircuits({
+    required ZcashCryptoContext context,
+    required OrchardProtocolVersion version,
+  }) {
+    return actions.map((e) {
+      // Notes are rebuilt with the pool's version
+      // (orchard pool v2 even under V3 circuits, ironwood pool v3) —
+      // never the protocol version. Rebuilding with the wrong version
+      // re-derives commitments/nullifiers and breaks proofs and the
+      // spend/output linkage check below.
+      final noteVersion = bundleVersion.valuePool.noteVersion;
+      final fvk = e.spend.getFvk();
+      final recipient = e.spend.getRecipient();
+      final value = e.spend.getValue();
+      final rho = e.spend.getRho();
+      final rseed = e.spend.getRseed();
+      final note = OrchardNote.build(
+        recipient: recipient,
+        value: value,
+        rseed: rseed,
+        rho: rho,
+        context: context,
+        version: noteVersion,
+      );
+      final witness = e.spend.getWitness();
+      final spendInfo = OrchardSpendInfo(
+        fvk: fvk,
+        note: note,
+        merklePath: witness,
+      );
+      final outRecipient = e.output.getRecipient();
+      final outputValue = e.output.getValue();
+      final outputRseed = e.output.getRseed();
+      final alpha = e.spend.getAlpha();
+      final outputNote = OrchardNote.build(
+        recipient: outRecipient,
+        value: outputValue,
+        rseed: outputRseed,
+        context: context,
+        rho: OrchardRho(e.spend.nullifier.inner),
+        version: noteVersion,
+      );
+      final rcv = e.getRcv();
+      return OrchardTransfableCircuit.fromActionContext(
+        spend: spendInfo,
+        outputNote: outputNote,
+        alpha: alpha,
+        rcv: rcv,
+        context: context,
+      );
+    }).toList();
+  }
 
-  List<OrchardCircuitInstance> toInstances() =>
+  List<OrchardCircuitInstance> toInstances(OrchardProtocolVersion version) =>
       actions
           .map(
             (e) => OrchardCircuitInstance(
@@ -1046,10 +1202,12 @@ class OrchardPcztBundle
               cmx: e.output.cmx,
               enableSpend: flags.spendsEnabled,
               enableOutput: flags.outputsEnabled,
+              version: version,
+              disableCrossAddress: !flags.crossAddressEnabled,
             ),
           )
           .toList();
-  OrchardBindingAuthorizingKey _verifyAndGentBsk({bool verifyBsk = true}) {
+  RedPallasBindingPrivateKey _verifyAndGentBsk({bool verifyBsk = true}) {
     final rcvs =
         actions.map((e) {
           return e.getRcv();
@@ -1064,8 +1222,8 @@ class OrchardPcztBundle
                   rcv: OrchardValueCommitTrapdoor.zero(),
                 ))
             .toBvk();
-    if (verifyBsk && bsk.toVerificationKey() != bvk) {
-      throw OrchardPcztException.operationFailed(
+    if (verifyBsk && bsk.publicKey != bvk) {
+      throw ZcashErrors.orchardPcztFailed(
         "finalize",
         reason: "Value commit mismatch.",
       );
@@ -1083,20 +1241,29 @@ class OrchardPcztBundle
     for (final action in actions) {
       final bsk = action.spend.dummySk;
       if (bsk == null) continue;
-      final ask = OrchardSpendAuthorizingKey.fromSpendingKey(bsk);
+      final ask = RedPallasSpendPrivateKey.fromSpendingKey(bsk);
       await action.sign(sighash: sighash, ask: ask, context: context);
     }
   }
 
-  Future<void> createProof(ZcashCryptoContext context) async {
-    final circuits = toCircuits(context);
-    final instances = toInstances();
+  Future<void> createProof({
+    required ZcashCryptoContext context,
+    required OrchardProtocolVersion version,
+  }) async {
+    final circuits = toCircuits(context: context, version: version);
+    final instances = toInstances(version);
+    final args =
+        circuits.indexed
+            .map(
+              (e) =>
+                  OrchardProofInputs(circuit: e.$2, instance: instances[e.$1]),
+            )
+            .toList();
+    if (args.isEmpty) return;
     final proof = await context.createOrchardProof(
-      circuits.indexed
-          .map(
-            (e) => OrchardProofInputs(circuit: e.$2, instance: instances[e.$1]),
-          )
-          .toList(),
+      args,
+      version: version,
+      disableCrossAddress: !flags.crossAddressEnabled,
     );
     setZkProof(proof);
   }
@@ -1107,10 +1274,11 @@ class OrchardPcztBundle
   }
 
   @override
+  @override
   Map<String, dynamic> toSerializeJson() {
     return {
       "actions": actions.map((e) => e.toSerializeJson()).toList(),
-      "flags": flags.toSerializeJson(),
+      "flags": flags.toSerializeJsonForVersion(bundleVersion),
       "anchor": anchor.toSerializeJson(),
       "zkproof": zkproof?.toSerializeJson(),
       "value_sum": valueSum.toSerializeJson(),
@@ -1125,6 +1293,8 @@ class OrchardPcztBundle
     required PcztGlobal otherGlobal,
   }) {
     if (flags != other.flags ||
+        bundleVersion.valuePool != other.bundleVersion.valuePool ||
+        bundleVersion.protocolVersion != other.bundleVersion.protocolVersion ||
         anchor != other.anchor ||
         !PcztUtils.canMerge(this.zkproof, other.zkproof)) {
       return null;
@@ -1132,11 +1302,11 @@ class OrchardPcztBundle
     List<OrchardPcztAction> actions = this.actions;
     ZAmount valueSum = this.valueSum;
     switch ((bsk, other.bsk)) {
-      case (OrchardBindingAuthorizingKey a, OrchardBindingAuthorizingKey b)
+      case (RedPallasBindingPrivateKey a, RedPallasBindingPrivateKey b)
           when a != b:
         return null;
-      case (null, OrchardBindingAuthorizingKey _):
-      case (OrchardBindingAuthorizingKey _, null):
+      case (null, RedPallasBindingPrivateKey _):
+      case (RedPallasBindingPrivateKey _, null):
         if (actions.length != other.actions.length ||
             valueSum != other.valueSum) {
           return null;
@@ -1169,6 +1339,7 @@ class OrchardPcztBundle
       anchor: anchor,
       bsk: bsk,
       zkproof: zkproof,
+      bundleVersion: bundleVersion,
     );
   }
 }
@@ -1177,7 +1348,7 @@ class OrchardExtractedBundle implements ExtractedBundle<OrchardBundle> {
   @override
   final OrchardBundle bundle;
   final OrchardProof proof;
-  final OrchardBindingAuthorizingKey bindingSigningKey;
+  final RedPallasBindingPrivateKey bindingSigningKey;
   const OrchardExtractedBundle({
     required this.bundle,
     required this.proof,
@@ -1189,6 +1360,7 @@ class OrchardExtractedBundle implements ExtractedBundle<OrchardBundle> {
       flags: bundle.flags,
       balance: bundle.balance,
       anchor: bundle.anchor,
+      bundleVersion: bundle.bundleVersion,
       authorization: OrchardBundleAuthorization(
         proof: proof,
         bindingSignature: authorization,
@@ -1204,7 +1376,7 @@ class OrchardExtractedBundle implements ExtractedBundle<OrchardBundle> {
     for (final i in bundle.actions) {
       final signature = i.authorization;
       if (signature == null) {
-        throw OrchardPcztException.operationFailed(
+        throw ZcashErrors.orchardPcztFailed(
           "buildBindingAutorization",
           reason: "Missing action autorization.",
         );
@@ -1215,7 +1387,7 @@ class OrchardExtractedBundle implements ExtractedBundle<OrchardBundle> {
           signature: signature,
           message: sighash,
         )) {
-          throw OrchardPcztException.operationFailed(
+          throw ZcashErrors.orchardPcztFailed(
             "buildBindingAutorization",
             reason: "Binding signature verification failed.",
           );

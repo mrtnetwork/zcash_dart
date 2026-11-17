@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
+import 'package:zcash_dart/src/note/note.dart';
 import 'package:zcash_dart/src/sapling/merkle/merkle.dart';
 import 'package:zcash_dart/src/sapling/proof/types.dart';
 import 'package:zcash_dart/src/sapling/transaction/bundle.dart';
@@ -19,34 +20,39 @@ abstract mixin class SaplingBaseBundleVerifier {
 
 class SaplingBundleVerification implements SaplingBaseBundleVerifier {
   static SaplingVerifyInputs? _extractSpendProof({
-    required JubJubNativePoint rk,
+    required List<int> rkBytes,
     required SaplingAnchor anchor,
     required SaplingNullifier nullifier,
     required SaplingValueCommitment cv,
     required GrothProofBytes zkproof,
   }) {
-    // final rkPoint = rk.toPoint();
-    if (rk.isSmallOrder()) {
-      return null;
-    }
-    List<JubJubNativeFq> inputs = [];
-    final affine = rk.toAffine();
-    inputs.add(affine.u);
-    inputs.add(affine.v);
-    final cvAffine = cv.inner.toAffine();
-    inputs.add(cvAffine.u);
-    inputs.add(cvAffine.v);
-    inputs.add(anchor.inner);
-    final n = SaplingUtils.computeMultipacking(
-      BytesUtils.bytesToBits(nullifier.toBytes()),
-    );
-    assert(n.length == 2, "unexpected multipacking result.");
-    if (n.length != 2) {
-      return null;
-    }
-    inputs.addAll(n);
     try {
-      return SaplingVerifyInputs(proof: zkproof, inputs: inputs);
+      final rkPoint = JubJubPoint.fromBytes(rkBytes);
+      if (rkPoint.isSmallOrder()) {
+        return null;
+      }
+      JubJubFq f(List<int> b) => JubJubFq.fromBytes(b);
+      List<JubJubFq> inputs = [];
+      final affine = rkPoint.toAffine();
+      inputs.add(f(affine.u.toBytes()));
+      inputs.add(f(affine.v.toBytes()));
+      final cvAffine = JubJubPoint.fromBytes(cv.inner).toAffine();
+      inputs.add(f(cvAffine.u.toBytes()));
+      inputs.add(f(cvAffine.v.toBytes()));
+      inputs.add(anchor.inner);
+      final n = SaplingUtils.computeMultipacking(
+        BytesUtils.bytesToBits(nullifier.toBytes()),
+      );
+      assert(n.length == 2, "unexpected multipacking result.");
+      if (n.length != 2) {
+        return null;
+      }
+      inputs.addAll(n);
+      try {
+        return SaplingVerifyInputs(proof: zkproof, inputs: inputs);
+      } catch (_) {
+        return null;
+      }
     } catch (_) {
       return null;
     }
@@ -55,18 +61,25 @@ class SaplingBundleVerification implements SaplingBaseBundleVerifier {
   static SaplingVerifyInputs? _checkOutputSync({
     required SaplingValueCommitment cv,
     required SaplingExtractedNoteCommitment cmu,
-    required JubJubNativePoint epk,
+    required EphemeralKeyBytes epk,
     required GrothProofBytes zkproof,
   }) {
-    if (epk.isSmallOrder()) return null;
-    List<JubJubNativeFq> inputs = [];
-    final cvAffine = cv.inner.toAffine();
-    inputs.add(cvAffine.u);
-    inputs.add(cvAffine.v);
-    final epkAfine = epk.toAffine();
-    inputs.add(epkAfine.u);
-    inputs.add(epkAfine.v);
-    inputs.add(JubJubNativeFq.fromBytes(cmu.toBytes()));
+    final JubJubPoint epkPoint;
+    try {
+      epkPoint = JubJubPoint.fromBytes(epk.inner);
+    } catch (_) {
+      return null;
+    }
+    if (epkPoint.isSmallOrder()) return null;
+    JubJubFq f(List<int> b) => JubJubFq.fromBytes(b);
+    List<JubJubFq> inputs = [];
+    final cvAffine = JubJubPoint.fromBytes(cv.inner).toAffine();
+    inputs.add(f(cvAffine.u.toBytes()));
+    inputs.add(f(cvAffine.v.toBytes()));
+    final epkAfine = epkPoint.toAffine();
+    inputs.add(f(epkAfine.u.toBytes()));
+    inputs.add(f(epkAfine.v.toBytes()));
+    inputs.add(JubJubFq.fromBytes(cmu.toBytes()));
     try {
       return SaplingVerifyInputs(proof: zkproof, inputs: inputs);
     } catch (_) {
@@ -78,7 +91,7 @@ class SaplingBundleVerification implements SaplingBaseBundleVerifier {
     required SaplingValueCommitment cv,
     required SaplingAnchor anchor,
     required SaplingNullifier nullifier,
-    required SaplingSpendVerificationKey rk,
+    required RedJubJubSpendPublicKey rk,
     required ReddsaSignature spendAuthSignature,
     required List<int> sighash,
     required GrothProofBytes zkproof,
@@ -86,7 +99,7 @@ class SaplingBundleVerification implements SaplingBaseBundleVerifier {
     required bool verifySignatures,
   }) async {
     final proof = _extractSpendProof(
-      rk: rk.toPoint(),
+      rkBytes: rk.toBytes(),
       anchor: anchor,
       nullifier: nullifier,
       cv: cv,
@@ -142,7 +155,7 @@ class SaplingBundleVerification implements SaplingBaseBundleVerifier {
       final r = _checkOutputSync(
         cv: i.cv,
         cmu: i.cmu,
-        epk: i.ephemeralKey.toPoint(),
+        epk: i.ephemeralKey,
         zkproof: proof,
       );
       if (r == null) return false;

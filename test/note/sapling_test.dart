@@ -2,18 +2,28 @@ import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
 import 'package:zcash_dart/zcash.dart';
 
-void main() {
+import '../utils.dart';
+
+void noteSaplingTest() {
   _test();
+}
+
+void saplingTest() {
+  ZcashTestApi.runTest(noteSaplingTest, "Sapling");
+}
+
+void main() {
+  ZcashTestApi.runTest(saplingTest, "Sapling");
 }
 
 void _test() {
   test("Sapling Note encrypt/decrypt", () {
-    final domain = SaplingDomainNative(DefaultZcashCryptoContext.lazy());
+    final domain = SaplingDomain(DefaultZcashCryptoContext.lazy());
     for (final i in _tv) {
       final tv = _TestVector.fromJson(i);
-      final ivk = SaplingIvk(JubJubNativeFr.fromBytes(tv.ivk));
+      final ivk = SaplingIvk(JubJubFr.fromBytes(tv.ivk));
       final pkd = SaplingDiversifiedTransmissionKey.fromBytes(tv.defaultPkD);
-      final rcm = JubJubNativeFr.fromBytes(tv.rcm);
+      final rcm = SaplingRSeedBeforeZip212.fromBytes(tv.rcm);
       final SaplingValueCommitment cv = SaplingValueCommitment.fromBytes(tv.cv);
       final SaplingExtractedNoteCommitment cmu =
           SaplingExtractedNoteCommitment.fromBytes(tv.cmu);
@@ -37,7 +47,7 @@ void _test() {
       final note = SaplingNote(
         recipient: to,
         value: ZAmount(BigInt.from(tv.v)),
-        rseed: SaplingRSeedBeforeZip212(rcm),
+        rseed: rcm,
       );
       final output = SaplingOutputDescription(
         cv: cv,

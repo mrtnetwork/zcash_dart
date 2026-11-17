@@ -2,7 +2,6 @@ import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
 import 'package:zcash_dart/src/pczt/pczt/pczt.dart';
 import 'package:zcash_dart/src/pczt/types/types.dart';
-import 'package:zcash_dart/src/transaction/builders/exception.dart';
 import 'package:zcash_dart/src/transaction/builders/utils.dart';
 import 'package:zcash_dart/src/transaction/types/bundle.dart';
 import 'package:zcash_dart/src/transparent/transparent.dart';
@@ -16,16 +15,23 @@ sealed class TransactionBuildConfig {
 
   OrchardBundleType orchardConfig();
   OrchardAnchor orchardAnchor();
+
+  /// Anchor for the Ironwood pool (NU6.3 second slot). Defaults to the
+  /// empty tree; override per pool like [orchardAnchor].
+  OrchardAnchor ironwoodAnchor();
 }
 
 class TransactionBuildConfigStandard implements TransactionBuildConfig {
   final SaplingAnchor sapling;
   final OrchardAnchor orchard;
+  final OrchardAnchor ironwood;
   TransactionBuildConfigStandard({
     SaplingAnchor? sapling,
     OrchardAnchor? orchard,
+    OrchardAnchor? ironwood,
   }) : sapling = sapling ?? SaplingAnchor.emptyTree(),
-       orchard = orchard ?? OrchardAnchor.emptyTree();
+       orchard = orchard ?? OrchardAnchor.emptyTree(),
+       ironwood = ironwood ?? OrchardAnchor.emptyTree();
 
   @override
   OrchardAnchor orchardAnchor() {
@@ -35,6 +41,11 @@ class TransactionBuildConfigStandard implements TransactionBuildConfig {
   @override
   OrchardBundleType orchardConfig() {
     return OrchardBundleType.defaultBundle();
+  }
+
+  @override
+  OrchardAnchor ironwoodAnchor() {
+    return ironwood;
   }
 
   @override
@@ -51,6 +62,11 @@ class TransactionBuildConfigStandard implements TransactionBuildConfig {
 class TransactionBuildConfigCoinbase implements TransactionBuildConfig {
   @override
   OrchardAnchor orchardAnchor() {
+    return OrchardAnchor.emptyTree();
+  }
+
+  @override
+  OrchardAnchor ironwoodAnchor() {
     return OrchardAnchor.emptyTree();
   }
 
@@ -79,6 +95,7 @@ abstract mixin class ZFeeRole {
     required int saplingInputCount,
     required int saplingOutputCount,
     required int orchardActionCount,
+    int ironwoodActionCount = 0,
   });
 }
 
@@ -94,6 +111,7 @@ class ZFixedFee implements ZFeeRole {
     required int saplingInputCount,
     required int saplingOutputCount,
     required int orchardActionCount,
+    int ironwoodActionCount = 0,
   }) {
     return ZAmount(fee.asPositive);
   }
@@ -120,7 +138,7 @@ class Zip317FeeRole implements ZFeeRole {
         p2pkhStandardOutputSize <= 0 ||
         marginalFee <= 0 ||
         graceActions <= 0) {
-      throw ArgumentException.invalidOperationArguments(
+      throw CoreErrors.invalidOperationArguments(
         "Zip317FeeRole",
         reason: "Invalid fee role config.",
       );
@@ -148,6 +166,7 @@ class Zip317FeeRole implements ZFeeRole {
     required int saplingInputCount,
     required int saplingOutputCount,
     required int orchardActionCount,
+    int ironwoodActionCount = 0,
   }) {
     final input = IntUtils.ceilDiv(
       trasparentInputSizes,
@@ -159,7 +178,10 @@ class Zip317FeeRole implements ZFeeRole {
     );
     final transparent = IntUtils.max(input, output);
     final sapling = IntUtils.max(saplingInputCount, saplingOutputCount);
-    final action = orchardActionCount;
+    // ZIP 317: each Ironwood action is charged one marginal fee, exactly
+    // like an Orchard action (librustzcash `zip317.rs` supports
+    // Ironwood/Orchard/Sapling/transparent).
+    final action = orchardActionCount + ironwoodActionCount;
     final totalActions = transparent + sapling + action;
     return ZAmount(
       BigInt.from(marginalFee * IntUtils.max(graceActions, totalActions)),
@@ -170,34 +192,41 @@ class Zip317FeeRole implements ZFeeRole {
 abstract class BundleBuilder<
   BUNDLE extends Bundle<BUNDLE>,
   EXT extends ExtractedBundle<BUNDLE>,
-  PCZT extends PcztBundle<BUNDLE, EXT, PCZT>,
+  EXTBUNDLEPARAMS extends ExtractBundleParams,
+  PCZT extends PcztBundle<BUNDLE, EXT, EXTBUNDLEPARAMS, PCZT>,
   BUNDLEDATA extends Object
 > {
   /// Computes the net ZAmount balance (inputs minus outputs) of the bundle.
   ZAmount valueBalance();
-  PcztBundleWithMetadata<BUNDLE, EXT, PCZT> toPczt();
+  PcztBundleWithMetadata<BUNDLE, EXT, EXTBUNDLEPARAMS, PCZT> toPczt();
   BundleWithMetadata<BUNDLE, BUNDLEDATA>? build();
 }
 
 class BundleMetadata {
   final List<int> spendIndices;
   final List<int> outputIndices;
+
+  final List<int> changeSpendIndices;
   BundleMetadata({
     List<int> spendIndices = const [],
     List<int> outputIndices = const [],
+    List<int> changeSpendIndices = const [],
   }) : spendIndices = spendIndices.immutable,
-       outputIndices = outputIndices.immutable;
+       outputIndices = outputIndices.immutable,
+       changeSpendIndices = changeSpendIndices.immutable;
 }
 
 class PcztBundleWithMetadata<
   BUNDLE extends Bundle<BUNDLE>,
   EXT extends ExtractedBundle<BUNDLE>,
-  PCZT extends PcztBundle<BUNDLE, EXT, PCZT>
+  EXTBUNDLEPARAMS extends ExtractBundleParams,
+
+  PCZT extends PcztBundle<BUNDLE, EXT, EXTBUNDLEPARAMS, PCZT>
 > {
   final PCZT bundle;
   final BundleMetadata metadata;
   const PcztBundleWithMetadata({required this.metadata, required this.bundle});
-  PcztBundleWithMetadata<BUNDLE, EXT, PCZT> clone() =>
+  PcztBundleWithMetadata<BUNDLE, EXT, EXTBUNDLEPARAMS, PCZT> clone() =>
       PcztBundleWithMetadata(bundle: bundle.clone(), metadata: metadata);
 }
 
@@ -224,7 +253,7 @@ sealed class TransactionOutputTarget<RECIPIENT extends Object> {
       address: address,
       zAddress: zAddress,
     )) {
-      throw TransactionBuilderException.failed(
+      throw ZcashErrors.txBuilderFailed(
         "TransactionOutputTarget",
         reason: "Exactly one address must be provided.",
       );
@@ -244,7 +273,7 @@ sealed class TransactionOutputTarget<RECIPIENT extends Object> {
     if (transparent != null) {
       return TransactionOutputTarget.transparent(transparent: transparent);
     }
-    throw TransactionBuilderException.failed(
+    throw ZcashErrors.txBuilderFailed(
       "TransactionOutputTarget",
       reason:
           'The provided address is not a valid Orchard, Sapling or transparent address.',
@@ -297,7 +326,7 @@ sealed class TransactionOutputTarget<RECIPIENT extends Object> {
       address: address,
       zAddress: zAddress,
     )) {
-      throw TransactionBuilderException.failed(
+      throw ZcashErrors.txBuilderFailed(
         "TransactionOutputTarget",
         reason: "Exactly one address must be provided.",
       );
@@ -312,13 +341,19 @@ sealed class TransactionOutputTarget<RECIPIENT extends Object> {
     if (sapling != null) {
       return TransactionOutputTarget.sapling(paymentAddress: sapling);
     }
-    throw TransactionBuilderException.failed(
+    throw ZcashErrors.txBuilderFailed(
       "TransactionOutputTarget",
       reason: 'The provided address is not a valid Orchard or Sapling address.',
     );
   }
   T cast<T extends TransactionOutputTarget>() {
-    if (this is! T) throw CastFailedException(value: this);
+    if (this is! T) {
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "T", "value": runtimeType.toString()},
+      );
+    }
     return this as T;
   }
 }
@@ -338,7 +373,7 @@ class SaplingOutputTarget
       zAddress: zAddress,
       protocolAddr: paymentAddress,
     )) {
-      throw TransactionBuilderException.failed(
+      throw ZcashErrors.txBuilderFailed(
         "SaplingOutputTarget",
         reason: "Exactly one address must be provided.",
       );
@@ -347,7 +382,7 @@ class SaplingOutputTarget
       zAddress ??= ZcashAddress(address ?? '');
       paymentAddress = zAddress.tryToSaplingPaymentAddress();
       if (paymentAddress == null) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "SaplingOutputTarget",
           reason:
               "The provided address cannot be converted to a valid sapling address",
@@ -372,7 +407,7 @@ class OrchardOutputTarget extends TransactionOutputTarget<OrchardAddress> {
       zAddress: zAddress,
       protocolAddr: orchardAddress,
     )) {
-      throw TransactionBuilderException.failed(
+      throw ZcashErrors.txBuilderFailed(
         "OrchardOutputTarget",
         reason: "Exactly one address must be provided.",
       );
@@ -381,7 +416,7 @@ class OrchardOutputTarget extends TransactionOutputTarget<OrchardAddress> {
       zAddress ??= ZcashAddress(address ?? '');
       orchardAddress = zAddress.tryToOrchardAddress();
       if (orchardAddress == null) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "OrchardOutputTarget",
           reason:
               "The provided address cannot be converted to a valid orchard address",
@@ -389,6 +424,46 @@ class OrchardOutputTarget extends TransactionOutputTarget<OrchardAddress> {
       }
     }
     return OrchardOutputTarget._(recipient: orchardAddress, ovk: ovk);
+  }
+}
+
+/// Output target for the Ironwood pool (NU6.3). Same address type as
+/// the Orchard pool (Ironwood notes are Orchard-shaped, v3); pool
+/// membership is selected by the target type. Use this for
+/// cross-address transfers, which are forbidden in the Orchard pool
+/// under NU6.3.
+class IronwoodOutputTarget extends TransactionOutputTarget<OrchardAddress> {
+  final OrchardOutgoingViewingKey? ovk;
+  const IronwoodOutputTarget._({required super.recipient, this.ovk})
+    : super._();
+  factory IronwoodOutputTarget({
+    OrchardAddress? orchardAddress,
+    String? address,
+    ZcashAddress? zAddress,
+    OrchardOutgoingViewingKey? ovk,
+  }) {
+    if (!TransactionBuilderUtils.isValidOutputAddressParams(
+      address: address,
+      zAddress: zAddress,
+      protocolAddr: orchardAddress,
+    )) {
+      throw ZcashErrors.txBuilderFailed(
+        "IronwoodOutputTarget",
+        reason: "Exactly one address must be provided.",
+      );
+    }
+    if (orchardAddress == null) {
+      zAddress ??= ZcashAddress(address ?? '');
+      orchardAddress = zAddress.tryToOrchardAddress();
+      if (orchardAddress == null) {
+        throw ZcashErrors.txBuilderFailed(
+          "IronwoodOutputTarget",
+          reason:
+              "The provided address cannot be converted to a valid orchard address",
+        );
+      }
+    }
+    return IronwoodOutputTarget._(recipient: orchardAddress, ovk: ovk);
   }
 }
 
@@ -408,7 +483,7 @@ class TransparentOutputTarget
       zAddress: zAddress,
       protocolAddr: transparent,
     )) {
-      throw TransactionBuilderException.failed(
+      throw ZcashErrors.txBuilderFailed(
         "TransparentOutputTarget",
         reason: "Exactly one address must be provided.",
       );
@@ -417,7 +492,7 @@ class TransparentOutputTarget
       zAddress ??= ZcashAddress(address ?? '');
       transparent = zAddress.tryToP2pkh() ?? zAddress.tryToP2sh();
       if (transparent == null) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "TransparentOutputTarget",
           reason:
               "The provided address cannot be converted to a valid transparent address",
@@ -437,16 +512,20 @@ class PcztWithMetadata {
   final Pczt pczt;
   final BundleMetadata orchard;
   final BundleMetadata sapling;
+
+  final BundleMetadata ironwood;
   const PcztWithMetadata({
     required this.pczt,
     required this.orchard,
     required this.sapling,
+    required this.ironwood,
   });
   PcztWithMetadata clone() {
     return PcztWithMetadata(
       pczt: pczt.clone(),
       orchard: orchard,
       sapling: sapling,
+      ironwood: ironwood,
     );
   }
 }

@@ -4,10 +4,11 @@ import 'package:test/scaffolding.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/orchard/orchard.dart';
-import 'package:zcash_dart/src/pczt/pczt.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
-void main() {
+import '../utils.dart';
+
+void builderTest() {
   test("Orchard transaction builder", () async {
     final context = DefaultZcashCryptoContext.lazy();
     QuickCrypto.setupPRNG(ChaCha20Rng(List<int>.filled(32, 12)));
@@ -53,20 +54,35 @@ void main() {
     final sighash = List<int>.filled(32, 0);
     pczt.bundle.finalize(sighash: sighash, context: context);
     pczt.bundle.setZkProof(OrchardProof(List.filled(14592 ~/ 2, 0)));
-    expect(() => pczt.bundle.extract(), throwsA(isA<PcztException>()));
+    expect(
+      () => pczt.bundle.extract(
+        params: OrchardPcztBundleParams(OrchardProtocolVersion.insecureV1),
+      ),
+      throwsA(isA<BuError>()),
+    );
     for (final action in pczt.bundle.actions) {
       if (action.spend.value == value) {
         await action.sign(
           sighash: sighash,
-          ask: OrchardSpendAuthorizingKey.fromSpendingKey(sk),
+          ask: RedPallasSpendPrivateKey.fromSpendingKey(sk),
           context: context,
         );
       }
     }
-    final extract = pczt.bundle.extract();
+    final extract = pczt.bundle.extract(
+      params: OrchardPcztBundleParams(OrchardProtocolVersion.insecureV1),
+    );
     expect(extract?.bundle.balance, ZAmount.zero());
     await extract?.buildBindingAutorization(sighash: sighash, context: context);
   });
+}
+
+void orchardBuilderTest() {
+  ZcashTestApi.runTest(builderTest, "Builder");
+}
+
+void main() {
+  ZcashTestApi.runTest(orchardBuilderTest, "Builder");
 }
 
 ({OrchardAnchor anchor, OrchardMerklePath merklePath}) buildMerkle({
@@ -94,7 +110,7 @@ OrchardNote createNote({
   required OrchardAddress recipient,
   required ZAmount value,
 }) {
-  final rho = OrchardRho(PallasNativeFp.random());
+  final rho = OrchardRho(PallasFp.random().toBytes());
   final seed = OrchardNoteRandomSeed.random(rho);
   return OrchardNote.build(
     recipient: recipient,

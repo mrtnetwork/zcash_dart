@@ -1,2 +1,2 @@
-export 'src/compact_formats.dart';
 export 'src/service.dart';
+export 'src/compact_formats.dart';

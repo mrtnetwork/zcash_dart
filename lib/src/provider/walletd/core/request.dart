@@ -1,6 +1,6 @@
-import 'package:blockchain_utils/cbor/cbor.dart';
+import 'package:blockchain_utils/chain/types/network.dart';
+import 'package:blockchain_utils/encoding/encoding.dart';
 import 'package:blockchain_utils/helper/helper.dart';
-import 'package:blockchain_utils/networks/networks.dart';
 import 'package:blockchain_utils/service/service.dart';
 
 abstract class ZcashWalletdRequest<RESULT>

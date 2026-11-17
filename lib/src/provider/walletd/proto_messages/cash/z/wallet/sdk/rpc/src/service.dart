@@ -12,7 +12,8 @@ enum ZWalletdPoolType implements ProtoEnumVariant {
   poolTypeInvalid(0, 'POOL_TYPE_INVALID'),
   transparent(1, 'TRANSPARENT'),
   sapling(2, 'SAPLING'),
-  orchard(3, 'ORCHARD');
+  orchard(3, 'ORCHARD'),
+  ironwood(4, 'IRONWOOD');
 
   const ZWalletdPoolType(this.value, this.protoName);
 
@@ -26,13 +27,18 @@ enum ZWalletdPoolType implements ProtoEnumVariant {
 
   /// Looks up a value by its proto wire int. Throws if not found.
   static ZWalletdPoolType fromValue(int? value) {
+    value ??= 0;
     return ZWalletdPoolType.values.firstWhere(
       (e) => e.value == value,
       orElse:
           () =>
-              throw ItemNotFoundException(
-                name: "ZWalletdPoolType",
-                value: value,
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching ZWalletdPoolType found for the given value. $value",
+                details: {
+                  "name": "ZWalletdPoolType",
+                  "value": value?.toString(),
+                },
               ),
     );
   }
@@ -40,22 +46,28 @@ enum ZWalletdPoolType implements ProtoEnumVariant {
   /// Looks up a value by wire int, Dart enum name, or original proto
   /// name (whichever [value] happens to be). Throws if not found.
   static ZWalletdPoolType from(Object? value) {
+    value ??= 0;
     return ZWalletdPoolType.values.firstWhere(
       (e) => e.value == value || e.name == value || e.protoName == value,
       orElse:
           () =>
-              throw ItemNotFoundException(
-                name: "ZWalletdPoolType",
-                value: value,
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching ZWalletdPoolType found for the given value. $value",
+                details: {
+                  "name": "ZWalletdPoolType",
+                  "value": value?.toString(),
+                },
               ),
     );
   }
 }
 
-/// orchard commitment tree state
+/// ironwood commitment tree state
 enum ZWalletdShieldedProtocol implements ProtoEnumVariant {
   sapling(0, 'sapling'),
-  orchard(1, 'orchard');
+  orchard(1, 'orchard'),
+  ironwood(2, 'ironwood');
 
   const ZWalletdShieldedProtocol(this.value, this.protoName);
 
@@ -69,13 +81,18 @@ enum ZWalletdShieldedProtocol implements ProtoEnumVariant {
 
   /// Looks up a value by its proto wire int. Throws if not found.
   static ZWalletdShieldedProtocol fromValue(int? value) {
+    value ??= 0;
     return ZWalletdShieldedProtocol.values.firstWhere(
       (e) => e.value == value,
       orElse:
           () =>
-              throw ItemNotFoundException(
-                name: "ZWalletdShieldedProtocol",
-                value: value,
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching ZWalletdShieldedProtocol found for the given value. $value",
+                details: {
+                  "name": "ZWalletdShieldedProtocol",
+                  "value": value?.toString(),
+                },
               ),
     );
   }
@@ -83,13 +100,18 @@ enum ZWalletdShieldedProtocol implements ProtoEnumVariant {
   /// Looks up a value by wire int, Dart enum name, or original proto
   /// name (whichever [value] happens to be). Throws if not found.
   static ZWalletdShieldedProtocol from(Object? value) {
+    value ??= 0;
     return ZWalletdShieldedProtocol.values.firstWhere(
       (e) => e.value == value || e.name == value || e.protoName == value,
       orElse:
           () =>
-              throw ItemNotFoundException(
-                name: "ZWalletdShieldedProtocol",
-                value: value,
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching ZWalletdShieldedProtocol found for the given value. $value",
+                details: {
+                  "name": "ZWalletdShieldedProtocol",
+                  "value": value?.toString(),
+                },
               ),
     );
   }
@@ -120,6 +142,31 @@ class ZWalletdBlockID extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [height, hash];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'height': config.encodeBigint(height),
+      'hash': config.encodeBinary(hash),
+    };
+  }
+
+  factory ZWalletdBlockID.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdBlockID(
+      height: json.valueAsBigInt<BigInt?>(
+        'height',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      hash: config.decodeBinary<List<int>?>(
+        json.valueAs('hash', normalizeKeyLookup: config.normalizeKeys),
+      ),
+    );
+  }
+
   factory ZWalletdBlockID.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdBlockID(
@@ -137,9 +184,9 @@ class ZWalletdBlockID extends ZcashProtoMessage {
 /// Both BlockIDs must be heights; specification by hash is not yet supported.
 ///
 /// If no pool types are specified, the server should default to the legacy
-/// behavior of returning only data relevant to the shielded (Sapling and
-/// Orchard) pools; otherwise, the server should prune `CompactBlock`s returned
-/// to include only data relevant to the requested pool types. Clients MUST
+/// behavior of returning only data relevant to the shielded (Sapling, Orchard,
+/// and Ironwood) pools; otherwise, the server should prune `CompactBlock`s
+/// returned to include only data relevant to the requested pool types. Clients MUST
 /// verify that the version of the server they are connected to are capable
 /// of returning pruned and/or transparent data before setting `poolTypes`
 /// to a non-empty value.
@@ -172,6 +219,52 @@ class ZWalletdBlockRange extends ZcashProtoMessage {
 
   @override
   List<Object?> get protoValues => [start, end, poolTypes];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'start': config.encodeMessage(start),
+      'end': config.encodeMessage(end),
+      'poolTypes': poolTypes.map((e) => config.encodeEnum(e)).toList(),
+    };
+  }
+
+  factory ZWalletdBlockRange.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdBlockRange(
+      start: json.valueTo<ZWalletdBlockID?, Object>(
+        key: 'start',
+        parse:
+            (v) =>
+                ZWalletdBlockID.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      end: json.valueTo<ZWalletdBlockID?, Object>(
+        key: 'end',
+        parse:
+            (v) =>
+                ZWalletdBlockID.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      poolTypes:
+          (json.valueEnsureAsList<dynamic>(
+                'poolTypes',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdPoolType, Object>(
+                  value: e,
+                  parse: (v) => ZWalletdPoolType.from(v),
+                ),
+              )
+              .toList(),
+    );
+  }
 
   factory ZWalletdBlockRange.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
@@ -228,6 +321,39 @@ class ZWalletdTxFilter extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [block, index, hash];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'block': config.encodeMessage(block),
+      'index': config.encodeBigint(index),
+      'hash': config.encodeBinary(hash),
+    };
+  }
+
+  factory ZWalletdTxFilter.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdTxFilter(
+      block: json.valueTo<ZWalletdBlockID?, Object>(
+        key: 'block',
+        parse:
+            (v) =>
+                ZWalletdBlockID.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      index: json.valueAsBigInt<BigInt?>(
+        'index',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      hash: config.decodeBinary<List<int>?>(
+        json.valueAs('hash', normalizeKeyLookup: config.normalizeKeys),
+      ),
+    );
+  }
+
   factory ZWalletdTxFilter.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdTxFilter(
@@ -250,7 +376,6 @@ class ZWalletdTxFilter extends ZcashProtoMessage {
 /// the block height in which the transaction was included, or, when returned
 /// by GetMempoolStream(), the latest block height.
 ///
-/// for the `height` field. See https://github.com/zcash/librustzcash/issues/1484
 class ZWalletdRawTransaction extends ZcashProtoMessage {
   /// The serialized representation of the Zcash transaction.
   final List<int>? data;
@@ -291,6 +416,31 @@ class ZWalletdRawTransaction extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [data, height];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'data': config.encodeBinary(data),
+      'height': config.encodeBigint(height),
+    };
+  }
+
+  factory ZWalletdRawTransaction.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdRawTransaction(
+      data: config.decodeBinary<List<int>?>(
+        json.valueAs('data', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      height: json.valueAsBigInt<BigInt?>(
+        'height',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdRawTransaction.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdRawTransaction(
@@ -308,11 +458,11 @@ class ZWalletdRawTransaction extends ZcashProtoMessage {
 /// only by SendTransaction(). If error code is zero, the operation was
 /// successful; if non-zero, it and the message specify the failure.
 class ZWalletdSendResponse extends ZcashProtoMessage {
-  final int errorCode;
+  final int? errorCode;
 
   final String? errorMessage;
 
-  const ZWalletdSendResponse({this.errorCode = 0, this.errorMessage});
+  const ZWalletdSendResponse({this.errorCode, this.errorMessage});
 
   @override
   ProtoMessageConfig protoConfig() => protoConfigStatic();
@@ -328,10 +478,33 @@ class ZWalletdSendResponse extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [errorCode, errorMessage];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'errorCode': errorCode, 'errorMessage': errorMessage};
+  }
+
+  factory ZWalletdSendResponse.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdSendResponse(
+      errorCode: json.valueAsInt<int?>(
+        'errorCode',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      errorMessage: json.valueAsString<String?>(
+        'errorMessage',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdSendResponse.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdSendResponse(
-      errorCode: decode.getInt<int>(1),
+      errorCode: decode.getInt<int?>(1),
       errorMessage: decode.getString<String?>(2),
     );
   }
@@ -358,6 +531,20 @@ class ZWalletdChainSpec extends ZcashProtoMessage {
 
   @override
   List<Object?> get protoValues => [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {};
+  }
+
+  factory ZWalletdChainSpec.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdChainSpec();
+  }
 
   factory ZWalletdChainSpec.deserialize(List<int> bytes) {
     return ZWalletdChainSpec();
@@ -386,6 +573,20 @@ class ZWalletdEmpty extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {};
+  }
+
+  factory ZWalletdEmpty.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdEmpty();
+  }
+
   factory ZWalletdEmpty.deserialize(List<int> bytes) {
     return ZWalletdEmpty();
   }
@@ -402,7 +603,7 @@ class ZWalletdLightdInfo extends ZcashProtoMessage {
 
   final String? vendor;
 
-  final bool taddrSupport;
+  final bool? taddrSupport;
 
   /// true
   final String? chainName;
@@ -448,7 +649,7 @@ class ZWalletdLightdInfo extends ZcashProtoMessage {
   const ZWalletdLightdInfo({
     this.version,
     this.vendor,
-    this.taddrSupport = false,
+    this.taddrSupport,
     this.chainName,
     this.saplingActivationHeight,
     this.consensusBranchId,
@@ -518,12 +719,118 @@ class ZWalletdLightdInfo extends ZcashProtoMessage {
     lightwalletProtocolVersion,
   ];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'version': version,
+      'vendor': vendor,
+      'taddrSupport': taddrSupport,
+      'chainName': chainName,
+      'saplingActivationHeight': config.encodeBigint(saplingActivationHeight),
+      'consensusBranchId': consensusBranchId,
+      'blockHeight': config.encodeBigint(blockHeight),
+      'gitCommit': gitCommit,
+      'branch': branch,
+      'buildDate': buildDate,
+      'buildUser': buildUser,
+      'estimatedHeight': config.encodeBigint(estimatedHeight),
+      'zcashdBuild': zcashdBuild,
+      'zcashdSubversion': zcashdSubversion,
+      'donationAddress': donationAddress,
+      'upgradeName': upgradeName,
+      'upgradeHeight': config.encodeBigint(upgradeHeight),
+      'lightwalletProtocolVersion': lightwalletProtocolVersion,
+    };
+  }
+
+  factory ZWalletdLightdInfo.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdLightdInfo(
+      version: json.valueAsString<String?>(
+        'version',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      vendor: json.valueAsString<String?>(
+        'vendor',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      taddrSupport: json.valueAsBool<bool?>(
+        'taddrSupport',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      chainName: json.valueAsString<String?>(
+        'chainName',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      saplingActivationHeight: json.valueAsBigInt<BigInt?>(
+        'saplingActivationHeight',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      consensusBranchId: json.valueAsString<String?>(
+        'consensusBranchId',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      blockHeight: json.valueAsBigInt<BigInt?>(
+        'blockHeight',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      gitCommit: json.valueAsString<String?>(
+        'gitCommit',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      branch: json.valueAsString<String?>(
+        'branch',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      buildDate: json.valueAsString<String?>(
+        'buildDate',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      buildUser: json.valueAsString<String?>(
+        'buildUser',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      estimatedHeight: json.valueAsBigInt<BigInt?>(
+        'estimatedHeight',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      zcashdBuild: json.valueAsString<String?>(
+        'zcashdBuild',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      zcashdSubversion: json.valueAsString<String?>(
+        'zcashdSubversion',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      donationAddress: json.valueAsString<String?>(
+        'donationAddress',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      upgradeName: json.valueAsString<String?>(
+        'upgradeName',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      upgradeHeight: json.valueAsBigInt<BigInt?>(
+        'upgradeHeight',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      lightwalletProtocolVersion: json.valueAsString<String?>(
+        'lightwalletProtocolVersion',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdLightdInfo.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdLightdInfo(
       version: decode.getString<String?>(1),
       vendor: decode.getString<String?>(2),
-      taddrSupport: decode.getBool<bool>(3),
+      taddrSupport: decode.getBool<bool?>(3),
       chainName: decode.getString<String?>(4),
       saplingActivationHeight: decode.getBigInt<BigInt?>(5),
       consensusBranchId: decode.getString<String?>(6),
@@ -577,6 +884,34 @@ class ZWalletdTransparentAddressBlockFilter extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [address, range];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'address': address, 'range': config.encodeMessage(range)};
+  }
+
+  factory ZWalletdTransparentAddressBlockFilter.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdTransparentAddressBlockFilter(
+      address: json.valueAsString<String?>(
+        'address',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      range: json.valueTo<ZWalletdBlockRange?, Object>(
+        key: 'range',
+        parse:
+            (v) => ZWalletdBlockRange.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdTransparentAddressBlockFilter.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdTransparentAddressBlockFilter(
@@ -616,6 +951,25 @@ class ZWalletdDuration extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [intervalUs];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'intervalUs': config.encodeBigint(intervalUs)};
+  }
+
+  factory ZWalletdDuration.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdDuration(
+      intervalUs: json.valueAsBigInt<BigInt?>(
+        'intervalUs',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdDuration.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdDuration(intervalUs: decode.getBigInt<BigInt?>(1));
@@ -650,6 +1004,32 @@ class ZWalletdPingResponse extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [entry, exit];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'entry': config.encodeBigint(entry),
+      'exit': config.encodeBigint(exit),
+    };
+  }
+
+  factory ZWalletdPingResponse.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdPingResponse(
+      entry: json.valueAsBigInt<BigInt?>(
+        'entry',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      exit: json.valueAsBigInt<BigInt?>(
+        'exit',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdPingResponse.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdPingResponse(
@@ -681,6 +1061,25 @@ class ZWalletdAddress extends ZcashProtoMessage {
 
   @override
   List<Object?> get protoValues => [address];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'address': address};
+  }
+
+  factory ZWalletdAddress.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdAddress(
+      address: json.valueAsString<String?>(
+        'address',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   factory ZWalletdAddress.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
@@ -716,6 +1115,27 @@ class ZWalletdAddressList extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [addresses];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'addresses': addresses.map((e) => e).toList()};
+  }
+
+  factory ZWalletdAddressList.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdAddressList(
+      addresses:
+          (json.valueEnsureAsList<dynamic>(
+            'addresses',
+            normalizeKeyLookup: config.normalizeKeys,
+            onMissing: () => [],
+          )).map((e) => JsonParser.valueAsString<String>(e)).toList(),
+    );
+  }
+
   factory ZWalletdAddressList.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdAddressList(addresses: decode.getListOrEmpty<String>(1));
@@ -745,6 +1165,25 @@ class ZWalletdBalance extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [valueZat];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'valueZat': config.encodeBigint(valueZat)};
+  }
+
+  factory ZWalletdBalance.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdBalance(
+      valueZat: json.valueAsBigInt<BigInt?>(
+        'valueZat',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdBalance.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdBalance(valueZat: decode.getBigInt<BigInt?>(1));
@@ -770,7 +1209,7 @@ class ZWalletdGetMempoolTxRequest extends ZcashProtoMessage {
   /// The server must prune `CompactTx`s returned to include only data
   /// relevant to the requested pool types. If no pool types are specified,
   /// the server should default to the legacy behavior of returning only data
-  /// relevant to the shielded (Sapling and Orchard) pools.
+  /// relevant to the shielded (Sapling, Orchard, and Ironwood) pools.
   final List<ZWalletdPoolType> poolTypes;
 
   const ZWalletdGetMempoolTxRequest({
@@ -801,6 +1240,44 @@ class ZWalletdGetMempoolTxRequest extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [excludeTxidSuffixes, poolTypes];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'exclude_txid_suffixes':
+          excludeTxidSuffixes.map((e) => config.encodeBinary(e)).toList(),
+      'poolTypes': poolTypes.map((e) => config.encodeEnum(e)).toList(),
+    };
+  }
+
+  factory ZWalletdGetMempoolTxRequest.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetMempoolTxRequest(
+      excludeTxidSuffixes:
+          (json.valueEnsureAsList<dynamic>(
+            'exclude_txid_suffixes',
+            normalizeKeyLookup: config.normalizeKeys,
+            onMissing: () => [],
+          )).map((e) => config.decodeBinary<List<int>>(e)).toList(),
+      poolTypes:
+          (json.valueEnsureAsList<dynamic>(
+                'poolTypes',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdPoolType, Object>(
+                  value: e,
+                  parse: (v) => ZWalletdPoolType.from(v),
+                ),
+              )
+              .toList(),
+    );
+  }
+
   factory ZWalletdGetMempoolTxRequest.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdGetMempoolTxRequest(
@@ -828,7 +1305,7 @@ class ZWalletdTreeState extends ZcashProtoMessage {
   final String? hash;
 
   /// block id
-  final int time;
+  final int? time;
 
   /// Unix epoch time when the block was mined
   final String? saplingTree;
@@ -836,13 +1313,17 @@ class ZWalletdTreeState extends ZcashProtoMessage {
   /// sapling commitment tree state
   final String? orchardTree;
 
+  /// orchard commitment tree state
+  final String? ironwoodTree;
+
   const ZWalletdTreeState({
     this.network,
     this.height,
     this.hash,
-    this.time = 0,
+    this.time,
     this.saplingTree,
     this.orchardTree,
+    this.ironwoodTree,
   });
 
   @override
@@ -859,6 +1340,7 @@ class ZWalletdTreeState extends ZcashProtoMessage {
         ProtoFieldConfig.uint32(4),
         ProtoFieldConfig.string(5),
         ProtoFieldConfig.string(6),
+        ProtoFieldConfig.string(7),
       ],
     );
   }
@@ -871,7 +1353,59 @@ class ZWalletdTreeState extends ZcashProtoMessage {
     time,
     saplingTree,
     orchardTree,
+    ironwoodTree,
   ];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'network': network,
+      'height': config.encodeBigint(height),
+      'hash': hash,
+      'time': time,
+      'saplingTree': saplingTree,
+      'orchardTree': orchardTree,
+      'ironwoodTree': ironwoodTree,
+    };
+  }
+
+  factory ZWalletdTreeState.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdTreeState(
+      network: json.valueAsString<String?>(
+        'network',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      height: json.valueAsBigInt<BigInt?>(
+        'height',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      hash: json.valueAsString<String?>(
+        'hash',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      time: json.valueAsInt<int?>(
+        'time',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      saplingTree: json.valueAsString<String?>(
+        'saplingTree',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      orchardTree: json.valueAsString<String?>(
+        'orchardTree',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      ironwoodTree: json.valueAsString<String?>(
+        'ironwoodTree',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   factory ZWalletdTreeState.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
@@ -879,9 +1413,10 @@ class ZWalletdTreeState extends ZcashProtoMessage {
       network: decode.getString<String?>(1),
       height: decode.getBigInt<BigInt?>(2),
       hash: decode.getString<String?>(3),
-      time: decode.getInt<int>(4),
+      time: decode.getInt<int?>(4),
       saplingTree: decode.getString<String?>(5),
       orchardTree: decode.getString<String?>(6),
+      ironwoodTree: decode.getString<String?>(7),
     );
   }
 
@@ -891,18 +1426,18 @@ class ZWalletdTreeState extends ZcashProtoMessage {
 }
 
 class ZWalletdGetSubtreeRootsArg extends ZcashProtoMessage {
-  final int startIndex;
+  final int? startIndex;
 
   /// Index identifying where to start returning subtree roots
   final ZWalletdShieldedProtocol? shieldedProtocol;
 
   /// Shielded protocol to return subtree roots for
-  final int maxEntries;
+  final int? maxEntries;
 
   const ZWalletdGetSubtreeRootsArg({
-    this.startIndex = 0,
+    this.startIndex,
     this.shieldedProtocol,
-    this.maxEntries = 0,
+    this.maxEntries,
   });
 
   @override
@@ -923,15 +1458,46 @@ class ZWalletdGetSubtreeRootsArg extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [startIndex, shieldedProtocol, maxEntries];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'startIndex': startIndex,
+      'shieldedProtocol': config.encodeEnum(shieldedProtocol),
+      'maxEntries': maxEntries,
+    };
+  }
+
+  factory ZWalletdGetSubtreeRootsArg.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetSubtreeRootsArg(
+      startIndex: json.valueAsInt<int?>(
+        'startIndex',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      shieldedProtocol: json.valueTo<ZWalletdShieldedProtocol?, Object?>(
+        key: 'shieldedProtocol',
+        parse: (v) => ZWalletdShieldedProtocol.from(v),
+      ),
+      maxEntries: json.valueAsInt<int?>(
+        'maxEntries',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdGetSubtreeRootsArg.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdGetSubtreeRootsArg(
-      startIndex: decode.getInt<int>(1),
+      startIndex: decode.getInt<int?>(1),
       shieldedProtocol: decode.getEnum<ZWalletdShieldedProtocol?>(
         2,
         ZWalletdShieldedProtocol.values,
       ),
-      maxEntries: decode.getInt<int>(3),
+      maxEntries: decode.getInt<int?>(3),
     );
   }
 
@@ -978,6 +1544,38 @@ class ZWalletdSubtreeRoot extends ZcashProtoMessage {
     completingBlockHeight,
   ];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'rootHash': config.encodeBinary(rootHash),
+      'completingBlockHash': config.encodeBinary(completingBlockHash),
+      'completingBlockHeight': config.encodeBigint(completingBlockHeight),
+    };
+  }
+
+  factory ZWalletdSubtreeRoot.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdSubtreeRoot(
+      rootHash: config.decodeBinary<List<int>?>(
+        json.valueAs('rootHash', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      completingBlockHash: config.decodeBinary<List<int>?>(
+        json.valueAs(
+          'completingBlockHash',
+          normalizeKeyLookup: config.normalizeKeys,
+        ),
+      ),
+      completingBlockHeight: json.valueAsBigInt<BigInt?>(
+        'completingBlockHeight',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdSubtreeRoot.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdSubtreeRoot(
@@ -1000,12 +1598,12 @@ class ZWalletdGetAddressUtxosArg extends ZcashProtoMessage {
 
   final BigInt? startHeight;
 
-  final int maxEntries;
+  final int? maxEntries;
 
   const ZWalletdGetAddressUtxosArg({
     this.addresses = const [],
     this.startHeight,
-    this.maxEntries = 0,
+    this.maxEntries,
   });
 
   @override
@@ -1029,12 +1627,45 @@ class ZWalletdGetAddressUtxosArg extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [addresses, startHeight, maxEntries];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'addresses': addresses.map((e) => e).toList(),
+      'startHeight': config.encodeBigint(startHeight),
+      'maxEntries': maxEntries,
+    };
+  }
+
+  factory ZWalletdGetAddressUtxosArg.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetAddressUtxosArg(
+      addresses:
+          (json.valueEnsureAsList<dynamic>(
+            'addresses',
+            normalizeKeyLookup: config.normalizeKeys,
+            onMissing: () => [],
+          )).map((e) => JsonParser.valueAsString<String>(e)).toList(),
+      startHeight: json.valueAsBigInt<BigInt?>(
+        'startHeight',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      maxEntries: json.valueAsInt<int?>(
+        'maxEntries',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdGetAddressUtxosArg.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdGetAddressUtxosArg(
       addresses: decode.getListOrEmpty<String>(1),
       startHeight: decode.getBigInt<BigInt?>(2),
-      maxEntries: decode.getInt<int>(3),
+      maxEntries: decode.getInt<int?>(3),
     );
   }
 
@@ -1049,7 +1680,7 @@ class ZWalletdGetAddressUtxosReply extends ZcashProtoMessage {
 
   final List<int>? txid;
 
-  final int index;
+  final int? index;
 
   final List<int>? script;
 
@@ -1060,7 +1691,7 @@ class ZWalletdGetAddressUtxosReply extends ZcashProtoMessage {
   const ZWalletdGetAddressUtxosReply({
     this.address,
     this.txid,
-    this.index = 0,
+    this.index,
     this.script,
     this.valueZat,
     this.height,
@@ -1094,12 +1725,56 @@ class ZWalletdGetAddressUtxosReply extends ZcashProtoMessage {
     height,
   ];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'address': address,
+      'txid': config.encodeBinary(txid),
+      'index': index,
+      'script': config.encodeBinary(script),
+      'valueZat': config.encodeBigint(valueZat),
+      'height': config.encodeBigint(height),
+    };
+  }
+
+  factory ZWalletdGetAddressUtxosReply.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetAddressUtxosReply(
+      address: json.valueAsString<String?>(
+        'address',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      txid: config.decodeBinary<List<int>?>(
+        json.valueAs('txid', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      index: json.valueAsInt<int?>(
+        'index',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      script: config.decodeBinary<List<int>?>(
+        json.valueAs('script', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      valueZat: json.valueAsBigInt<BigInt?>(
+        'valueZat',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      height: json.valueAsBigInt<BigInt?>(
+        'height',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdGetAddressUtxosReply.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdGetAddressUtxosReply(
       address: decode.getString<String?>(6),
       txid: decode.getBytes<List<int>?>(1),
-      index: decode.getInt<int>(2),
+      index: decode.getInt<int?>(2),
       script: decode.getBytes<List<int>?>(3),
       valueZat: decode.getBigInt<BigInt?>(4),
       height: decode.getBigInt<BigInt?>(5),
@@ -1135,6 +1810,40 @@ class ZWalletdGetAddressUtxosReplyList extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [addressUtxos];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'addressUtxos': addressUtxos.map((e) => config.encodeMessage(e)).toList(),
+    };
+  }
+
+  factory ZWalletdGetAddressUtxosReplyList.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetAddressUtxosReplyList(
+      addressUtxos:
+          (json.valueEnsureAsList<dynamic>(
+                'addressUtxos',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdGetAddressUtxosReply, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdGetAddressUtxosReply.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+    );
+  }
+
   factory ZWalletdGetAddressUtxosReplyList.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdGetAddressUtxosReplyList(
@@ -1166,6 +1875,30 @@ class ZWalletdGetLatestBlock extends ZcashProtoMessage
   List<Object?> get protoValues => getLatestBlock?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetLatestBlock': config.encodeMessage(getLatestBlock)};
+  }
+
+  factory ZWalletdGetLatestBlock.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetLatestBlock(
+      getLatestBlock: json.valueTo<ZWalletdChainSpec?, Object>(
+        key: 'GetLatestBlock',
+        parse:
+            (v) => ZWalletdChainSpec.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetLatestBlock;
   @override
@@ -1184,9 +1917,9 @@ class ZWalletdGetBlock extends ZcashProtoMessage
   /// The returned `CompactBlock` includes transaction data for all value
   /// pools, including transparent inputs (`vin`) and outputs (`vout`). This
   /// differs from `GetBlockRange`, which supports filtering by pool type and
-  /// defaults to returning only shielded (Sapling and Orchard) data. Clients
-  /// that require only data for specific pools should use `GetBlockRange`
-  /// with the appropriate `poolTypes` set.
+  /// defaults to returning only shielded (Sapling, Orchard, and Ironwood)
+  /// data. Clients that require only data for specific pools should use
+  /// `GetBlockRange` with the appropriate `poolTypes` set.
   ///
   /// Note: the single null-outpoint input for coinbase transactions is
   /// omitted from the `vin` field of the corresponding `CompactTx`. See the
@@ -1201,6 +1934,28 @@ class ZWalletdGetBlock extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getBlock?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetBlock': config.encodeMessage(getBlock)};
+  }
+
+  factory ZWalletdGetBlock.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetBlock(
+      getBlock: json.valueTo<ZWalletdBlockID?, Object>(
+        key: 'GetBlock',
+        parse:
+            (v) =>
+                ZWalletdBlockID.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1220,9 +1975,10 @@ class ZWalletdGetBlockNullifiers extends ZcashProtoMessage
           cash_z_wallet_sdk_rpc_compact_formats.ZWalletdCompactBlock
         > {
   /// Return a compact block containing only nullifier information for the
-  /// shielded pools (Sapling spend nullifiers and Orchard action nullifiers).
-  /// Transparent transaction data, Sapling outputs, full Orchard action data,
-  /// and commitment tree sizes are not included.
+  /// shielded pools (Sapling spend nullifiers, Orchard action nullifiers, and
+  /// Ironwood action nullifiers). Transparent transaction data, Sapling
+  /// outputs, full Orchard/Ironwood action data, and commitment tree sizes are
+  /// not included.
   ///
   /// Note: this method is deprecated; use `GetBlockRange` with the
   /// appropriate `poolTypes` instead.
@@ -1236,6 +1992,28 @@ class ZWalletdGetBlockNullifiers extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getBlockNullifiers?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetBlockNullifiers': config.encodeMessage(getBlockNullifiers)};
+  }
+
+  factory ZWalletdGetBlockNullifiers.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetBlockNullifiers(
+      getBlockNullifiers: json.valueTo<ZWalletdBlockID?, Object>(
+        key: 'GetBlockNullifiers',
+        parse:
+            (v) =>
+                ZWalletdBlockID.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1257,7 +2035,7 @@ class ZWalletdGetBlockRange extends ZcashProtoMessage
   /// Return a list of consecutive compact blocks in the specified range,
   /// which is inclusive of `range.end`.
   ///
-  /// If range.start <= range.end, blocks are returned increasing height order;
+  /// If range.start &lt;= range.end, blocks are returned increasing height order;
   /// otherwise blocks are returned in decreasing height order.
   final ZWalletdBlockRange? getBlockRange;
 
@@ -1269,6 +2047,30 @@ class ZWalletdGetBlockRange extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getBlockRange?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetBlockRange': config.encodeMessage(getBlockRange)};
+  }
+
+  factory ZWalletdGetBlockRange.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetBlockRange(
+      getBlockRange: json.valueTo<ZWalletdBlockRange?, Object>(
+        key: 'GetBlockRange',
+        parse:
+            (v) => ZWalletdBlockRange.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1289,9 +2091,10 @@ class ZWalletdGetBlockRangeNullifiers extends ZcashProtoMessage
         > {
   /// Return a stream of compact blocks for the specified range, where each
   /// block contains only nullifier information for the shielded pools
-  /// (Sapling spend nullifiers and Orchard action nullifiers). Transparent
-  /// transaction data, Sapling outputs, full Orchard action data, and
-  /// commitment tree sizes are not included. Implementations MUST ignore any
+  /// (Sapling spend nullifiers, Orchard action nullifiers, and Ironwood action
+  /// nullifiers). Transparent transaction data, Sapling outputs, full
+  /// Orchard/Ironwood action data, and commitment tree sizes are not included.
+  /// Implementations MUST ignore any
   /// `PoolType::TRANSPARENT` member of the `poolTypes` field of the request.
   ///
   /// Note: this method is deprecated; use `GetBlockRange` with the
@@ -1306,6 +2109,32 @@ class ZWalletdGetBlockRangeNullifiers extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getBlockRangeNullifiers?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'GetBlockRangeNullifiers': config.encodeMessage(getBlockRangeNullifiers),
+    };
+  }
+
+  factory ZWalletdGetBlockRangeNullifiers.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetBlockRangeNullifiers(
+      getBlockRangeNullifiers: json.valueTo<ZWalletdBlockRange?, Object>(
+        key: 'GetBlockRangeNullifiers',
+        parse:
+            (v) => ZWalletdBlockRange.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1334,6 +2163,30 @@ class ZWalletdGetTransaction extends ZcashProtoMessage
   List<Object?> get protoValues => getTransaction?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetTransaction': config.encodeMessage(getTransaction)};
+  }
+
+  factory ZWalletdGetTransaction.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetTransaction(
+      getTransaction: json.valueTo<ZWalletdTxFilter?, Object>(
+        key: 'GetTransaction',
+        parse:
+            (v) => ZWalletdTxFilter.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetTransaction;
   @override
@@ -1355,6 +2208,30 @@ class ZWalletdSendTransaction extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => sendTransaction?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'SendTransaction': config.encodeMessage(sendTransaction)};
+  }
+
+  factory ZWalletdSendTransaction.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdSendTransaction(
+      sendTransaction: json.valueTo<ZWalletdRawTransaction?, Object>(
+        key: 'SendTransaction',
+        parse:
+            (v) => ZWalletdRawTransaction.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1383,6 +2260,31 @@ class ZWalletdGetTaddressTxids extends ZcashProtoMessage
   List<Object?> get protoValues => getTaddressTxids?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetTaddressTxids': config.encodeMessage(getTaddressTxids)};
+  }
+
+  factory ZWalletdGetTaddressTxids.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetTaddressTxids(
+      getTaddressTxids: json
+          .valueTo<ZWalletdTransparentAddressBlockFilter?, Object>(
+            key: 'GetTaddressTxids',
+            parse:
+                (v) => ZWalletdTransparentAddressBlockFilter.fromJson(
+                  JsonParser.valueAs(v),
+                  config: config,
+                ),
+            normalizeKeyLookup: config.normalizeKeys,
+          ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetTaddressTxids;
   @override
@@ -1407,6 +2309,33 @@ class ZWalletdGetTaddressTransactions extends ZcashProtoMessage
   List<Object?> get protoValues => getTaddressTransactions?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'GetTaddressTransactions': config.encodeMessage(getTaddressTransactions),
+    };
+  }
+
+  factory ZWalletdGetTaddressTransactions.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetTaddressTransactions(
+      getTaddressTransactions: json
+          .valueTo<ZWalletdTransparentAddressBlockFilter?, Object>(
+            key: 'GetTaddressTransactions',
+            parse:
+                (v) => ZWalletdTransparentAddressBlockFilter.fromJson(
+                  JsonParser.valueAs(v),
+                  config: config,
+                ),
+            normalizeKeyLookup: config.normalizeKeys,
+          ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetTaddressTransactions;
   @override
@@ -1429,6 +2358,30 @@ class ZWalletdGetTaddressBalance extends ZcashProtoMessage
   List<Object?> get protoValues => getTaddressBalance?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetTaddressBalance': config.encodeMessage(getTaddressBalance)};
+  }
+
+  factory ZWalletdGetTaddressBalance.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetTaddressBalance(
+      getTaddressBalance: json.valueTo<ZWalletdAddressList?, Object>(
+        key: 'GetTaddressBalance',
+        parse:
+            (v) => ZWalletdAddressList.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetTaddressBalance;
   @override
@@ -1449,6 +2402,32 @@ class ZWalletdGetTaddressBalanceStream extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getTaddressBalanceStream?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'GetTaddressBalanceStream': config.encodeMessage(
+        getTaddressBalanceStream,
+      ),
+    };
+  }
+
+  factory ZWalletdGetTaddressBalanceStream.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetTaddressBalanceStream(
+      getTaddressBalanceStream: json.valueTo<ZWalletdAddress?, Object>(
+        key: 'GetTaddressBalanceStream',
+        parse:
+            (v) =>
+                ZWalletdAddress.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1488,6 +2467,30 @@ class ZWalletdGetMempoolTx extends ZcashProtoMessage
   List<Object?> get protoValues => getMempoolTx?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetMempoolTx': config.encodeMessage(getMempoolTx)};
+  }
+
+  factory ZWalletdGetMempoolTx.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetMempoolTx(
+      getMempoolTx: json.valueTo<ZWalletdGetMempoolTxRequest?, Object>(
+        key: 'GetMempoolTx',
+        parse:
+            (v) => ZWalletdGetMempoolTxRequest.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetMempoolTx;
   @override
@@ -1516,6 +2519,28 @@ class ZWalletdGetMempoolStream extends ZcashProtoMessage
   List<Object?> get protoValues => getMempoolStream?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetMempoolStream': config.encodeMessage(getMempoolStream)};
+  }
+
+  factory ZWalletdGetMempoolStream.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetMempoolStream(
+      getMempoolStream: json.valueTo<ZWalletdEmpty?, Object>(
+        key: 'GetMempoolStream',
+        parse:
+            (v) =>
+                ZWalletdEmpty.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetMempoolStream;
   @override
@@ -1542,6 +2567,28 @@ class ZWalletdGetTreeState extends ZcashProtoMessage
   List<Object?> get protoValues => getTreeState?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetTreeState': config.encodeMessage(getTreeState)};
+  }
+
+  factory ZWalletdGetTreeState.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetTreeState(
+      getTreeState: json.valueTo<ZWalletdBlockID?, Object>(
+        key: 'GetTreeState',
+        parse:
+            (v) =>
+                ZWalletdBlockID.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetTreeState;
   @override
@@ -1564,6 +2611,28 @@ class ZWalletdGetLatestTreeState extends ZcashProtoMessage
   List<Object?> get protoValues => getLatestTreeState?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetLatestTreeState': config.encodeMessage(getLatestTreeState)};
+  }
+
+  factory ZWalletdGetLatestTreeState.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetLatestTreeState(
+      getLatestTreeState: json.valueTo<ZWalletdEmpty?, Object>(
+        key: 'GetLatestTreeState',
+        parse:
+            (v) =>
+                ZWalletdEmpty.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetLatestTreeState;
   @override
@@ -1575,7 +2644,7 @@ class ZWalletdGetLatestTreeState extends ZcashProtoMessage
 class ZWalletdGetSubtreeRoots extends ZcashProtoMessage
     with IZcashProtoQueryMessage<ZWalletdSubtreeRoot> {
   /// Returns a stream of information about roots of subtrees of the note commitment tree
-  /// for the specified shielded protocol (Sapling or Orchard).
+  /// for the specified shielded protocol (Sapling, Orchard, or Ironwood).
   final ZWalletdGetSubtreeRootsArg? getSubtreeRoots;
 
   const ZWalletdGetSubtreeRoots({this.getSubtreeRoots});
@@ -1586,6 +2655,30 @@ class ZWalletdGetSubtreeRoots extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getSubtreeRoots?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetSubtreeRoots': config.encodeMessage(getSubtreeRoots)};
+  }
+
+  factory ZWalletdGetSubtreeRoots.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetSubtreeRoots(
+      getSubtreeRoots: json.valueTo<ZWalletdGetSubtreeRootsArg?, Object>(
+        key: 'GetSubtreeRoots',
+        parse:
+            (v) => ZWalletdGetSubtreeRootsArg.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1610,6 +2703,30 @@ class ZWalletdGetAddressUtxos extends ZcashProtoMessage
   List<Object?> get protoValues => getAddressUtxos?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetAddressUtxos': config.encodeMessage(getAddressUtxos)};
+  }
+
+  factory ZWalletdGetAddressUtxos.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetAddressUtxos(
+      getAddressUtxos: json.valueTo<ZWalletdGetAddressUtxosArg?, Object>(
+        key: 'GetAddressUtxos',
+        parse:
+            (v) => ZWalletdGetAddressUtxosArg.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetAddressUtxos;
   @override
@@ -1630,6 +2747,32 @@ class ZWalletdGetAddressUtxosStream extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => getAddressUtxosStream?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'GetAddressUtxosStream': config.encodeMessage(getAddressUtxosStream),
+    };
+  }
+
+  factory ZWalletdGetAddressUtxosStream.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetAddressUtxosStream(
+      getAddressUtxosStream: json.valueTo<ZWalletdGetAddressUtxosArg?, Object>(
+        key: 'GetAddressUtxosStream',
+        parse:
+            (v) => ZWalletdGetAddressUtxosArg.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>
@@ -1655,6 +2798,28 @@ class ZWalletdGetLightdInfo extends ZcashProtoMessage
   List<Object?> get protoValues => getLightdInfo?.protoValues ?? [];
 
   @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'GetLightdInfo': config.encodeMessage(getLightdInfo)};
+  }
+
+  factory ZWalletdGetLightdInfo.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdGetLightdInfo(
+      getLightdInfo: json.valueTo<ZWalletdEmpty?, Object>(
+        key: 'GetLightdInfo',
+        parse:
+            (v) =>
+                ZWalletdEmpty.fromJson(JsonParser.valueAs(v), config: config),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
+  @override
   DefaultZcashProtoTypeUrl get declarationId =>
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcGetLightdInfo;
   @override
@@ -1676,6 +2841,30 @@ class ZWalletdPing extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => ping?.protoValues ?? [];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'Ping': config.encodeMessage(ping)};
+  }
+
+  factory ZWalletdPing.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdPing(
+      ping: json.valueTo<ZWalletdDuration?, Object>(
+        key: 'Ping',
+        parse:
+            (v) => ZWalletdDuration.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   @override
   DefaultZcashProtoTypeUrl get declarationId =>

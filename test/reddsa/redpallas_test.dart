@@ -1,29 +1,42 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
 
-void main() {
+import '../utils.dart';
+
+void redpallasTest() {
   _test();
 }
 
+void reddsaRedpallasTest() {
+  ZcashTestApi.runTest(redpallasTest, "Redpallas");
+}
+
+void main() {
+  ZcashTestApi.runTest(reddsaRedpallasTest, "Redpallas");
+}
+
 void _test() {
-  QuickCrypto.setupPRNG(ChaCha20Rng(List<int>.filled(32, 11)));
+  final rng = ChaCha20Rng(List<int>.filled(32, 11));
   test("RedPallas signature", () {
     for (final i in _testVector) {
-      final sk = OrchardSpendAuthorizingKey.fromBytes(
+      final sk = RedPallasSpendPrivateKey.fromBytes(
         BytesUtils.fromHexString(i["sk"]),
       );
       final msg = BytesUtils.fromHexString(i["msg"]);
-      final signature = sk.sign(msg);
+      final signature = sk.sign(
+        RedPallasSigningParams(msg, random: rng.nextBytes(80)),
+      );
       expect(signature.rBytes, BytesUtils.fromHexString(i["r_bytes"]));
       expect(signature.sBytes, BytesUtils.fromHexString(i["s_bytes"]));
-      final vk = sk.toVerificationKey();
-      expect(vk.verifySignature(signature, msg), true);
+      final vk = sk.publicKey;
+      expect(vk.verify(RedPallasVerifyingParams(msg, signature)), true);
     }
   });
 }
 
 const List<Map<String, dynamic>> _testVector = [
   {
+    ///    837c67fa25bd9dc8798790e70604972876815c12b969a8df3e5c73470f918110
     "sk": "837c67fa25bd9dc8798790e69204972876815c12b969a8df3e5c73470f918110",
     "msg": "cb5af547dc97b77939b09f0f2acf3e0c22580ebf2fdc0de3cde47e5a8aa3d2ca",
     "r_bytes":

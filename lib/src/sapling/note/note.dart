@@ -1,7 +1,7 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 import 'package:zcash_dart/src/note/note.dart';
-import 'package:zcash_dart/src/sapling/exception/exception.dart';
 import 'package:zcash_dart/src/sapling/transaction/commitment.dart';
 import 'package:zcash_dart/src/sapling/utils/utils.dart';
 import 'package:zcash_dart/src/value/value.dart';
@@ -93,11 +93,13 @@ class SaplingNote extends Note {
     required ZcashCryptoContext context,
   }) {
     final cm = _cmFullPoint(context);
-    final rho = SaplingUtils.mixingPedersenHash(cm.inner, position);
-    return SaplingNullifier(SaplingUtils.prfNfNative(nk: nk.inner, rho: rho));
+    final rho = SaplingUtils.mixingPedersenHashBytes(cm.toBytes(), position);
+    return SaplingNullifier(
+      SaplingUtils.prfNf(nkBytes: nk.toBytes(), rhoBytes: rho),
+    );
   }
 
-  JubJubNativeFr? deriveEsk() => rseed.deriveEsk();
+  BuBytes? deriveEsk() => rseed.deriveEsk();
 
   @override
   List<dynamic> get variables => [recipient, value, rseed];
@@ -120,8 +122,8 @@ class SaplingNote extends Note {
 class SaplingEncryptedNote
     extends
         NoteEncryption<
-          JubJubNativeFr,
-          JubJubNativePoint,
+          BuBytes,
+          BuBytes,
           SaplingNote,
           SaplingOutgoingViewingKey
         > {
@@ -134,14 +136,14 @@ class SaplingEncryptedNote
   });
 }
 
-class SaplingDomainNative
+class SaplingDomain
     extends
         NoteDomain<
-          JubJubNativeFr,
-          JubJubNativePoint,
-          JubJubNativePoint,
-          JubJubNativePoint,
-          JubJubNativePoint,
+          BuBytes,
+          BuBytes,
+          BuBytes,
+          BuBytes,
+          BuBytes,
           SaplingNote,
           SaplingPaymentAddress,
           SaplingDiversifiedTransmissionKey,
@@ -154,7 +156,7 @@ class SaplingDomainNative
         > {
   @override
   final ZcashCryptoContext context;
-  SaplingDomainNative(this.context, {this.zip212enforcement});
+  SaplingDomain(this.context, {this.zip212enforcement});
   final Zip212Enforcement? zip212enforcement;
 
   @override
@@ -163,7 +165,7 @@ class SaplingDomainNative
   }
 
   @override
-  JubJubNativeFr? deriveEsk(SaplingNote note) {
+  BuBytes? deriveEsk(SaplingNote note) {
     return note.deriveEsk();
   }
 
@@ -183,24 +185,26 @@ class SaplingDomainNative
   }
 
   @override
-  JubJubNativePoint? decEpk(EphemeralKeyBytes ephemeralKey) {
+  BuBytes? decEpk(EphemeralKeyBytes ephemeralKey) {
     try {
-      final pk = JubJubNativePoint.fromBytes(ephemeralKey.inner);
-      if (pk.isIdentity()) return null;
-      return pk;
+      final point = JubJubPoint.fromBytes(ephemeralKey.inner);
+      if (point.isIdentity()) return null;
+      return BuBytes.from(ephemeralKey.inner);
     } catch (_) {
       return null;
     }
   }
 
   @override
-  EphemeralKeyBytes epkBytes(JubJubNativePoint epk) {
-    return EphemeralKeyBytes(epk.toBytes());
+  EphemeralKeyBytes epkBytes(BuBytes epk) {
+    return EphemeralKeyBytes(epk);
   }
 
   @override
-  JubJubNativeFr extractEsk(List<int> outPlaintext) {
-    return JubJubNativeFr.fromBytes(outPlaintext.sublist(32, 64));
+  BuBytes extractEsk(List<int> outPlaintext) {
+    final bytes = outPlaintext.sublist(32, 64);
+    JubJubFr.fromBytes(bytes);
+    return BuBytes.from(bytes);
   }
 
   @override
@@ -221,32 +225,38 @@ class SaplingDomainNative
   }
 
   @override
-  JubJubNativePoint kaAgreeDec(SaplingIvk ivk, JubJubNativePoint epk) {
-    return SaplingUtils.kaSaplingAgreeNative(scalar: ivk.inner, b: epk);
-  }
-
-  @override
-  JubJubNativePoint kaAgreeEnc(
-    JubJubNativeFr esk,
-    SaplingDiversifiedTransmissionKey pkD, {
-    bool encrypt = true,
-  }) {
-    return SaplingUtils.kaSaplingAgreeNative(scalar: esk, b: pkD.toPoint());
-  }
-
-  @override
-  JubJubNativePoint kaDerivePublic(SaplingNote note, JubJubNativeFr esk) {
-    return SaplingUtils.kaSaplingDerivePublic(
-      scalar: esk,
-      b: note.recipient.gd(),
+  BuBytes kaAgreeDec(SaplingIvk ivk, BuBytes epk) {
+    return SaplingUtils.kaSaplingAgreeBytes(
+      scalar32: ivk.toBytes(),
+      point32: epk,
     );
   }
 
   @override
-  List<int> kdf(JubJubNativePoint secret, EphemeralKeyBytes ephemeralKey) {
+  BuBytes kaAgreeEnc(
+    BuBytes esk,
+    SaplingDiversifiedTransmissionKey pkD, {
+    bool encrypt = true,
+  }) {
+    return SaplingUtils.kaSaplingAgreeBytes(
+      scalar32: esk,
+      point32: pkD.toBytes(),
+    );
+  }
+
+  @override
+  BuBytes kaDerivePublic(SaplingNote note, BuBytes esk) {
+    return SaplingUtils.kaSaplingDerivePublicBytes(
+      scalar32: esk,
+      point32: note.recipient.gd().toBytes(),
+    );
+  }
+
+  @override
+  List<int> kdf(BuBytes secret, EphemeralKeyBytes ephemeralKey) {
     return SaplingUtils.kdfSapling(
       ephemeralKey: ephemeralKey.inner,
-      secret: secret.toBytes(),
+      secret: secret,
     );
   }
 
@@ -266,8 +276,8 @@ class SaplingDomainNative
   }
 
   @override
-  List<int> outgoingPlaintextBytes(SaplingNote note, JubJubNativeFr esk) {
-    return [...note.recipient.transmissionKey.toBytes(), ...esk.toBytes()];
+  List<int> outgoingPlaintextBytes(SaplingNote note, BuBytes esk) {
+    return [...note.recipient.transmissionKey.toBytes(), ...esk];
   }
 
   bool plaintextVersionIsValid(int leadbyte) {
@@ -295,7 +305,7 @@ class SaplingDomainNative
       final value = ZAmount.fromBytes(plaintext.sublist(12, 20));
       final r = plaintext.sublist(20, 52);
       final rSeed = switch (plaintext[0]) {
-        0x01 => SaplingRSeedBeforeZip212(JubJubNativeFr.fromBytes(r)),
+        0x01 => SaplingRSeedBeforeZip212.fromBytes(r),
         _ => SaplingRSeedAfterZip212(r),
       };
       final pkD = pkd(dv);
@@ -310,7 +320,7 @@ class SaplingDomainNative
                 ? plaintext.sublist(NoteEncryptionConst.compactNoteSize)
                 : null,
       );
-    } on IException {
+    } on BuError {
       return null;
     }
   }
@@ -363,7 +373,7 @@ class SaplingDomainNative
   }) {
     final esk = deriveEsk(note);
     if (esk == null) {
-      throw SaplingException.operationFailed(
+      throw ZcashErrors.saplingFailed(
         "createNote",
         reason: "ZIP-212 is active.",
       );
@@ -384,7 +394,18 @@ class SaplingDomainNative
     required List<int> esk,
     SaplingOutgoingViewingKey? ovk,
   }) {
-    final eskScalar = JubJubNativeFr.fromBytes(esk);
+    final eskBytes = esk.exc(
+      length: 32,
+      operation: "SaplingDomain.createNoteWithEsk",
+      reason: "Invalid esk bytes length.",
+    );
+    if (!blockchainUtils.api.jubjub.scCheck(eskBytes)) {
+      throw ZcashErrors.saplingFailed(
+        "SaplingDomain.createNoteWithEsk",
+        reason: "Invalid esk scalar encoding bytes.",
+      );
+    }
+    final eskScalar = BuBytes.from(eskBytes);
     return SaplingEncryptedNote(
       ovk: ovk,
       memo: memo,
@@ -395,10 +416,10 @@ class SaplingDomainNative
   }
 
   @override
-  List<int> encKdf(JubJubNativePoint secret, EphemeralKeyBytes ephemeralKey) {
+  List<int> encKdf(BuBytes secret, EphemeralKeyBytes ephemeralKey) {
     return SaplingUtils.kdfSapling(
       ephemeralKey: ephemeralKey.inner,
-      secret: secret.toBytes(),
+      secret: secret,
     );
   }
 }

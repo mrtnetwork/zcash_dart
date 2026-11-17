@@ -1,4 +1,6 @@
+import 'package:zcash_dart/src/orchard/pczt/pczt.dart';
 import 'package:zcash_dart/src/pczt/pczt/pczt.dart';
+import 'package:zcash_dart/src/pczt/types/global.dart';
 import 'package:zcash_dart/src/pczt/types/types.dart';
 
 abstract mixin class PcztCombiner implements PcztV1 {
@@ -24,11 +26,20 @@ abstract mixin class PcztCombiner implements PcztV1 {
       otherGlobal: other.global,
     );
     if (orchard == null) return null;
+    final ironwood = mergeIronwoodBundles(
+      this.ironwood,
+      other.ironwood,
+      global: global,
+      otherGlobal: other.global,
+    );
+    if (this.ironwood != null && ironwood == null) return null;
+    if (other.ironwood != null && ironwood == null) return null;
     return Pczt(
       global: global,
       transparent: transparent,
       sapling: sapling,
       orchard: orchard,
+      ironwood: ironwood,
     );
   }
 
@@ -37,5 +48,19 @@ abstract mixin class PcztCombiner implements PcztV1 {
     transparent: transparent.clone(),
     sapling: sapling.clone(),
     orchard: orchard.clone(),
+    ironwood: ironwood?.clone(),
   );
+}
+
+/// Merges two optional Ironwood bundles. Null merges with anything;
+/// two non-null bundles use the Orchard merge rules.
+OrchardPcztBundle? mergeIronwoodBundles(
+  OrchardPcztBundle? a,
+  OrchardPcztBundle? b, {
+  required PcztGlobal global,
+  required PcztGlobal otherGlobal,
+}) {
+  if (a == null) return b?.clone();
+  if (b == null) return a.clone();
+  return a.merge(other: b, global: global, otherGlobal: otherGlobal);
 }

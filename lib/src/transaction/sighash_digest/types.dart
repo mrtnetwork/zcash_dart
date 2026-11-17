@@ -20,7 +20,13 @@ sealed class SignableInput {
 
   T cast<T extends SignableInput>() {
     final c = this;
-    if (c is! T) throw CastFailedException<T>(value: this);
+    if (c is! T) {
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "T", "value": runtimeType.toString()},
+      );
+    }
     return c;
   }
 }
@@ -96,7 +102,7 @@ class TransparentDigest {
                .asImmutableBytes;
 }
 
-/// Represents the digests of all parts of a Zcash transaction (header, transparent, sapling, orchard).
+/// Represents the digests of all parts of a Zcash transaction (header, transparent, sapling, orchard, ironwood).
 class TxDigestsPart {
   /// Digest of the transaction header (32 bytes).
   final List<int> headerDigest;
@@ -109,11 +115,15 @@ class TxDigestsPart {
 
   /// Digest of the Orchard bundle (32 bytes), or null if absent.
   final List<int>? orchardDigest;
+
+  /// Digest of the Ironwood bundle (32 bytes), or null if absent (V6 only).
+  final List<int>? ironwoodDigest;
   TxDigestsPart({
     required List<int> headerDigest,
     this.transparentDigest,
     List<int>? saplingDigest,
     List<int>? orchardDigest,
+    List<int>? ironwoodDigest,
   }) : headerDigest =
            headerDigest
                .exc(
@@ -136,6 +146,14 @@ class TxDigestsPart {
                  length: QuickCrypto.blake2b256DigestSize,
                  operation: "TxDigestsPart",
                  reason: "Invalid orchardDigest bytes length.",
+               )
+               .asImmutableBytes,
+       ironwoodDigest =
+           ironwoodDigest
+               ?.exc(
+                 length: QuickCrypto.blake2b256DigestSize,
+                 operation: "TxDigestsPart",
+                 reason: "Invalid ironwoodDigest bytes length.",
                )
                .asImmutableBytes;
 }

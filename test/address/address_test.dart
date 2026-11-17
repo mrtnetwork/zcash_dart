@@ -6,7 +6,7 @@ import 'package:zcash_dart/src/address/src/zcash_address.dart';
 
 import '../utils.dart';
 
-void main() {
+void addressAddressTest() {
   test("Tex/P2pkh address", () {
     for (final i in _texAddrTestVector.takeShuffle(10)) {
       final addr = ZcashAddress(i.elementAt(0));
@@ -84,6 +84,15 @@ void main() {
     }
   });
 }
+
+void addressTest() {
+  ZcashTestApi.runTest(addressAddressTest, "Address");
+}
+
+void main() {
+  ZcashTestApi.runTest(addressTest, "Address");
+}
+
 // From https://github.com/zcash/zcash-test-vectors/blob/master/zcash_test_vectors/unified_address.py
 
 class _TestVector {

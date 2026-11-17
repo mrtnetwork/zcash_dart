@@ -2,7 +2,9 @@ import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
 import 'package:zcash_dart/zcash.dart';
 
-void main() {
+import '../utils.dart';
+
+void saplingTest() {
   final context = DefaultZcashCryptoContext();
   test("Sapling/ZIP32", () {
     final i1h = Bip32KeyIndex.hardenIndex(1);
@@ -29,8 +31,8 @@ void main() {
     for (final i in _tVecotr.indexed) {
       final xsk = xsks.elementAt(i.$1);
       final tv = _TestVector.fromJson(i.$2);
-      expect(xsk.privateKey.sk.ask.toBytes(), tv.ask);
-      expect(xsk.privateKey.sk.nsk.toBytes(), tv.nsk);
+      expect(xsk.privateKey.sk.ask.toBytes().toList(), tv.ask);
+      expect(xsk.privateKey.sk.nsk.toBytes().toList(), tv.nsk);
       expect(xsk.privateKey.sk.ovk.inner, tv.ovk);
       expect(xsk.privateKey.keyData.dk.inner, tv.dk);
       expect(xsk.privateKey.keyData.chainCode.toBytes(), tv.c);
@@ -97,6 +99,14 @@ void main() {
       }
     }
   });
+}
+
+void zip32SaplingTest() {
+  ZcashTestApi.runTest(saplingTest, "Sapling");
+}
+
+void main() {
+  ZcashTestApi.runTest(zip32SaplingTest, "Sapling");
 }
 
 class _TestVector {

@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+import 'package:zcash_dart/src/error/zcash_error.dart';
+
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'package:zcash_dart/src/merkle/tree/shard_tree.dart';
@@ -5,20 +8,23 @@ import 'package:zcash_dart/src/merkle/store/memory.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/note/src/note_encryption.dart';
-import 'package:zcash_dart/src/orchard/exception/exception.dart';
 import 'package:zcash_dart/src/orchard/transaction/commitment.dart';
 
 class OrchardAnchor with LayoutSerializable, Equality {
-  final PallasNativeFp inner;
+  final PallasFp inner;
   const OrchardAnchor(this.inner);
   factory OrchardAnchor.fromBytes(List<int> bytes) {
-    return OrchardAnchor(PallasNativeFp.fromBytes(bytes));
+    return OrchardAnchor(PallasFp.fromBytes(bytes));
   }
   factory OrchardAnchor.emptyTree() {
     return OrchardAnchor(
-      PallasNativeFp.nP(
-        BigInt.parse(
-          "21641924050683187072471021765392292010168693068998734505527562100199019325870",
+      PallasFp.fromBytes(
+        BigintUtils.toBytes(
+          BigInt.parse(
+            "21641924050683187072471021765392292010168693068998734505527562100199019325870",
+          ),
+          length: 32,
+          byteOrder: Endian.little,
         ),
       ),
     );
@@ -43,24 +49,25 @@ class OrchardAnchor with LayoutSerializable, Equality {
     return {"inner": inner.toBytes()};
   }
 
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.toBytes();
 
   @override
   List<dynamic> get variables => [inner];
 }
 
 class OrchardMerkleHash extends MerkleNodeValue {
-  final PallasNativeFp inner;
+  final PallasFp inner;
   const OrchardMerkleHash(this.inner);
 
   factory OrchardMerkleHash.deserializeJson(Map<String, dynamic> json) =>
       OrchardMerkleHash.fromBytes(json.valueAsBytes("inner"));
 
   factory OrchardMerkleHash.fromBytes(List<int> bytes) {
-    return OrchardMerkleHash(PallasNativeFp.fromBytes(bytes));
+    return OrchardMerkleHash(PallasFp.fromBytes(bytes));
   }
-  factory OrchardMerkleHash.dummy() =>
-      OrchardMerkleHash(PallasNativeFp.random());
+  factory OrchardMerkleHash.dummy() => OrchardMerkleHash(
+    PallasFp.fromBytes64(QuickCrypto.generateRandom(length: 64)),
+  );
 
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
@@ -79,7 +86,7 @@ class OrchardMerkleHash extends MerkleNodeValue {
   }
 
   @override
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.toBytes();
 
   OrchardAnchor toAnchor() => OrchardAnchor(inner);
 
@@ -93,11 +100,10 @@ class OrchardMerkleHash extends MerkleNodeValue {
 }
 
 class OrchardMerkleHashable extends Hashable<OrchardMerkleHash> {
-  OrchardMerkleHashable({HashDomainNative? domain})
-    : domain =
-          domain ?? HashDomainNative.fromDomain("z.cash:Orchard-MerkleCRH");
-  final PallasNativeFp _uncommited = PallasNativeFp.two();
-  final HashDomainNative domain;
+  OrchardMerkleHashable({HashDomain? domain})
+    : domain = domain ?? HashDomain.fromDomain("z.cash:Orchard-MerkleCRH");
+  final PallasFp _uncommited = PallasFp.one + PallasFp.one;
+  final HashDomain domain;
   List<OrchardMerkleHash> _buildEmptyRoots() {
     final List<OrchardMerkleHash> emptyRoots = [];
     var state = emptyLeaf();
@@ -131,7 +137,7 @@ class OrchardMerkleHashable extends Hashable<OrchardMerkleHash> {
       ...lhsBits.sublist(0, HashDomainConst.lOrchardMerkle),
       ...rhsBits.sublist(0, HashDomainConst.lOrchardMerkle),
     ]);
-    return OrchardMerkleHash(base ?? PallasNativeFp.zero());
+    return OrchardMerkleHash(base ?? PallasFp.zero);
   }
 
   @override
@@ -403,7 +409,7 @@ class DisabledOrchardMerkleHashable extends Hashable<OrchardMerkleHash> {
     required OrchardMerkleHash a,
     required OrchardMerkleHash b,
   }) {
-    throw OrchardException.operationFailed(
+    throw ZcashErrors.orchardFailed(
       "combine",
       reason: "Operation not supported.",
     );
@@ -411,7 +417,7 @@ class DisabledOrchardMerkleHashable extends Hashable<OrchardMerkleHash> {
 
   @override
   OrchardMerkleHash emptyLeaf() {
-    throw OrchardException.operationFailed(
+    throw ZcashErrors.orchardFailed(
       "emptyLeaf",
       reason: "Operation not supported.",
     );

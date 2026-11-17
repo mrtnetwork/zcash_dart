@@ -1,16 +1,19 @@
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
-import 'package:zcash_dart/src/pczt/exception/exception.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
 
 import 'extractor.dart';
 
 abstract mixin class PcztIoFinalizer implements PcztExtractor {
   bool hasShieldedSpends() {
-    return sapling.spends.isNotEmpty || orchard.actions.isNotEmpty;
+    return sapling.spends.isNotEmpty ||
+        orchard.actions.isNotEmpty ||
+        (ironwood?.actions.isNotEmpty ?? false);
   }
 
   bool hasShieldedOutputs() {
-    return sapling.outputs.isNotEmpty || orchard.actions.isNotEmpty;
+    return sapling.outputs.isNotEmpty ||
+        orchard.actions.isNotEmpty ||
+        (ironwood?.actions.isNotEmpty ?? false);
   }
 
   bool hasTransparentSpends() {
@@ -23,14 +26,14 @@ abstract mixin class PcztIoFinalizer implements PcztExtractor {
 
   Future<void> finalizeIo(ZcashCryptoContext context) async {
     if (!hasShieldedSpends() && !hasTransparentSpends()) {
-      throw PcztException.failed("finalizeIo", reason: "No spends.");
+      throw ZcashErrors.pcztFailed("finalizeIo", reason: "No spends.");
     }
     if (!hasShieldedOutputs() && !hasTransparentOutputs()) {
-      throw PcztException.failed("finalizeIo", reason: "No outputs.");
+      throw ZcashErrors.pcztFailed("finalizeIo", reason: "No outputs.");
     }
     final tx = toTxData();
     final digest = tx.toTxDeigest();
-    final sighash = SighashGenerator.v5(
+    final sighash = SighashGenerator.forVersion(
       tx: tx,
       digest: digest,
       input: ShieldedSignableInput(),
@@ -39,6 +42,7 @@ abstract mixin class PcztIoFinalizer implements PcztExtractor {
     );
     await sapling.finalize(sighash: sighash, context: context);
     await orchard.finalize(sighash: sighash, context: context);
+    await ironwood?.finalize(sighash: sighash, context: context);
     if (hasShieldedSpends() || hasShieldedOutputs()) {
       global.disableModifiable();
     }

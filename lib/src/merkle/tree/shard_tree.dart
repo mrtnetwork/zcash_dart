@@ -1,4 +1,4 @@
-import 'package:zcash_dart/src/merkle/exception/exception.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
@@ -57,7 +57,7 @@ abstract class ShardTree<
     }
     final r = store.getCheckpointAtDepth(checkpointDepth)?.$2.position();
     if (r == null) {
-      throw MerkleTreeException.failed(
+      throw ZcashErrors.merkleFailed(
         "maxLeafPosition",
         reason:
             "The leaf corresponding to the requested checkpoint is not present in the tree.",
@@ -242,7 +242,7 @@ abstract class ShardTree<
 
   void insert({required NodeAddress rootAddr, required H value}) {
     if (rootAddr.level > this.rootAddr.level) {
-      throw MerkleInsertionError.insertionFailed(
+      throw ZcashErrors.merkleInsertionFailed(
         name: "insert",
         reason: "Tree does not contain a root at address $rootAddr",
         address: rootAddr,
@@ -294,7 +294,7 @@ abstract class ShardTree<
     if (retention case RetentionCheckpoint(id: final id)) {
       final max = store.maxCheckpointId();
       if (max != null && max.compareTo(id) >= 0) {
-        throw MerkleInsertionError.insertionFailed(
+        throw ZcashErrors.merkleInsertionFailed(
           name: "append",
           reason: "Cannot append out-of-order checkpoint identifier.",
         );
@@ -311,7 +311,7 @@ abstract class ShardTree<
             rootAddr: addr.nextAtLevel(),
           ).append(value: value, retention: retention);
         } else {
-          throw MerkleInsertionError.insertionFailed(
+          throw ZcashErrors.merkleInsertionFailed(
             name: "append",
             reason: "Note commitment tree is full.",
           );
@@ -364,7 +364,7 @@ abstract class ShardTree<
         values: itrator,
       );
       if (res == null) {
-        throw MerkleInsertionError.insertionFailed(
+        throw ZcashErrors.merkleInsertionFailed(
           name: "batchInsert",
           reason:
               "Iterator containing leaf values to insert was verified to be nonempty.",
@@ -401,7 +401,7 @@ abstract class ShardTree<
     final asOf = checkpoint.position();
     if (asOf == null || position > asOf) {
       final addr = NodeAddress(level: TreeLevel.zero, index: position.position);
-      throw MerkleWitnessError.failed(
+      throw ZcashErrors.merkleWitnessFailed(
         name: "witnessAtCheckpointIdCaching",
         reason: "Tree does not contain a root at address $addr.",
         addresses: [addr],
@@ -419,7 +419,7 @@ abstract class ShardTree<
     final asOf = checkpoin.$2.position() ?? LeafPosition(0);
     if (position > asOf) {
       final addr = NodeAddress(level: TreeLevel.zero, index: position.position);
-      throw MerkleWitnessError.failed(
+      throw ZcashErrors.merkleWitnessFailed(
         name: "witnessAtCheckpointDepth",
         reason: "Tree does not contain a root at address $addr.",
         addresses: [addr],
@@ -437,7 +437,7 @@ abstract class ShardTree<
     final asOf = checkpoint.position();
     if (asOf == null || position > asOf) {
       final addr = NodeAddress(level: TreeLevel.zero, index: position.position);
-      throw MerkleWitnessError.failed(
+      throw ZcashErrors.merkleWitnessFailed(
         name: "witnessAtCheckpointId",
         reason: "Tree does not contain a root at address $addr.",
         addresses: [addr],
@@ -461,7 +461,7 @@ abstract class ShardTree<
           store.addCheckpoint(id, Checkpoint.treeEmpty());
           break;
         default:
-          throw MerkleInsertionError.frontierInsertionFailed(
+          throw ZcashErrors.merkleInsertionFrontierFailed(
             name: "insertFrontier",
             reason: "Invalid retention.",
           );
@@ -616,7 +616,7 @@ abstract class ShardTree<
         } else if (rResult != null) {
           result = (rResult.$1, null, rResult.$2);
         } else {
-          throw MerkleTreeException.failed("rootInternal");
+          throw ZcashErrors.merkleFailed("rootInternal");
         }
         final lV = result.$2?.nodeValue();
         final rV = result.$3?.nodeValue();
@@ -736,7 +736,7 @@ abstract class ShardTree<
           }
         }
         if (incomplete.isNotEmpty) {
-          throw MerkleTreeException.failed(
+          throw ZcashErrors.merkleFailed(
             "rootFromShards",
             reason: "Unable to compute root. missing values for nodes.",
             details: {"addresses": incomplete.join(",")},
@@ -788,7 +788,7 @@ abstract class ShardTree<
             ?.subtree(address)
             ?.rootHash(truncateAt);
         if (hash == null) {
-          throw MerkleTreeException.failed(
+          throw ZcashErrors.merkleFailed(
             "rootFromShards",
             reason: "Unable to compute root. missing values for nodes.",
             details: {"address": addr.toString()},
@@ -877,7 +877,7 @@ abstract class ShardTree<
         .getShard(subtree)
         ?.witness(position: position, truncateAt: asOf + 1);
     if (witness == null) {
-      throw MerkleWitnessError.incompleteTree(
+      throw ZcashErrors.merkleWitnessIncompleteTree(
         name: "wintessInternal",
         addresses: [subtree],
       );
@@ -906,7 +906,7 @@ abstract class ShardTree<
         .getShard(subtree)
         ?.witness(position: position, truncateAt: asOf + 1);
     if (witness == null) {
-      throw MerkleWitnessError.incompleteTree(
+      throw ZcashErrors.merkleWitnessIncompleteTree(
         name: "wintessInternal",
         addresses: [subtree],
       );

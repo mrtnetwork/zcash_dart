@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:blockchain_utils/protocol/zip32/zip32/types.dart';
 import 'package:zcash_dart/zcash.dart';
 import 'package:grpc/grpc.dart';
 import 'client.dart'

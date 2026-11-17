@@ -43,7 +43,7 @@ class GrothProofBytes with LayoutSerializable, Equality {
 class SaplingSpendDescription with LayoutSerializable {
   final SaplingValueCommitment cv;
   final SaplingNullifier nullifier;
-  final SaplingSpendVerificationKey rk;
+  final RedJubJubSpendPublicKey rk;
   final SaplingAnchor anchor;
   final GrothProofBytes? zkProof;
   final ReddsaSignature? authSig;
@@ -60,7 +60,7 @@ class SaplingSpendDescription with LayoutSerializable {
       cv: SaplingValueCommitment.deserializeJson(json.valueAs("cv")),
       anchor: SaplingAnchor.deserializeJson(json.valueAs("anchor")),
       nullifier: SaplingNullifier.deserializeJson(json.valueAs("nullifier")),
-      rk: SaplingSpendVerificationKey.deserializeJson(json.valueAs("rk")),
+      rk: RedJubJubSpendPublicKey.deserializeJson(json.valueAs("rk")),
       authSig: json.valueTo<ReddsaSignature, Map<String, dynamic>>(
         key: "auth_sig",
         parse: (v) => ReddsaSignature.deserializeJson(v),
@@ -75,7 +75,7 @@ class SaplingSpendDescription with LayoutSerializable {
     return LayoutConst.struct([
       SaplingValueCommitment.layout(property: "cv"),
       Nullifier.layout(property: "nullifier"),
-      SaplingSpendVerificationKey.layout(property: "rk"),
+      RedJubJubSpendPublicKey.layout(property: "rk"),
     ], property: property);
   }
 
@@ -98,7 +98,7 @@ class SaplingSpendDescription with LayoutSerializable {
       LazyStructLayoutBuilder(
         layout:
             (property, params) =>
-                SaplingSpendVerificationKey.layout(property: property),
+                RedJubJubSpendPublicKey.layout(property: property),
         property: "rk",
       ),
       LazyStructLayoutBuilder(
@@ -124,9 +124,9 @@ class SaplingSpendDescription with LayoutSerializable {
     TxVersionType version = TxVersionType.v4,
     bool withAuthSig = true,
   }) {
-    bool isV5 = version == TxVersionType.v5;
+    bool isV5 = version == TxVersionType.v5 || version == TxVersionType.v6;
     if (!isV5 && (zkProof == null || (withAuthSig && authSig == null))) {
-      throw SaplingException.operationFailed(
+      throw ZcashErrors.saplingFailed(
         "toSerializeJson",
         reason: "Missing spend autorization.",
       );
@@ -148,14 +148,14 @@ class SaplingSpendDescription with LayoutSerializable {
     TxVersionType version = TxVersionType.v4,
     String? property,
   }) {
-    if (version == TxVersionType.v5) {
+    if (version == TxVersionType.v5 || version == TxVersionType.v6) {
       return layoutV5(property: property);
     }
     return layout(property: property);
   }
 
   @override
-  List<int> toSerializeBytes({
+  BuBytes toSerializeBytes({
     TxVersionType version = TxVersionType.v4,
     bool withAuthSig = true,
     String? property,
@@ -252,9 +252,9 @@ class SaplingOutputDescription extends SaplingShildOutput
   Map<String, dynamic> toSerializeJson({
     TxVersionType verion = TxVersionType.v4,
   }) {
-    final isV5 = verion == TxVersionType.v5;
+    final isV5 = verion == TxVersionType.v5 || verion == TxVersionType.v6;
     if (!isV5 && zkproof == null) {
-      throw SaplingException.operationFailed(
+      throw ZcashErrors.saplingFailed(
         "toSerializeJson",
         reason: "Missing sapling output zkproof.",
       );
@@ -274,7 +274,7 @@ class SaplingOutputDescription extends SaplingShildOutput
     TxVersionType verion = TxVersionType.v4,
     String? property,
   }) {
-    if (verion == TxVersionType.v5) {
+    if (verion == TxVersionType.v5 || verion == TxVersionType.v6) {
       return layoutV5(property: property);
     }
     return layout(property: property);
@@ -377,7 +377,7 @@ class SaplingBundle with LayoutSerializable implements Bundle<SaplingBundle> {
                     nullifier: SaplingNullifier.deserializeJson(
                       e.$2.valueAs("nullifier"),
                     ),
-                    rk: SaplingSpendVerificationKey.deserializeJson(
+                    rk: RedJubJubSpendPublicKey.deserializeJson(
                       e.$2.valueAs("rk"),
                     ),
                     authSig: spendAuthSignature.elementAt(e.$1),
@@ -565,19 +565,19 @@ class SaplingBundle with LayoutSerializable implements Bundle<SaplingBundle> {
   Map<String, dynamic> toSerializeJson({
     TxVersionType version = TxVersionType.v4,
   }) {
-    bool isV5 = version == TxVersionType.v5;
+    bool isV5 = version == TxVersionType.v5 || version == TxVersionType.v6;
     bool haveSpend = shieldedSpends.isNotEmpty;
     bool haveOutput = shieldedOutputs.isNotEmpty;
     if (isV5 &&
         haveSpend &&
         shieldedSpends.any((e) => e.zkProof == null || e.authSig == null)) {
-      throw SaplingException.operationFailed(
+      throw ZcashErrors.saplingFailed(
         "toSerializeJson",
         reason: "Missing sapling spend autorization.",
       );
     }
     if (isV5 && haveOutput && shieldedOutputs.any((e) => e.zkproof == null)) {
-      throw SaplingException.operationFailed(
+      throw ZcashErrors.saplingFailed(
         "toSerializeJson",
         reason: "Missing sapling output zkproof.",
       );
@@ -592,7 +592,7 @@ class SaplingBundle with LayoutSerializable implements Bundle<SaplingBundle> {
               .map((e) => e.toSerializeJson(verion: version))
               .toList(),
       "value_balance": valueBalance.value,
-      if (version == TxVersionType.v5) ...{
+      if (version == TxVersionType.v5 || version == TxVersionType.v6) ...{
         "anchor": shieldedSpends.firstOrNull?.anchor.toSerializeJson(),
         "v_spend_proofs":
             shieldedSpends.map((e) => e.zkProof?.toSerializeJson()).toList(),
@@ -610,7 +610,7 @@ class SaplingBundle with LayoutSerializable implements Bundle<SaplingBundle> {
     TxVersionType version = TxVersionType.v4,
     String? property,
   }) {
-    if (version == TxVersionType.v5) {
+    if (version == TxVersionType.v5 || version == TxVersionType.v6) {
       return layoutV5(property: property);
     }
     return layout(property: property);

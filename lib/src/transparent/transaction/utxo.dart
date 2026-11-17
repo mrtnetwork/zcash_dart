@@ -1,8 +1,8 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
 import 'package:zcash_dart/src/transaction/sighash_digest/types.dart';
-import 'package:zcash_dart/src/transparent/exception/exception.dart';
 import 'package:zcash_dart/src/transparent/keys/public_key.dart';
 import 'package:zcash_dart/src/transparent/keys/multisig.dart';
 import 'package:zcash_dart/src/transparent/transaction/input.dart';
@@ -48,7 +48,7 @@ class TransparentUtxo with PartialEquality, LayoutSerializable {
   factory TransparentUtxo.dummy({BigInt? amount}) {
     return TransparentUtxo(
       txHash: ZcashTxId(
-        QuickCrypto.generateRandom(QuickCrypto.blake2b256DigestSize),
+        QuickCrypto.generateRandom(length: QuickCrypto.blake2b256DigestSize),
       ),
       value: amount ?? BigInt.zero,
       vout: QuickCrypto.generateRandomInt(BinaryOps.mask8),
@@ -126,7 +126,7 @@ class TransparentUtxoOwner {
   /// PublicKey is the public key associated with the UTXO owner.
   final ZECPublic? publicKey;
 
-  final PubKeyModes keyType;
+  final CryptoKeyEncoding keyType;
 
   /// Address is the Bitcoin address associated with the UTXO owner.
   final ZcashTransparentAddress address;
@@ -146,7 +146,7 @@ class TransparentUtxoOwner {
   factory TransparentUtxoOwner({
     required ZECPublic publicKey,
     required ZcashTransparentAddress address,
-    PubKeyModes mode = PubKeyModes.compressed,
+    CryptoKeyEncoding mode = CryptoKeyEncoding.base,
   }) {
     return TransparentUtxoOwner._(
       publicKey: publicKey,
@@ -161,7 +161,7 @@ class TransparentUtxoOwner {
   }) {
     if (P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
         address.toScriptPubKey()) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "nonStandardP2sh",
         reason: "Invalid redeem script.",
       );
@@ -171,7 +171,7 @@ class TransparentUtxoOwner {
       publicKey: null,
       address: address,
       p2shRedeemScript: redeemScript,
-      keyType: PubKeyModes.compressed,
+      keyType: CryptoKeyEncoding.base,
     );
   }
 
@@ -180,13 +180,13 @@ class TransparentUtxoOwner {
     required this.address,
   }) : publicKey = null,
        _multiSigAddress = multiSigAddress,
-       keyType = PubKeyModes.compressed,
+       keyType = CryptoKeyEncoding.base,
        p2shRedeemScript = null;
 
   TransparentUtxoOwner.watchOnly(this.address)
     : publicKey = null,
       _multiSigAddress = null,
-      keyType = PubKeyModes.compressed,
+      keyType = CryptoKeyEncoding.base,
       p2shRedeemScript = null;
 
   Script reedemScript() {
@@ -202,7 +202,7 @@ class TransparentUtxoOwner {
 
     final pk = publicKey;
     if (pk == null) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "reedemScript",
         reason: "Cannot access public key in watch only address.",
       );
@@ -213,7 +213,7 @@ class TransparentUtxoOwner {
       case P2shAddressType.p2pkhInP2sh:
         return pk.toAddress(mode: keyType).toScriptPubKey();
       default:
-        throw TransparentExceptoion.operationFailed(
+        throw ZcashErrors.transparentFailed(
           "reedemScript",
           reason: "Unsupported redeem script.",
         );
@@ -257,14 +257,14 @@ class TransparentUtxoWithOwner {
 
   ZECPublic getPublicKey() {
     if (isMultiSig()) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "getPublicKey",
         reason: "Cannot access public key in multi-signature address.",
       );
     }
     final publicKey = ownerDetails.publicKey;
     if (publicKey == null) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "getPublicKey",
         reason: "Cannot access public key in watch only address.",
       );
@@ -279,7 +279,7 @@ class TransparentUtxoWithOwner {
   TransparentMultiSignatureAddress get multiSigAddress =>
       isMultiSig()
           ? ownerDetails._multiSigAddress!
-          : throw TransparentExceptoion.operationFailed(
+          : throw ZcashErrors.transparentFailed(
             "getPublicKey",
             reason:
                 "The address is not associated with a multi-signature setup.",

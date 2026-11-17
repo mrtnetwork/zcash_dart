@@ -1,28 +1,60 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/sapling/utils/utils.dart';
 
 class SaplingProofGenerationKey with LayoutSerializable, Equality {
-  final SaplingSpendVerificationKey ak;
-  final JubJubNativeFr nsk;
+  final BuBytes _akBytes;
+  final BuBytes _nskBytes;
+  RedJubJubSpendPublicKey? _ak;
+
+  /// Spend authority, decoded lazily once and cached.
+  RedJubJubSpendPublicKey get ak =>
+      _ak ??= RedJubJubSpendPublicKey.fromBytes(_akBytes);
+
+  /// Nullifier spend scalar bytes.
+  BuBytes get nsk => _nskBytes.cloneBytes();
 
   SaplingNullifierDerivingKey? _nk;
   SaplingProofGenerationKey({
-    required this.ak,
-    required this.nsk,
+    required RedJubJubSpendPublicKey ak,
+    required List<int> nsk,
     SaplingNullifierDerivingKey? nk,
-  }) : _nk = nk;
-  factory SaplingProofGenerationKey.deserializeJson(Map<String, dynamic> json) {
-    return SaplingProofGenerationKey(
-      ak: SaplingSpendVerificationKey.fromBytes(json.valueAsBytes("ak")),
-      nsk: JubJubNativeFr.fromBytes(json.valueAsBytes("nsk")),
+  }) : _akBytes = BuBytes.from(ak.toBytes()),
+       _nskBytes = _checkScalar(nsk),
+       _ak = ak,
+       _nk = nk;
+
+  static BuBytes _checkScalar(List<int> bytes) {
+    final b = bytes.exc(
+      length: 32,
+      operation: "SaplingProofGenerationKey",
+      reason: "Invalid nsk bytes length.",
     );
+    if (!blockchainUtils.api.jubjub.scCheck(b)) {
+      throw ZcashErrors.saplingFailed(
+        "SaplingProofGenerationKey",
+        reason: "Invalid nsk scalar encoding bytes.",
+      );
+    }
+    return BuBytes.from(b);
+  }
+
+  factory SaplingProofGenerationKey.deserializeJson(Map<String, dynamic> json) {
+    // Single validating parse per key; afterwards raw bytes are kept.
+    final ak = RedJubJubSpendPublicKey.fromBytes(json.valueAsBytes("ak"));
+    final self = SaplingProofGenerationKey(
+      ak: ak,
+      nsk: json.valueAsBytes("nsk"),
+    );
+    self._ak = ak;
+    return self;
   }
   factory SaplingProofGenerationKey.fromSaplingExpandedSpendingKey(
     SaplingExpandedSpendingKey expsk,
   ) {
     return SaplingProofGenerationKey(
-      ak: expsk.ask.toVerificationKey(),
-      nsk: JubJubNativeFr.fromBytes(expsk.nsk.toBytes()),
+      ak: expsk.ask.publicKey,
+      nsk: expsk.nsk.toBytes(),
       nk: expsk.toFvk().vk.nk,
     );
   }
@@ -31,8 +63,11 @@ class SaplingProofGenerationKey with LayoutSerializable, Equality {
     return SaplingViewingKey(
       ak: ak,
       nk:
-          _nk ??= SaplingNullifierDerivingKey(
-            SaplingUtils.proofGenerationKeyGeneratorNative * nsk,
+          _nk ??= SaplingNullifierDerivingKey.fromBytes(
+            blockchainUtils.api.jubjub.mult(
+              _nskBytes,
+              SaplingUtils.proofGenerationKeyGeneratorBytes,
+            ),
           ),
     );
   }
@@ -51,9 +86,9 @@ class SaplingProofGenerationKey with LayoutSerializable, Equality {
 
   @override
   Map<String, dynamic> toSerializeJson() {
-    return {"ak": ak.toBytes(), "nsk": nsk.toBytes()};
+    return {"ak": _akBytes.cloneBytes(), "nsk": _nskBytes.cloneBytes()};
   }
 
   @override
-  List<dynamic> get variables => [ak, nsk];
+  List<dynamic> get variables => [_akBytes, _nskBytes];
 }

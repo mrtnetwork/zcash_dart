@@ -77,14 +77,14 @@ abstract class ShardStore<H extends MerkleNodeValue, ID extends Comparable> {
 //   static TreeStateType fromValue(int? value) {
 //     return values.firstWhere(
 //       (e) => e.value == value,
-//       orElse: () => throw ItemNotFoundException(name: "TreeStateType", value: value),
+//       orElse: () => throw BuError(DefaultErrorType.notFound, "No matching TreeStateType found for the given value. $value", details: {"name": "TreeStateType", "value": value?.toString()}),
 //     );
 //   }
 
 //   static TreeStateType fromName(String? name) {
 //     return values.firstWhere(
 //       (e) => e.name == name,
-//       orElse: () => throw ItemNotFoundException(name: "TreeStateType", value: name),
+//       orElse: () => throw BuError(DefaultErrorType.notFound, "No matching TreeStateType found for the given value. $name", details: {"name": "TreeStateType", "value": name?.toString()}),
 //     );
 //   }
 // }

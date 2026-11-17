@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+import 'package:zcash_dart/src/error/zcash_error.dart';
+
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'package:zcash_dart/src/merkle/tree/shard_tree.dart';
@@ -5,19 +8,20 @@ import 'package:zcash_dart/src/merkle/store/memory.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/note/src/note_encryption.dart';
-import 'package:zcash_dart/src/sapling/exception/exception.dart';
 import 'package:zcash_dart/src/sapling/transaction/commitment.dart';
 
 class SaplingNode extends MerkleNodeValue {
-  final JubJubNativeFq inner;
+  final JubJubFq inner;
   const SaplingNode(this.inner);
   factory SaplingNode.deserializeJson(Map<String, dynamic> json) =>
       SaplingNode.fromBytes(json.valueAsBytes("inner"));
   factory SaplingNode.fromBytes(List<int> bytes) {
-    return SaplingNode(JubJubNativeFq.fromBytes(bytes));
+    return SaplingNode(JubJubFq.fromBytes(bytes));
   }
   factory SaplingNode.random() {
-    return SaplingNode(JubJubNativeFq.random());
+    return SaplingNode(
+      JubJubFq.fromBytes64(QuickCrypto.generateRandom(length: 64)),
+    );
   }
   factory SaplingNode.fromCmu(SaplingExtractedNoteCommitment cmu) {
     return SaplingNode(cmu.inner);
@@ -39,7 +43,7 @@ class SaplingNode extends MerkleNodeValue {
   }
 
   @override
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.toBytes();
 
   List<bool> toBits() => inner.toBits();
 
@@ -50,17 +54,21 @@ class SaplingNode extends MerkleNodeValue {
 }
 
 class SaplingAnchor with LayoutSerializable, Equality {
-  final JubJubNativeFq inner;
+  final JubJubFq inner;
   const SaplingAnchor(this.inner);
   factory SaplingAnchor.fromBytes(List<int> bytes) {
-    return SaplingAnchor(JubJubNativeFq.fromBytes(bytes));
+    return SaplingAnchor(JubJubFq.fromBytes(bytes));
   }
 
   factory SaplingAnchor.emptyTree() {
     return SaplingAnchor(
-      JubJubNativeFq.nP(
-        BigInt.parse(
-          "28173632385923246415274731176992492615790500778795336173196884897344578175739",
+      JubJubFq.fromBytes(
+        BigintUtils.toBytes(
+          BigInt.parse(
+            "28173632385923246415274731176992492615790500778795336173196884897344578175739",
+          ),
+          length: 32,
+          byteOrder: Endian.little,
         ),
       ),
     );
@@ -85,7 +93,7 @@ class SaplingAnchor with LayoutSerializable, Equality {
     return {"inner": inner.toBytes()};
   }
 
-  List<int> toBytes() => inner.toBytes();
+  BuBytes toBytes() => inner.toBytes();
   @override
   List<dynamic> get variables => [inner];
 }
@@ -173,7 +181,7 @@ class SaplingMerklePath extends MerklePath<SaplingNode>
 
 class SaplingMerkleHashable extends Hashable<SaplingNode> {
   SaplingMerkleHashable(this.hash);
-  final PedersenHashNative hash;
+  final PedersenHash hash;
   late final List<SaplingNode> emptyRoots = _buildEmptyRoots();
 
   List<SaplingNode> _buildEmptyRoots() {
@@ -203,7 +211,7 @@ class SaplingMerkleHashable extends Hashable<SaplingNode> {
 
   @override
   SaplingNode emptyLeaf() {
-    return SaplingNode(JubJubNativeFq.one());
+    return SaplingNode(JubJubFq.one);
   }
 
   @override
@@ -363,7 +371,7 @@ class DisabledSaplingMerkleHashable extends Hashable<SaplingNode> {
     required SaplingNode a,
     required SaplingNode b,
   }) {
-    throw SaplingException.operationFailed(
+    throw ZcashErrors.saplingFailed(
       "emptyLeaf",
       reason: "Operation not supported.",
     );
@@ -371,7 +379,7 @@ class DisabledSaplingMerkleHashable extends Hashable<SaplingNode> {
 
   @override
   SaplingNode emptyLeaf() {
-    throw SaplingException.operationFailed(
+    throw ZcashErrors.saplingFailed(
       "emptyLeaf",
       reason: "Operation not supported.",
     );

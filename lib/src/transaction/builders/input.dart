@@ -13,12 +13,35 @@ mixin TransactionBuilderInputContoller on BaseTransactionBuilder
       outputsModifiable,
     ) async {
       if (!shieldedModifiable) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addOutput",
           reason: "Shielded inputs are marked as unmodifiable by the builder.",
         );
       }
       return orchard.addSpend(fvk: fvk, note: note, merklePath: merklePath);
+    });
+  }
+
+  /// Adds an Ironwood-pool spend (NU6.3). Same key and note types as the
+  /// Orchard pool; pool membership is selected by this method. Cross-pool
+  /// spends (Ironwood notes) cannot go through [addOrchardSpend].
+  Future<int> addIronwoodSpend({
+    required OrchardFullViewingKey fvk,
+    required OrchardNote note,
+    required OrchardMerklePath merklePath,
+  }) async {
+    return await _modify((
+      shieldedModifiable,
+      inputsModifiable,
+      outputsModifiable,
+    ) async {
+      if (!shieldedModifiable) {
+        throw ZcashErrors.txBuilderFailed(
+          "addOutput",
+          reason: "Shielded inputs are marked as unmodifiable by the builder.",
+        );
+      }
+      return ironwood.addSpend(fvk: fvk, note: note, merklePath: merklePath);
     });
   }
 
@@ -34,7 +57,7 @@ mixin TransactionBuilderInputContoller on BaseTransactionBuilder
       outputsModifiable,
     ) async {
       if (!shieldedModifiable) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addOutput",
           reason: "Shielded inputs are marked as unmodifiable by the builder.",
         );
@@ -55,7 +78,7 @@ mixin TransactionBuilderInputContoller on BaseTransactionBuilder
       outputsModifiable,
     ) async {
       if (!inputsModifiable) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addOutput",
           reason:
               "transparent inputs are marked as unmodifiable by the builder.",

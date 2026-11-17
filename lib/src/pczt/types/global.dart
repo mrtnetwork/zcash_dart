@@ -1,5 +1,4 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/pczt/exception/exception.dart';
 import 'package:zcash_dart/src/pczt/constants/cosntants.dart';
 import 'package:zcash_dart/src/pczt/pczt/utils.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
@@ -31,7 +30,19 @@ class PcztGlobal with LayoutSerializable, Equality {
     return PcztGlobal(
       txVersion: TxVersionType.v5.txVesion,
       versionGroupId: TxVersionType.v5.groupId!,
-      consensusBranchId: ZcashNetworkProtocol.nu6_1.branchId,
+      consensusBranchId: ZcashNetworkProtocol.nu6_3.branchId,
+      expiryHeight: expiryHeight,
+      coinType: network.config().coinIdx,
+      txModifiable: PcztConstants.initialTxModifiable,
+    );
+  }
+
+  /// Default global for Ironwood (V6) transactions.
+  factory PcztGlobal.defaultV6Global(ZcashNetwork network, int expiryHeight) {
+    return PcztGlobal(
+      txVersion: TxVersionType.v6.txVesion,
+      versionGroupId: TxVersionType.v6.groupId!,
+      consensusBranchId: ZcashNetworkProtocol.nu6_3.branchId,
       expiryHeight: expiryHeight,
       coinType: network.config().coinIdx,
       txModifiable: PcztConstants.initialTxModifiable,
@@ -72,7 +83,7 @@ class PcztGlobal with LayoutSerializable, Equality {
       LayoutConst.lebU32(property: "expiry_height"),
       LayoutConst.lebU32(property: "coin_type"),
       LayoutConst.u8(property: "tx_modifiable"),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -170,7 +181,7 @@ class PcztGlobal with LayoutSerializable, Equality {
       versionGroupId,
     );
     if (version == null) {
-      throw PcztException.failed(
+      throw ZcashErrors.pcztFailed(
         "getTxVersion",
         reason: "Unsupported transaction version.",
       );
@@ -182,7 +193,10 @@ class PcztGlobal with LayoutSerializable, Equality {
     try {
       return ZcashNetworkProtocol.fromId(consensusBranchId);
     } catch (_) {
-      throw PcztException.failed("getTxVersion", reason: "Unknown branch id.");
+      throw ZcashErrors.pcztFailed(
+        "getTxVersion",
+        reason: "Unknown branch id.",
+      );
     }
   }
 

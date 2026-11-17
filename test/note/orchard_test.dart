@@ -5,36 +5,39 @@ import 'package:zcash_dart/zcash.dart';
 
 import '../utils.dart';
 
-void main() {
+void noteOrchardTest() {
   _test(null);
+}
+
+void orchardTest() {
+  ZcashTestApi.runTest(noteOrchardTest, "Orchard");
+}
+
+void main() {
+  ZcashTestApi.runTest(orchardTest, "Orchard");
 }
 
 void _test(DefaultZcashCryptoContext? context) {
   test("Orchard Note encrypt/decrypt", () {
-    final domain = OrchardDomainNative(
-      context ?? DefaultZcashCryptoContext.lazy(),
-    );
+    final domain = OrchardDomain(context ?? DefaultZcashCryptoContext.lazy());
     for (final json in _tVector.takeShuffle()) {
       final tv = _TestVector.fromJson(json);
       final ivk = OrchardIncomingViewingKey.fromBytes(tv.incomingViewingKey);
       final ovk = OrchardOutgoingViewingKey(tv.ovk);
       final d = Diversifier(tv.defaultD);
       final pkD = OrchardDiversifiedTransmissionKey.fromBytes(tv.defaultPkd);
-      final cvNet = OrchardValueCommitment(
-        PallasNativePoint.fromBytes(tv.cvNet),
-      );
+      final cvNet = OrchardValueCommitment.fromBytes(tv.cvNet);
       final rho = OrchardRho.fromBytes(tv.nfOld);
       final cmx = OrchardExtractedNoteCommitment.fromBytes(tv.cmx);
       final esk = tv.esk;
       final ephemeralKey = EphemeralKeyBytes(tv.ephemeralKey);
       final value = ZAmount(BigInt.parse(tv.v));
       final rSeed = tv.rseed;
-      final sharedSecret = OrchardUtils.kaOrchardNative(
-        base: pkD.toPoint(),
-        sk: VestaNativeFq.fromBytes(esk),
+      final sharedSecret = OrchardUtils.kaOrchardBytes(
+        base: pkD.toPoint().toBytes(),
+        sk: esk,
       );
-      // domain.kaAgreeDec(VestaNativeFq.fromBytes(esk), pkD.point);
-      expect(sharedSecret.toBytes(), tv.sharedSecret);
+      expect(sharedSecret, tv.sharedSecret);
       final kEnc = domain.kdf(sharedSecret, ephemeralKey);
       expect(kEnc, tv.kEnc);
       final ock = domain.deriveOck(ovk, cvNet, cmx, ephemeralKey);
@@ -49,7 +52,7 @@ void _test(DefaultZcashCryptoContext? context) {
       expect(domain.cmstar(note), cmx);
       final action = OrchardAction(
         nf: OrchardNullifier(rho.inner),
-        rk: OrchardSpendVerificationKey(PallasNativePoint.random()),
+        rk: RedPallasSpendPublicKey.fromBytes(PallasPoint.random().toBytes()),
         cmx: cmx,
         encryptedNote: OrchardTransmittedNoteCiphertext(
           epkBytes: ephemeralKey.inner,

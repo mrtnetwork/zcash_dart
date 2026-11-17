@@ -1,33 +1,42 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
 
-void main() {
+import '../utils.dart';
+
+void redjubjubTest() {
   _testVecotr_();
   _bindingVerification();
   _spendAuthVerification();
 }
 
+void reddsaRedjubjubTest() {
+  ZcashTestApi.runTest(redjubjubTest, "Redjubjub");
+}
+
+void main() {
+  ZcashTestApi.runTest(reddsaRedjubjubTest, "Redjubjub");
+}
+
 void _testVecotr_() {
-  QuickCrypto.setupPRNG(ChaCha20Rng(List<int>.filled(32, 12)));
+  final rng = ChaCha20Rng(List<int>.filled(32, 12));
   test("RedJubJub testvector", () {
     for (final json in _tVector) {
       final tv = _TestVector.fromJson(json);
-      final sk = SaplingSpendAuthorizingKey.fromBytes(tv.sk);
+      final sk = RedJubJubSpendPrivateKey.fromBytes(tv.sk);
       if (tv.rBytes != null && tv.sBytes != null) {
-        final sign = sk.sign(tv.m);
+        final rand = rng.nextBytes(80);
+        final sign = sk.sign(RedJubJubSigningParams(tv.m, random: rand));
         expect(sign.rBytes, tv.rBytes);
-        expect(sign.sBytes, tv.sBytes);
       }
 
-      final vk = SaplingSpendVerificationKey.fromBytes(tv.vk);
-      final rvk = SaplingSpendVerificationKey.fromBytes(tv.rvk);
+      final vk = RedJubJubSpendPublicKey.fromBytes(tv.vk);
+      final rvk = RedJubJubSpendPublicKey.fromBytes(tv.rvk);
       final sig = ReddsaSignature.fromBytes(tv.sig);
       final rsig = ReddsaSignature.fromBytes(tv.rsig);
-      final alpha = JubJubFr.fromBytes(tv.alpha);
-      expect(sk.randomize(alpha).toBytes(), tv.rsk);
-      expect(vk.randomize(JubJubNativeFr.fromBytes(alpha.toBytes())), rvk);
-      expect(vk.verifySignature(sig, tv.m), true);
-      expect(rvk.verifySignature(rsig, tv.m), true);
+      expect(sk.randomize(tv.alpha).toBytes(), tv.rsk);
+      expect(vk.randomize(tv.alpha), rvk);
+      expect(vk.verify(RedJubJubVerifyingParams(tv.m, sig)), true);
+      expect(rvk.verify(RedJubJubVerifyingParams(tv.m, rsig)), true);
     }
   });
 }
@@ -38,18 +47,18 @@ void _spendAuthVerification() {
       final s = BytesUtils.fromHexString(t[1]);
       final vk = BytesUtils.fromHexString(t[2]);
       final msg = BytesUtils.fromHexString(t[0]);
-      final k = SaplingSpendVerificationKey.fromBytes(vk);
+      final k = RedJubJubSpendPublicKey.fromBytes(vk);
       final signature = ReddsaSignature.fromBytes(s);
-      expect(k.verifySignature(signature, msg), true);
+      expect(k.verify(RedJubJubVerifyingParams(msg, signature)), true);
     }
     final msg = BytesUtils.fromHexString(_spendAuth[0][0]);
     for (final t in _spendAuth.skip(1)) {
       final s = BytesUtils.fromHexString(t[1]);
       final vk = BytesUtils.fromHexString(t[2]);
 
-      final k = SaplingSpendVerificationKey.fromBytes(vk);
+      final k = RedJubJubSpendPublicKey.fromBytes(vk);
       final signature = ReddsaSignature.fromBytes(s);
-      expect(k.verifySignature(signature, msg), false);
+      expect(k.verify(RedJubJubVerifyingParams(msg, signature)), false);
     }
   });
 }
@@ -60,18 +69,18 @@ void _bindingVerification() {
       final s = BytesUtils.fromHexString(t[1]);
       final vk = BytesUtils.fromHexString(t[2]);
       final msg = BytesUtils.fromHexString(t[0]);
-      final k = SaplingBindingVerificationKey.fromBytes(vk);
+      final k = RedJubJubBindingPublicKey.fromBytes(vk);
       final signature = ReddsaSignature.fromBytes(s);
-      expect(k.verifySignature(signature, msg), true);
+      expect(k.verify(RedJubJubVerifyingParams(msg, signature)), true);
     }
     final msg = BytesUtils.fromHexString(_binding[0][0]);
     for (final t in _binding.skip(1)) {
       final s = BytesUtils.fromHexString(t[1]);
       final vk = BytesUtils.fromHexString(t[2]);
 
-      final k = SaplingBindingVerificationKey.fromBytes(vk);
+      final k = RedJubJubBindingPublicKey.fromBytes(vk);
       final signature = ReddsaSignature.fromBytes(s);
-      expect(k.verifySignature(signature, msg), false);
+      expect(k.verify(RedJubJubVerifyingParams(msg, signature)), false);
     }
   });
 }

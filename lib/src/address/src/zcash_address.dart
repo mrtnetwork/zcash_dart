@@ -1,6 +1,6 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/address/exception/exception.dart';
 import 'package:zcash_dart/src/address/src/unified.dart';
 import 'package:zcash_dart/src/transparent/keys/public_key.dart';
 
@@ -21,17 +21,23 @@ abstract class ZcashAddress
   /// this show only supported supportedProtocols. (transparent, orchard, sapling)
   final List<ZcashProtocol> supportedProtocols;
 
+  bool hasShield() => supportedProtocols.any((e) => e.sheilded);
+
   /// Converts this address to another network.
   ZcashAddress toNetwork(ZcashNetwork network);
   T cast<T extends ZcashAddress>() {
     if (this is! T) {
-      throw CastFailedException<T>(value: this);
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "T", "value": runtimeType.toString()},
+      );
     }
     return this as T;
   }
 
   /// encode address as bytes.
-  List<int> toBytes();
+  BuBytes toBytes();
 
   const ZcashAddress.internal({
     required this.addressType,
@@ -50,7 +56,7 @@ abstract class ZcashAddress
       final addr = ZcashAddrDecoder().decodeAddr(address);
 
       if (network != null && network != addr.network) {
-        throw ZcashAddressException.mismatchNetwork(
+        throw ZcashErrors.mismatchNetwork(
           network: addr.network,
           expected: network,
         );
@@ -168,7 +174,7 @@ abstract class ZcashAddress
   ];
 
   @override
-  List<int> encodeAsIAddress() {
+  BuBytes encodeAsIAddress() {
     return toCbor().encode();
   }
 
@@ -201,7 +207,8 @@ abstract class ZcashTransparentAddress extends ZcashAddress
         type: P2shAddressType.p2pkInP2sh,
       ),
       _ =>
-        throw ZcashAddressException(
+        throw BuError(
+          DefaultErrorType.invalidAddress,
           "Invalid transparent address encoding bytes.",
         ),
     };
@@ -215,7 +222,7 @@ abstract class ZcashTransparentAddress extends ZcashAddress
 
 /// Represents a Zcash Sprout address.
 class SproutAddress extends ZcashAddress {
-  final List<int> data;
+  final BuBytes data;
   SproutAddress._({
     required List<int> data,
     required super.network,
@@ -264,7 +271,7 @@ class SproutAddress extends ZcashAddress {
   }
 
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return data.clone();
   }
 
@@ -278,7 +285,7 @@ class SproutAddress extends ZcashAddress {
 
 /// Represents a Zcash Sapling address.
 class SaplingAddress extends ZcashAddress {
-  final List<int> data;
+  final BuBytes data;
   SaplingAddress._({
     required List<int> data,
     required super.network,
@@ -331,7 +338,7 @@ class SaplingAddress extends ZcashAddress {
   }
 
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return data.clone();
   }
 
@@ -355,7 +362,7 @@ class SaplingAddress extends ZcashAddress {
 
 /// Represents a Zcash P2PKH address.
 class ZcashP2pkhAddress extends ZcashTransparentAddress {
-  final List<int> data;
+  final BuBytes data;
   ZcashP2pkhAddress._({
     required List<int> data,
     required super.network,
@@ -400,7 +407,7 @@ class ZcashP2pkhAddress extends ZcashTransparentAddress {
     );
   }
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return data.clone();
   }
 
@@ -454,7 +461,7 @@ class ZcashP2pkhAddress extends ZcashTransparentAddress {
 
 /// Represents a Zcash P2SH address.
 class ZcashP2shAddress extends ZcashTransparentAddress {
-  final List<int> data;
+  final BuBytes data;
   ZcashP2shAddress._({
     required List<int> data,
     required super.network,
@@ -481,7 +488,10 @@ class ZcashP2shAddress extends ZcashTransparentAddress {
       case P2shAddressType.p2pkInP2sh:
         break;
       default:
-        throw ZcashAddressException("Invalid p2sh address type.");
+        throw BuError(
+          DefaultErrorType.invalidArgument,
+          "Invalid p2sh address type.",
+        );
     }
     return ZcashP2shAddress._(
       data: bytes,
@@ -508,7 +518,10 @@ class ZcashP2shAddress extends ZcashTransparentAddress {
       case P2shAddressType.p2pkInP2sh:
         return pk.toP2pkInP2sh();
       default:
-        throw ZcashAddressException("Invalid p2sh address type.");
+        throw BuError(
+          DefaultErrorType.invalidArgument,
+          "Invalid p2sh address type.",
+        );
     }
   }
   factory ZcashP2shAddress.fromScript({
@@ -521,7 +534,10 @@ class ZcashP2shAddress extends ZcashTransparentAddress {
       case P2shAddressType.p2pkInP2sh:
         break;
       default:
-        throw ZcashAddressException("Unsupported p2sh address type.");
+        throw BuError(
+          DefaultErrorType.unsupported,
+          "Unsupported p2sh address type.",
+        );
     }
     final bytes = BitcoinAddressUtils.scriptToHash160Bytes(script);
     return ZcashP2shAddress._(
@@ -543,7 +559,10 @@ class ZcashP2shAddress extends ZcashTransparentAddress {
     P2shAddressType type = P2shAddressType.p2pkInP2sh,
   }) {
     if (type.isP2sh32 || type.withToken) {
-      throw ZcashAddressException("Invalid p2sh address type.");
+      throw BuError(
+        DefaultErrorType.invalidArgument,
+        "Invalid p2sh address type.",
+      );
     }
     final addr = ZcashAddrDecoder().decodeAddr(
       address,
@@ -558,7 +577,7 @@ class ZcashP2shAddress extends ZcashTransparentAddress {
     );
   }
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return data.clone();
   }
 
@@ -618,7 +637,7 @@ class ZcashP2shAddress extends ZcashTransparentAddress {
 
 /// Represents a Zcash Tex address.
 class TexAddress extends ZcashAddress {
-  final List<int> data;
+  final BuBytes data;
   TexAddress._({
     required List<int> data,
     required super.network,
@@ -674,7 +693,7 @@ class TexAddress extends ZcashAddress {
   }
 
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return data.clone();
   }
 }

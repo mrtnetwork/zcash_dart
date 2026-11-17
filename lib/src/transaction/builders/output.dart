@@ -5,7 +5,7 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
   List<int> _getMemo(List<int>? memo) {
     if (memo == null) return List.filled(NoteEncryptionConst.memoLength, 0);
     if (memo.length > NoteEncryptionConst.memoLength) {
-      throw TransactionBuilderException.failed("addOutput", reason: "");
+      throw ZcashErrors.txBuilderFailed("addOutput", reason: "");
     }
     if (memo.length == NoteEncryptionConst.memoLength) {
       return memo;
@@ -25,14 +25,14 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
     switch (target) {
       case TransparentOutputTarget _:
         if (!outputsModifiable) {
-          throw TransactionBuilderException.failed(
+          throw ZcashErrors.txBuilderFailed(
             "addOutput",
             reason:
                 "Transparent outputs are marked as unmodifiable by the builder.",
           );
         }
         if (shieldMemo != null) {
-          throw TransactionBuilderException.failed(
+          throw ZcashErrors.txBuilderFailed(
             "addOutput",
             reason: "Memo not allowed in transparent output.",
           );
@@ -40,7 +40,7 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
         break;
       case SaplingOutputTarget _:
         if (!shieldedModifiable) {
-          throw TransactionBuilderException.failed(
+          throw ZcashErrors.txBuilderFailed(
             "addOutput",
             reason:
                 "Shielded outputs are marked as unmodifiable by the builder.",
@@ -49,7 +49,16 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
         break;
       case OrchardOutputTarget _:
         if (!shieldedModifiable) {
-          throw TransactionBuilderException.failed(
+          throw ZcashErrors.txBuilderFailed(
+            "addOutput",
+            reason:
+                "Shielded outputs are marked as unmodifiable by the builder.",
+          );
+        }
+        break;
+      case IronwoodOutputTarget _:
+        if (!shieldedModifiable) {
+          throw ZcashErrors.txBuilderFailed(
             "addOutput",
             reason:
                 "Shielded outputs are marked as unmodifiable by the builder.",
@@ -78,7 +87,7 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
         final receipt = target.recipient;
         if (receipt case TransparentNullDataOutput _) {
           if (!amount.isZero()) {
-            throw TransactionBuilderException.failed(
+            throw ZcashErrors.txBuilderFailed(
               "addOutput",
               reason: "Value for null data output must be zero.",
             );
@@ -93,7 +102,7 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
             ),
           );
         }
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addOutput",
           reason: "Invalid transport output target.",
         );
@@ -105,6 +114,12 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
         );
       case OrchardOutputTarget target:
         return orchard.addOutput(
+          recipient: target.recipient,
+          value: amount.asZatoshi(),
+          memo: _getMemo(shieldMemo),
+        );
+      case IronwoodOutputTarget target:
+        return ironwood.addOutput(
           recipient: target.recipient,
           value: amount.asZatoshi(),
           memo: _getMemo(shieldMemo),
@@ -129,6 +144,71 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
     );
   }
 
+  Future<bool> _addChangeOutput({
+    required OrchardBuilder builder,
+    required OrchardFullViewingKey fvk,
+    required OrchardAddress recipient,
+    required ZAmount amount,
+    Bip44Changes? scope,
+    List<int>? shieldMemo,
+  }) async {
+    return await _modify((
+      shieldedModifiable,
+      inputsModifiable,
+      outputsModifiable,
+    ) async {
+      if (!shieldedModifiable) {
+        throw ZcashErrors.txBuilderFailed(
+          "addChangeOutput",
+          reason: "Shielded outputs are marked as unmodifiable by the builder.",
+        );
+      }
+      return builder.addChangeOutput(
+        fvk: fvk,
+        recipient: recipient,
+        value: amount.asZatoshi(),
+        memo: _getMemo(shieldMemo),
+        scope: scope,
+      );
+    });
+  }
+
+  /// Adds a wallet-controlled Orchard change output. Required for
+  /// retaining Orchard funds under NU6.3, where plain outputs are
+  /// rejected in cross-address-restricted bundles. Returns whether the
+  /// change was recorded (`false` when skipped as zero-valued).
+  Future<bool> addOrchardChangeOutput({
+    required OrchardFullViewingKey fvk,
+    required OrchardAddress recipient,
+    required ZAmount amount,
+    Bip44Changes? scope,
+    List<int>? shieldMemo,
+  }) => _addChangeOutput(
+    builder: orchard,
+    fvk: fvk,
+    recipient: recipient,
+    amount: amount,
+    scope: scope,
+    shieldMemo: shieldMemo,
+  );
+
+  /// Adds a wallet-controlled Ironwood change output. Returns whether
+  /// the change was recorded (`false` when skipped as zero-valued).
+  Future<bool> addIronwoodChangeOutput({
+    required OrchardFullViewingKey fvk,
+    required OrchardAddress recipient,
+    required ZAmount amount,
+    Bip44Changes? scope,
+    List<int>? shieldMemo,
+  }) => _addChangeOutput(
+    builder: ironwood,
+    fvk: fvk,
+    recipient: recipient,
+    amount: amount,
+    scope: scope,
+    shieldMemo: shieldMemo,
+  );
+
   Future<ZAmount> addChange({
     required TransactionOutputTarget target,
     List<int>? shieldMemo,
@@ -140,13 +220,14 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
     ) async {
       ZAmount value = valueBalance();
       if (value.value <= BigInt.zero) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addChange",
           reason: "No positive change is available to add.",
         );
       }
       int saplingOutput = sapling.outputs.length;
-      int orchardOutput = orchard.outputs.length;
+      int orchardOutput = orchard.outputs.length + orchard.changes.length;
+      int ironwoodOutput = ironwood.outputs.length + ironwood.changes.length;
       int transparentOutput = transparent.outputSizes();
       switch (target) {
         case TransparentOutputTarget target:
@@ -160,7 +241,20 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
         case OrchardOutputTarget _:
           orchardOutput += 1;
           break;
+        case IronwoodOutputTarget _:
+          ironwoodOutput += 1;
+          break;
       }
+      final numOrchardActions = orchard.bundleType.numActions(
+        numSpends: orchard.spends.length,
+        numOutputs: orchardOutput,
+        crossAddressEnabled: !orchard.isRestricted,
+      );
+      final numIronwoodActions = ironwood.bundleType.numActions(
+        numSpends: ironwood.spends.length,
+        numOutputs: ironwoodOutput,
+        crossAddressEnabled: !ironwood.isRestricted,
+      );
       final fee = feeBuilder.feeRequired(
         network: network,
         targetHeight: targetHeight,
@@ -171,14 +265,12 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
           numSpends: sapling.spends.length,
           numOutputs: saplingOutput,
         ),
-        orchardActionCount: orchard.bundleType.numActions(
-          numSpends: orchard.spends.length,
-          numOutputs: orchardOutput,
-        ),
+        orchardActionCount: numOrchardActions,
+        ironwoodActionCount: numIronwoodActions,
       );
       value -= fee;
       if (value.isNegative()) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addChange",
           reason: "Insufficient balance to cover the required transaction fee.",
           details: {"requiredFee": fee.toString()},
@@ -195,7 +287,7 @@ mixin TransactionBuilderOutputContoller on BaseTransactionBuilder
       );
       value = valueBalance() - fee;
       if (!value.isZero()) {
-        throw TransactionBuilderException.failed(
+        throw ZcashErrors.txBuilderFailed(
           "addChange",
           reason:
               "Internal builder invariant violated: change was not fully consumed.",

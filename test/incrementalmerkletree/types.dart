@@ -20,7 +20,7 @@ class SerialzableString extends MerkleNodeValue {
   }
 
   @override
-  List<int> toBytes() {
+  BuBytes toBytes() {
     throw UnimplementedError();
   }
 }

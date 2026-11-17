@@ -1,5 +1,5 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/transaction/exception/exception.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/transaction/types/bundle.dart';
 
 enum SproutProofType {
@@ -11,7 +11,12 @@ enum SproutProofType {
   static SproutProofType fromLength(int? length) {
     return values.firstWhere(
       (e) => e.length == length,
-      orElse: () => throw ItemNotFoundException(value: length),
+      orElse:
+          () =>
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching item found for the given value. $length",
+              ),
     );
   }
 }
@@ -282,8 +287,7 @@ class SproutJsDescription with LayoutSerializable {
               property: property,
             ),
             SproutProofType.pHGR => SproutProofPHGR.layout(property: property),
-            _ =>
-              throw ZTransactionSerializationError.serializationFailed("proof"),
+            _ => throw ZcashErrors.txSerializationFailed("proof"),
           };
         },
         property: "proof",

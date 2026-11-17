@@ -8,9 +8,10 @@ ZcashWalletdProvider getProvider({required String url, required int port}) {
     url,
     port: port,
     options: ChannelOptions(
-      credentials: port == 443
-          ? ChannelCredentials.secure()
-          : ChannelCredentials.insecure(),
+      credentials:
+          port == 443
+              ? ChannelCredentials.secure()
+              : ChannelCredentials.insecure(),
     ),
   );
 

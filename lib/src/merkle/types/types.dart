@@ -1,6 +1,6 @@
 import 'dart:collection';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/merkle/exception/exception.dart';
 import 'package:zcash_dart/src/merkle/store/store.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'package:zcash_dart/src/serialization/tags/tags.dart';
@@ -107,7 +107,7 @@ class TreeLevel with Equality implements Comparable<TreeLevel> {
   TreeLevel operator +(int other) {
     var result = value + other;
     if (result > BinaryOps.mask8) {
-      throw MerkleTreeException.failed(
+      throw ZcashErrors.merkleFailed(
         "TreeLevel.Addition",
         reason: 'Addition level failed. overflow.',
       );
@@ -118,7 +118,7 @@ class TreeLevel with Equality implements Comparable<TreeLevel> {
   // Subtraction operator
   TreeLevel operator -(int other) {
     if (value < other) {
-      throw MerkleTreeException.failed(
+      throw ZcashErrors.merkleFailed(
         "TreeLevel.Subtraction",
         reason: 'Subtraction level failed. overflow.',
       );
@@ -176,10 +176,10 @@ class NodeAddress with Equality, LayoutSerializable, CborTagSerializable {
     return positionRangeEnd() - 1;
   }
 
-  (NodeAddress, NodeAddress) children({MerkleTreeException? error}) {
+  (NodeAddress, NodeAddress) children({BuError? error}) {
     if (this.level == TreeLevel.zero) {
       throw error ??
-          MerkleTreeException.failed(
+          ZcashErrors.merkleFailed(
             "NodeAddress.children",
             reason: 'Zero level does not have any children.',
           );
@@ -343,7 +343,12 @@ enum MarkingState {
   const MarkingState(this.value);
   static MarkingState fromValue(int? value) => values.firstWhere(
     (e) => e.value == value,
-    orElse: () => throw ItemNotFoundException(value: value),
+    orElse:
+        () =>
+            throw BuError(
+              DefaultErrorType.notFound,
+              "No matching item found for the given value. $value",
+            ),
   );
 }
 
@@ -357,7 +362,12 @@ enum RetentionType {
   const RetentionType(this.value);
   static RetentionType fromValue(int? value) => values.firstWhere(
     (e) => e.value == value,
-    orElse: () => throw ItemNotFoundException(value: value),
+    orElse:
+        () =>
+            throw BuError(
+              DefaultErrorType.notFound,
+              "No matching item found for the given value. $value",
+            ),
   );
 }
 
@@ -418,7 +428,7 @@ class RetentionReference<C extends Object> extends Retention<C> {
 
 abstract class MerkleNodeValue with LayoutSerializable, Equality {
   const MerkleNodeValue();
-  List<int> toBytes();
+  BuBytes toBytes();
 }
 
 abstract mixin class Hashable<HASH extends MerkleNodeValue> {
@@ -541,14 +551,26 @@ enum NodeType {
   static NodeType fromValue(int? value) {
     return values.firstWhere(
       (e) => e.value == value,
-      orElse: () => throw ItemNotFoundException(value: value, name: "NodeType"),
+      orElse:
+          () =>
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching NodeType found for the given value. $value",
+                details: {"name": "NodeType", "value": value?.toString()},
+              ),
     );
   }
 
   static NodeType fromName(String? name) {
     return values.firstWhere(
       (e) => e.name == name,
-      orElse: () => throw ItemNotFoundException(value: name, name: "NodeType"),
+      orElse:
+          () =>
+              throw BuError(
+                DefaultErrorType.notFound,
+                "No matching NodeType found for the given value. $name",
+                details: {"name": "NodeType", "value": name?.toString()},
+              ),
     );
   }
 }
@@ -816,7 +838,7 @@ class NonEmptyFrontier<H extends MerkleNodeValue>
     if (ommers.length == expectedOmmers) {
       return NonEmptyFrontier(position: position, leaf: leaf, ommers: ommers);
     } else {
-      throw MerkleFrontierError.failed(
+      throw ZcashErrors.merkleFrontierFailed(
         name: "NonEmptyFrontier.fromParts",
         reason: "Position mismatch.",
       );
@@ -898,7 +920,7 @@ abstract class CommitmentTree<H extends MerkleNodeValue>
     } else if (left != null && right != null) {
       acc = 2;
     } else {
-      throw MerkleFrontierError.failed(
+      throw ZcashErrors.merkleFrontierFailed(
         name: "CommitmentTree.size",
         reason: 'Unreachable state.',
       );
@@ -935,7 +957,7 @@ abstract class CommitmentTree<H extends MerkleNodeValue>
         leaf = right as H;
         finalOmmers = [left as H, ...ommers];
       } else {
-        throw MerkleFrontierError.failed(
+        throw ZcashErrors.merkleFrontierFailed(
           name: "toFrontier",
           reason: 'Unreachable state.',
         );
@@ -947,7 +969,7 @@ abstract class CommitmentTree<H extends MerkleNodeValue>
         finalOmmers,
       );
       if (frontier.position.rootLevel() > TreeLevel(depth)) {
-        throw MerkleFrontierError.failed(
+        throw ZcashErrors.merkleFrontierFailed(
           name: "toFrontier",
           reason: "max depth exceeded",
         );

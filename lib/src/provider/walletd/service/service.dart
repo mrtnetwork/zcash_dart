@@ -1,4 +1,4 @@
-import 'package:blockchain_utils/service/service.dart';
+import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/provider/walletd/core/request.dart';
 
 mixin ZcashWalletdServiceProvider
@@ -27,7 +27,10 @@ mixin ZcashWalletdServiceProvider
     BaseServiceRequestParams params, {
     Duration? timeout,
   }) {
-    throw UnsupportedError("This service only supports gRPC requests.");
+    throw BuError(
+      DefaultErrorType.unsupported,
+      "This service only supports gRPC requests.",
+    );
   }
 
   @override
@@ -42,7 +45,8 @@ mixin ZcashWalletdServiceProvider
     request,
     Duration? timeout,
   }) {
-    throw UnsupportedError(
+    throw BuError(
+      DefaultErrorType.unsupported,
       "Subscribtion requests are not supported by this service.",
     );
   }

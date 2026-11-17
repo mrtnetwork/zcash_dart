@@ -1,5 +1,4 @@
 import 'package:zcash_dart/src/provider/walletd/core/request.dart';
-import 'package:zcash_dart/src/provider/walletd/exception/exception.dart';
 import 'package:zcash_dart/src/provider/walletd/extension/extensions.dart';
 import 'package:zcash_dart/src/provider/walletd/proto_messages/cash/z/wallet/sdk/rpc/src/service.dart';
 import 'package:zcash_dart/src/transparent/transparent.dart';
@@ -20,7 +19,7 @@ class WalletdRequestGetAddressUtxosWithAccountOwner
   }
 
   @override
-  List<TransparentUtxoWithOwner> onResonse(List<int> result) {
+  List<TransparentUtxoWithOwner> onResponse(List<int> result) {
     if (accounts.isEmpty) return [];
     List<TransparentUtxoWithOwner> accountUtxos = [];
     final utxos =
@@ -28,7 +27,7 @@ class WalletdRequestGetAddressUtxosWithAccountOwner
     for (final i in utxos) {
       final address = i.address;
       if (address == null && accounts.length != 1) {
-        throw WalletdException.failed(
+        throw ZcashErrors.walletdFailed(
           "GetAddressUtxos",
           reason: "Missing utxo address.",
         );
@@ -41,7 +40,7 @@ class WalletdRequestGetAddressUtxosWithAccountOwner
                 (e) => e.address.address == address,
                 orElse:
                     () =>
-                        throw WalletdException.failed(
+                        throw ZcashErrors.walletdFailed(
                           "GetAddressUtxos",
                           reason: "Invalid utxo address.",
                         ),

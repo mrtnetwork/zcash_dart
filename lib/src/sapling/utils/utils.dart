@@ -1,4 +1,5 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 
 typedef SubgroupPoint = JubJubPoint;
@@ -15,13 +16,226 @@ class SaplingUtils {
     );
   }
 
-  static JubJubNativePoint mixingPedersenHash(
-    JubJubNativePoint cm,
-    int position,
-  ) {
-    return cm +
-        (nullifierPositionGeneratorNative *
-            JubJubNativeFr(BigInt.from(position)));
+  /// Consensus JubJub generators as compressed bytes (see
+  /// `generatePedersenHashExpTable` / zcash spec §5.4.8). Bytes avoid
+  /// constructing curve points for every `api.jubjub.mult/add` call.
+  static const List<int> valueCommitmentValueGeneratorBytes = [
+    215,
+    200,
+    103,
+    6,
+    245,
+    129,
+    122,
+    167,
+    24,
+    205,
+    28,
+    250,
+    208,
+    50,
+    51,
+    188,
+    214,
+    74,
+    119,
+    137,
+    253,
+    148,
+    34,
+    211,
+    177,
+    122,
+    246,
+    130,
+    58,
+    126,
+    106,
+    198,
+  ];
+  static const List<int> valueCommitmentRandomnessGeneratorBytes = [
+    139,
+    106,
+    11,
+    56,
+    185,
+    250,
+    174,
+    60,
+    59,
+    128,
+    59,
+    71,
+    176,
+    241,
+    70,
+    173,
+    80,
+    171,
+    34,
+    30,
+    110,
+    42,
+    251,
+    230,
+    219,
+    222,
+    69,
+    203,
+    169,
+    211,
+    129,
+    237,
+  ];
+  static const List<int> proofGenerationKeyGeneratorBytes = [
+    231,
+    232,
+    93,
+    224,
+    247,
+    249,
+    122,
+    70,
+    210,
+    73,
+    161,
+    245,
+    234,
+    81,
+    223,
+    80,
+    204,
+    72,
+    73,
+    15,
+    132,
+    1,
+    201,
+    222,
+    122,
+    42,
+    223,
+    24,
+    7,
+    209,
+    182,
+    212,
+  ];
+  static const List<int> nullifierPositionGeneratorBytes = [
+    101,
+    0,
+    43,
+    199,
+    54,
+    250,
+    247,
+    163,
+    66,
+    46,
+    255,
+    255,
+    232,
+    184,
+    85,
+    225,
+    143,
+    186,
+    150,
+    160,
+    21,
+    138,
+    158,
+    252,
+    165,
+    132,
+    191,
+    64,
+    84,
+    157,
+    54,
+    225,
+  ];
+  static const List<int> spendingKeyGeneratorBytes = [
+    48,
+    181,
+    242,
+    170,
+    173,
+    50,
+    86,
+    48,
+    188,
+    221,
+    219,
+    206,
+    77,
+    103,
+    101,
+    109,
+    5,
+    253,
+    28,
+    194,
+    208,
+    55,
+    187,
+    83,
+    117,
+    182,
+    233,
+    109,
+    158,
+    1,
+    161,
+    215,
+  ];
+  static const List<int> noteCommitmentRandomnessGeneratorBytes = [
+    172,
+    119,
+    108,
+    121,
+    101,
+    99,
+    252,
+    212,
+    76,
+    196,
+    156,
+    250,
+    234,
+    139,
+    183,
+    150,
+    149,
+    44,
+    38,
+    110,
+    71,
+    119,
+    157,
+    148,
+    87,
+    76,
+    16,
+    173,
+    1,
+    117,
+    75,
+    17,
+  ];
+
+  static BuBytes mixingPedersenHashBytes(List<int> cmBytes32, int position) {
+    final posBytes = List<int>.filled(32, 0);
+    var n = position;
+    for (var i = 0; i < 8; i++) {
+      posBytes[i] = n & 0xff;
+      n >>= 8;
+    }
+    final posG = blockchainUtils.api.jubjub.mult(
+      posBytes,
+      nullifierPositionGeneratorBytes,
+    );
+    return blockchainUtils.api.jubjub.add(cmBytes32, posG);
   }
 
   static SaplingExtendedSpendingKey dummySk() {
@@ -30,17 +244,19 @@ class SaplingUtils {
       seedBytes,
     );
     final sk = ex.sk;
-    final spendGenerator = SaplingKeyUtils.spendAuthGeneratorNative;
-    final mult =
-        proofGenerationKeyGeneratorNative *
-        JubJubNativeFr.fromBytes(sk.nsk.toBytes());
+    final akBytes = blockchainUtils.api.jubjub.mult(
+      sk.ask.scalar().toBytes(),
+      spendingKeyGeneratorBytes,
+    );
+    final nkBytes = blockchainUtils.api.jubjub.mult(
+      sk.nsk.toBytes(),
+      proofGenerationKeyGeneratorBytes,
+    );
     final fvk = SaplingFullViewingKey(
       ovk: sk.ovk,
       vk: SaplingViewingKey(
-        ak: SaplingSpendVerificationKey(
-          spendGenerator * JubJubNativeFr.fromBytes(sk.ask.inner.toBytes()),
-        ),
-        nk: SaplingNullifierDerivingKey(mult),
+        ak: RedJubJubSpendPublicKey.fromBytes(akBytes),
+        nk: SaplingNullifierDerivingKey.fromBytes(nkBytes),
       ),
     );
     return SaplingExtendedSpendingKey(
@@ -54,44 +270,58 @@ class SaplingUtils {
     );
   }
 
-  static JubJubNativePoint kaSaplingDerivePublic({
-    required JubJubNativeFr scalar,
-    required JubJubNativePoint b,
+  static BuBytes kaSaplingDerivePublicBytes({
+    required List<int> scalar32,
+    required List<int> point32,
   }) {
-    return b * scalar;
+    return blockchainUtils.api.jubjub.mult(scalar32, point32);
   }
 
-  static JubJubNativePoint kaSaplingAgreeNative({
-    required JubJubNativeFr scalar,
-    required JubJubNativePoint b,
+  static BuBytes kaSaplingAgreeBytes({
+    required List<int> scalar32,
+    required List<int> point32,
   }) {
-    return (b * scalar).clearCofactor();
+    final shared = blockchainUtils.api.jubjub.mult(scalar32, point32);
+    final cleared = blockchainUtils.api.jubjub.clearCofactor(shared);
+    if (cleared == null) {
+      throw ZcashErrors.saplingFailed(
+        "kaAgree",
+        reason: "Shared secret is identity.",
+      );
+    }
+    return cleared;
   }
 
-  static JubJubNativePoint windowedPedersenCommitNative({
+  static BuBytes windowedPedersenCommitBytes({
     required Personalization personalization,
     required List<bool> s,
-    required JubJubNativeFr r,
+    required List<int> r32,
     required ZcashCryptoContext context,
   }) {
-    final generator = noteCommitmentRandomnessGeneratorNative;
-    return context.pedersonHash(personalization: personalization, bits: s) +
-        (generator * r);
+    final pedersen = context.pedersonHash(
+      personalization: personalization,
+      bits: s,
+    );
+    final rG = blockchainUtils.api.jubjub.mult(
+      r32,
+      noteCommitmentRandomnessGeneratorBytes,
+    );
+    return blockchainUtils.api.jubjub.add(pedersen, rG);
   }
 
-  static List<int> prfNfNative({
-    required JubJubNativePoint nk,
-    required JubJubNativePoint rho,
+  static List<int> prfNf({
+    required List<int> nkBytes,
+    required List<int> rhoBytes,
   }) {
     return QuickCrypto.blake2s256Hash(
-      nk.toBytes(),
+      nkBytes,
       personalization: "Zcash_nf".codeUnits,
-      extraBlocks: [rho.toBytes()],
+      extraBlocks: [rhoBytes],
     );
   }
 
-  static List<JubJubNativeFq> computeMultipacking(List<bool> bits) {
-    final List<JubJubNativeFq> result = [];
+  static List<JubJubFq> computeMultipacking(List<bool> bits) {
+    final List<JubJubFq> result = [];
     final int capacity = JubJubFqConst.capacity;
 
     for (var i = 0; i < bits.length; i += capacity) {
@@ -100,8 +330,8 @@ class SaplingUtils {
         (i + capacity <= bits.length) ? i + capacity : bits.length,
       );
 
-      JubJubNativeFq cur = JubJubNativeFq.zero();
-      JubJubNativeFq coeff = JubJubNativeFq.one();
+      JubJubFq cur = JubJubFq.zero;
+      JubJubFq coeff = JubJubFq.one;
 
       for (final bit in chunk) {
         if (bit) {
@@ -114,85 +344,5 @@ class SaplingUtils {
     }
 
     return result;
-  }
-
-  static JubJubNativePoint get valueCommitmentValueGeneratorNative =>
-      JubJubAffineNativePoint(
-        u: JubJubNativeFq.nP(
-          BigInt.parse(
-            "17752513580251316969848061286168330683816061618931639002070819176278144839505",
-          ),
-        ),
-        v: JubJubNativeFq.nP(
-          BigInt.parse(
-            "31850056387203751840695958063801678921837471012044944184359114647051147135191",
-          ),
-        ),
-      ).toExtended();
-  static JubJubNativePoint get valueCommitmentRandomnessGeneratorNative =>
-      JubJubAffineNativePoint(
-        u: JubJubNativeFq.nP(
-          BigInt.parse(
-            "47042227020334719030310671629496501061777616454137182971856918820250544653111",
-          ),
-        ),
-        v: JubJubNativeFq.nP(
-          BigInt.parse(
-            "49531484613049745751551498609154147537293487462303198979615882148044956461707",
-          ),
-        ),
-      ).toExtended();
-  static JubJubNativePoint get proofGenerationKeyGeneratorNative =>
-      JubJubAffineNativePoint(
-        u: JubJubNativeFq.nP(
-          BigInt.parse(
-            "9201111513613159952332790701602097324772839388200533360387436201225747309937",
-          ),
-        ),
-        v: JubJubNativeFq.nP(
-          BigInt.parse(
-            "38317288103109448611012419043659719984035489099661802521426844652233060903143",
-          ),
-        ),
-      ).toExtended();
-  static JubJubNativePoint get nullifierPositionGeneratorNative =>
-      JubJubAffineNativePoint(
-        u: JubJubNativeFq.nP(
-          BigInt.parse(
-            "16284607604664980143012113168037881631153608968546055569021851346435633393883",
-          ),
-        ),
-        v: JubJubNativeFq.nP(
-          BigInt.parse(
-            "43970841899705611252315894752661758536072317246601145990753487800550441025637",
-          ),
-        ),
-      ).toExtended();
-  static JubJubNativePoint get spendingKeyGeneratorNative =>
-      JubJubAffineNativePoint(
-        u: JubJubNativeFq.nP(
-          BigInt.parse(
-            "4139425550610461525665941076812662132363359224232624900223172373014329534291",
-          ),
-        ),
-        v: JubJubNativeFq.nP(
-          BigInt.parse(
-            "39635691377166599497441725607757882405510648532010642268690928210480481875248",
-          ),
-        ),
-      ).toExtended();
-  static JubJubNativePoint get noteCommitmentRandomnessGeneratorNative {
-    return JubJubAffineNativePoint(
-      u: JubJubNativeFq.nP(
-        BigInt.parse(
-          "17604198421250097151573650471091947092640882385666301668182991308218746233954",
-        ),
-      ),
-      v: JubJubNativeFq.nP(
-        BigInt.parse(
-          "7822639505282159744111952162548915624490722403061460022379792963749532170156",
-        ),
-      ),
-    ).toExtended();
   }
 }

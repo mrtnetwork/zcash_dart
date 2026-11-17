@@ -3,34 +3,28 @@ import 'package:zcash_dart/src/sapling/sapling.dart';
 import 'package:zcash_dart/src/serialization/tags/tags.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
-// class ValueCommitmentOpening {
-//   final ZAmount value;
-//   final JubJubNativeFr randomness;
-//   const ValueCommitmentOpening(this.value, this.randomness);
-// }
-
 class SaplingSpendParams with LayoutSerializable, CborTagSerializable {
   final ZAmount value;
-  final JubJubNativeFr randomness;
+  final BuBytes randomness;
   // final ValueCommitmentOpening valueCommitmentOpening;
   final SaplingProofGenerationKey proofGenerationKey;
   final SaplingPaymentAddress paymentAddress;
-  final JubJubNativeFr commitmentRandomness;
-  final JubJubNativeFr ar;
-  final List<(JubJubNativeFq, bool)> authPath;
+  final BuBytes commitmentRandomness;
+  final BuBytes ar;
+  final List<(JubJubFq, bool)> authPath;
   final SaplingAnchor anchor;
 
   @override
   Map<String, dynamic> toSerializeJson() {
     return {
       "value": value.value,
-      "randomness": randomness.toBytes(),
+      "randomness": randomness.cloneBytes(),
       "ak": proofGenerationKey.ak.toBytes(),
-      "nsk": proofGenerationKey.nsk.toBytes(),
+      "nsk": proofGenerationKey.nsk,
       "payment_address_diversify_hash": paymentAddress.gd().toBytes(),
-      "commitment_randomness": commitmentRandomness.toBytes(),
+      "commitment_randomness": commitmentRandomness.cloneBytes(),
 
-      "ar": ar.toBytes(),
+      "ar": ar.cloneBytes(),
       "auth_path": authPath.map((e) => e.$1.toBytes()).toList(),
       "auth_path_pos": authPath.map((e) => e.$2).toList(),
       "anchor": anchor.toBytes(),
@@ -67,7 +61,7 @@ class SaplingSpendParams with LayoutSerializable, CborTagSerializable {
     required Diversifier diversifier,
     required SaplingRSeed rseed,
     required ZAmount value,
-    required JubJubNativeFr alpha,
+    required BuBytes alpha,
     required SaplingValueCommitTrapdoor rcv,
     required SaplingAnchor anchor,
     required SaplingMerklePath merklePath,
@@ -203,7 +197,7 @@ class SaplingSpendParams with LayoutSerializable, CborTagSerializable {
   //   {
   //     final valueBits = exposeValueCommitment(cs, valueCommitmentOpening);
 
-  //     var coeff = JubJubNativeFq.one();
+  //     var coeff = JubJubFq.one;
   //     for (final bit in valueBits) {
   //       valueNum = valueNum.addBoolWithCoeff(GVariable(GIndexInput(0)), bit, coeff);
   //       coeff = coeff.double();
@@ -277,7 +271,7 @@ class SaplingSpendParams with LayoutSerializable, CborTagSerializable {
 
   //     cs.enforce(
   //       (lc) => lc + cur.variable - rt.variable,
-  //       (lc) => lc + valueNum.lcMul(JubJubNativeFq.one()),
+  //       (lc) => lc + valueNum.lcMul(JubJubFq.one),
   //       (lc) => lc,
   //     );
 
@@ -317,17 +311,17 @@ class SaplingSpendParams with LayoutSerializable, CborTagSerializable {
   @override
   List<CborObject?> get serializationItems => [
     CborSafeIntValue(value.value),
-    CborBytesValue(randomness.toBytes()),
+    CborBytesValue(randomness.cloneBytes()),
     CborBytesValue(proofGenerationKey.ak.toBytes()),
-    CborBytesValue(proofGenerationKey.nsk.toBytes()),
+    CborBytesValue(proofGenerationKey.nsk),
     CborBytesValue(paymentAddress.gd().toBytes()),
-    CborBytesValue(commitmentRandomness.toBytes()),
-    CborBytesValue(ar.toBytes()),
+    CborBytesValue(commitmentRandomness.cloneBytes()),
+    CborBytesValue(ar.cloneBytes()),
     CborTagSerializable.listFromDynamic(
       authPath.map((e) => CborBytesValue(e.$1.toBytes())).toList(),
     ),
     CborTagSerializable.listFromDynamic(
-      authPath.map((e) => CborBoleanValue(e.$2)).toList(),
+      authPath.map((e) => CborBooleanValue(e.$2)).toList(),
     ),
     CborBytesValue(anchor.toBytes()),
   ];
@@ -335,11 +329,11 @@ class SaplingSpendParams with LayoutSerializable, CborTagSerializable {
 
 class SaplingOutputParams with LayoutSerializable, CborTagSerializable {
   final ZAmount value;
-  final JubJubNativeFr randomness;
+  final BuBytes randomness;
   // final ValueCommitmentOpening valueCommitmentOpening;
   final SaplingPaymentAddress paymentAddress;
   final SaplingNoteCommitTrapdoor commitmentRandomness;
-  final JubJubNativeFr esk;
+  final BuBytes esk;
   const SaplingOutputParams({
     required this.value,
     required this.randomness,
@@ -365,15 +359,15 @@ class SaplingOutputParams with LayoutSerializable, CborTagSerializable {
   @override
   List<CborObject?> get serializationItems => [
     CborSafeIntValue(value.value),
-    CborBytesValue(randomness.toBytes()),
+    CborBytesValue(randomness.cloneBytes()),
     CborBytesValue(paymentAddress.gd().toBytes()),
     CborBytesValue(paymentAddress.transmissionKey.toBytes()),
     CborBytesValue(commitmentRandomness.toBytes()),
-    CborBytesValue(esk.toBytes()),
+    CborBytesValue(esk.cloneBytes()),
   ];
 
   factory SaplingOutputParams.build({
-    required JubJubNativeFr esk,
+    required BuBytes esk,
     required SaplingPaymentAddress paymentAddress,
     required SaplingNoteCommitTrapdoor rcm,
     required ZAmount value,
@@ -477,11 +471,11 @@ class SaplingOutputParams with LayoutSerializable, CborTagSerializable {
   Map<String, dynamic> toSerializeJson() {
     return {
       "value": value.value,
-      "randomness": randomness.toBytes(),
+      "randomness": randomness.cloneBytes(),
       "recipient_address_diversify_hash": paymentAddress.gd().toBytes(),
       "recipient_address_pk_d": paymentAddress.transmissionKey.toBytes(),
       "commitment_randomness": commitmentRandomness.toBytes(),
-      "esk": esk.toBytes(),
+      "esk": esk.cloneBytes(),
     };
   }
 }

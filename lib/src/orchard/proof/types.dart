@@ -1,6 +1,7 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/zcash.dart';
 
+//
 class OrchardVerifyProofInputs with LayoutSerializable, CborTagSerializable {
   final List<int> proofBytes;
   final List<OrchardCircuitInstance> instances;
@@ -27,10 +28,7 @@ class OrchardVerifyProofInputs with LayoutSerializable, CborTagSerializable {
   Map<String, dynamic> toSerializeJson() {
     return {
       "proof": proofBytes,
-      "instances":
-          instances
-              .map((e) => e.instances().map((e) => e.toBytes()).toList())
-              .toList(),
+      "instances": instances.map((e) => e.instances()).toList(),
     };
   }
 
@@ -45,7 +43,7 @@ class OrchardVerifyProofInputs with LayoutSerializable, CborTagSerializable {
       instances
           .map(
             (e) => CborTagSerializable.listFromDynamic(
-              e.instances().map((e) => CborBytesValue(e.toBytes())).toList(),
+              e.instances().map((e) => CborBytesValue(e)).toList(),
             ),
           )
           .toList(),
@@ -94,10 +92,10 @@ class OrchardProofInputs with LayoutSerializable, CborTagSerializable {
     CborSafeIntValue(circuit.outputNote.value.value),
     CborBytesValue(circuit.outputNote.rho.toBytes()),
     CborBytesValue(circuit.outputNote.rseed.inner),
-    CborBytesValue(circuit.alpha.toBytes()),
+    CborBytesValue(circuit.alpha),
     CborBytesValue(circuit.rcv.toBytes()),
     CborTagSerializable.listFromDynamic(
-      instance.instances().map((e) => CborBytesValue(e.toBytes())).toList(),
+      instance.instances().map((e) => CborBytesValue(e)).toList(),
     ),
   ];
 }
@@ -136,10 +134,12 @@ class OrchardCircuitInstance {
   final OrchardAnchor anchor;
   final OrchardValueCommitment valueCommitment;
   final OrchardNullifier nullifier;
-  final OrchardSpendVerificationKey rk;
+  final RedPallasSpendPublicKey rk;
   final OrchardExtractedNoteCommitment cmx;
   final bool enableSpend;
   final bool enableOutput;
+  final bool disableCrossAddress;
+  final OrchardProtocolVersion version;
   const OrchardCircuitInstance({
     required this.anchor,
     required this.valueCommitment,
@@ -148,26 +148,55 @@ class OrchardCircuitInstance {
     required this.cmx,
     required this.enableSpend,
     required this.enableOutput,
+    required this.disableCrossAddress,
+    required this.version,
   });
-  List<List<PallasNativeFp>> toHalo2() {
+
+  Map<String, dynamic> toJson() {
+    return {
+      "anchor": anchor.toBytes().toHex(),
+      "valueCommitment": valueCommitment.toBytes().toHex(),
+      "nullifier": nullifier.toBytes().toHex(),
+      "rk": rk.toBytes().toHex(),
+      "cmx": cmx.toBytes().toHex(),
+      "enableSpend": enableSpend,
+      "enableOutput": enableOutput,
+      "disableCrossAddress": disableCrossAddress,
+      "version": version.name,
+    };
+  }
+
+  List<List<BuBytes>> toHalo2() {
     return [instances()];
   }
 
-  List<PallasNativeFp> instances() {
-    final cvNet = valueCommitment.inner.toAffine();
-    final rk = this.rk.toPoint();
-    final instance = [
-      anchor.inner,
-      cvNet.isIdentity() ? PallasNativeFp.zero() : cvNet.x,
-      cvNet.isIdentity() ? PallasNativeFp.zero() : cvNet.y,
-      nullifier.inner,
-      rk.x,
-      rk.y,
-      cmx.inner,
-      PallasNativeFp.from(enableSpend.toInt),
-      PallasNativeFp.from(enableOutput.toInt),
+  /// Public-input limbs as raw 32-byte LE encodings (bytes in, bytes out;
+  /// point decompression stays internal): anchor | cv.x | cv.y | nullifier |
+  /// rk.x | rk.y | cmx | enableSpend | enableOutput | disableCrossAddress.
+  /// Identity commitments encode as zero limbs.
+  List<BuBytes> instances() {
+    final cv = PallasAffinePoint.fromBytes(valueCommitment.toBytes());
+    final rk = PallasAffinePoint.fromBytes(this.rk.toBytes());
+    BuBytes flag(bool v) {
+      final b = BuBytes.zero(32);
+      if (v) b[0] = 1;
+      return b;
+    }
+
+    final cvX = cv.isIdentity() ? BuBytes.zero(32) : cv.x.toBytes();
+    final cvY = cv.isIdentity() ? BuBytes.zero(32) : cv.y.toBytes();
+    return [
+      anchor.inner.toBytes(),
+      cvX,
+      cvY,
+      nullifier.toBytes(),
+      rk.x.toBytes(),
+      rk.y.toBytes(),
+      cmx.inner.toBytes(),
+      flag(enableSpend),
+      flag(enableOutput),
+      flag(disableCrossAddress),
     ];
-    return instance;
   }
 }
 
@@ -175,28 +204,15 @@ class OrchardTransfableCircuit with LayoutSerializable {
   final OrchardFullViewingKey fvk;
   final OrchardCommitIvkRandomness rivk;
   final OrchardNote note;
+
   final OrchardNoteCommitment noteCommitment;
   final OrchardMerklePath merklePath;
   final OrchardNote outputNote;
-  final VestaNativeFq alpha;
+  final BuBytes alpha;
   final OrchardValueCommitTrapdoor rcv;
 
-  // OrchardCircuit toCircuit() {
-  //   return OrchardCircuit.fromActionContext(
-  // fvk: fvk,
-  // merklePath: merklePath,
-  // noteCommit: noteCommitment,
-  // rivk: rivk,
-  // spendNote: note,
-  // outputNote: outputNote,
-  // alpha: alpha,
-  // rcv: rcv,
-  //   );
-  // }
-
-  const OrchardTransfableCircuit({
+  OrchardTransfableCircuit({
     required this.fvk,
-    // required this.scope,
     required this.note,
     required this.noteCommitment,
     required this.merklePath,
@@ -208,13 +224,18 @@ class OrchardTransfableCircuit with LayoutSerializable {
   factory OrchardTransfableCircuit.fromActionContext({
     required OrchardSpendInfo spend,
     required OrchardNote outputNote,
-    required VestaNativeFq alpha,
+    required List<int> alpha,
     required OrchardValueCommitTrapdoor rcv,
     required ZcashCryptoContext context,
   }) {
-    if (spend.note.nullifier(fvk: spend.fvk, context: context).inner !=
-        outputNote.rho.inner) {
-      throw OrchardException("Invalid spend full view key.");
+    if (!BytesUtils.bytesEqual(
+      spend.note.nullifier(fvk: spend.fvk, context: context).inner,
+      outputNote.rho.inner,
+    )) {
+      throw BuError(
+        DefaultErrorType.badPrivateKey,
+        "Invalid spend full view key.",
+      );
     }
     final Bip44Changes scope = spend.getScope(context);
     return OrchardTransfableCircuit(
@@ -224,7 +245,7 @@ class OrchardTransfableCircuit with LayoutSerializable {
       merklePath: spend.merklePath,
       outputNote: outputNote,
       rivk: spend.fvk.rivkFromScope(scope),
-      alpha: alpha,
+      alpha: BuBytes.from(alpha),
       rcv: rcv,
     );
   }
@@ -251,11 +272,12 @@ class OrchardTransfableCircuit with LayoutSerializable {
   }
 
   @override
-  Map<String, dynamic> toSerializeJson({
-    List<PallasNativeFp> instances = const [],
-  }) {
+  Map<String, dynamic> toSerializeJson({List<List<int>> instances = const []}) {
     if (instances.length != 9) {
-      throw OrchardException("Missing orchard transfable instances.");
+      throw BuError(
+        DefaultErrorType.invalidArgument,
+        "Missing orchard transfable instances.",
+      );
     }
     return {
       "fvk": fvk.toBytes(),
@@ -269,9 +291,9 @@ class OrchardTransfableCircuit with LayoutSerializable {
       "out_value": outputNote.value.value,
       "out_rho": outputNote.rho.toBytes(),
       "out_rseed": outputNote.rseed.inner,
-      "alpha": alpha.toBytes(),
+      "alpha": alpha,
       "rcv": rcv.toBytes(),
-      "instances": instances.map((e) => e.toBytes()).toList(),
+      "instances": instances.map((e) => e.toList()).toList(),
     };
   }
 

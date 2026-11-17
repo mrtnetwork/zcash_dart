@@ -9,7 +9,7 @@ import 'package:zcash_dart/src/transaction/types/version.dart';
 
 import '../utils.dart';
 
-void main() {
+void serializationTest() {
   test("ZIP-0244", () {
     for (final e in _testVector0244.takeShuffle()) {
       final i = _Test0244Vector.fromJson(e);
@@ -161,6 +161,14 @@ void main() {
       );
     }
   });
+}
+
+void transactionSerializationTest() {
+  ZcashTestApi.runTest(serializationTest, "Serialization");
+}
+
+void main() {
+  ZcashTestApi.runTest(transactionSerializationTest, "Serialization");
 }
 
 class _Test0143Vector {

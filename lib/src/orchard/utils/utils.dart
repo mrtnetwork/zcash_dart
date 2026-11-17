@@ -1,25 +1,35 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
-import 'package:zcash_dart/src/orchard/exception/exception.dart';
 import 'package:zcash_dart/src/orchard/transaction/commitment.dart';
 
 class OrchardUtils {
+  /// Returns whether two addresses correspond to the same expanded
+  /// receiver, i.e. have equal `(g_d, pk_d)`.
+  ///
+  /// This matches the equality notion used by the cross-address
+  /// restriction (official `Address::same_expanded_receiver`, enforced by
+  /// the post-NU6.3 circuit)
+  static bool sameExpandedReceiver(OrchardAddress a, OrchardAddress b) {
+    return a == b;
+  }
+
   static ({OrchardSpendingKey sk, OrchardFullViewingKey fvk})
   createDummySpendKey() {
     final sk = OrchardSpendingKey(QuickCrypto.generateRandom());
-    final f = VestaNativeFq.fromBytes64(PrfExpand.orchardAsk.apply(sk.sk));
-    if (f.isZero()) {
-      throw OrchardException.operationFailed(
+    final pallas = blockchainUtils.api.pallas;
+    final f = pallas.scReduce64(PrfExpand.orchardAsk.apply(sk.sk));
+    if (BytesUtils.isZeroConst(f)) {
+      throw ZcashErrors.orchardFailed(
         "createDummySpendKey",
         reason: "zero scalar.",
       );
     }
-    final generator = OrchardKeyUtils.orchardSpendAuthSigBasepointNative;
-    var pk = generator * f;
-    if ((pk.toBytes()[31] >> 7).toU8 == 1) {
-      pk = generator * -f;
+    var pk = pallas.mult(f, OrchardKeyUtils.orchardSpendAuthSigBasepointBytes);
+    if ((pk[31] >> 7) == 1) {
+      pk = pallas.neg(pk);
     }
-    final ak = OrchardSpendVerificationKey(pk);
+    final ak = RedPallasSpendPublicKey.fromBytes(pk);
     final fvk = OrchardFullViewingKey(
       ak: OrchardSpendValidatingKey(ak),
       nk: OrchardNullifierDerivingKey.fromSpendKey(sk),
@@ -28,10 +38,10 @@ class OrchardUtils {
     return (sk: sk, fvk: fvk);
   }
 
-  static VestaNativeFq toNonZeroScalar(List<int> scalarBytes) {
-    final scalar = VestaNativeFq.fromBytes64(scalarBytes);
-    if (scalar.isZero()) {
-      throw OrchardException.operationFailed(
+  static BuBytes toNonZeroScalar(List<int> scalarBytes) {
+    final scalar = blockchainUtils.api.pallas.scReduce64(scalarBytes);
+    if (BytesUtils.isZeroConst(scalar)) {
+      throw ZcashErrors.orchardFailed(
         "toNonZeroScalar",
         reason: "zero scalar.",
       );
@@ -39,14 +49,14 @@ class OrchardUtils {
     return scalar;
   }
 
-  static PallasNativePoint kaOrchardNative({
-    required PallasNativePoint base,
-    required VestaNativeFq sk,
+  static BuBytes kaOrchardBytes({
+    required List<int> base,
+    required List<int> sk,
   }) {
-    assert(!sk.isZero());
-    final PallasNativePoint p = base * sk;
-    if (p.isIdentity()) {
-      throw OrchardException.operationFailed(
+    final pallas = blockchainUtils.api.pallas;
+    final p = pallas.mult(sk, base);
+    if (BytesUtils.bytesEqualConst(p, pallas.identity())) {
+      throw ZcashErrors.orchardFailed(
         "toNonZeroScalar",
         reason: "Scalar multiplication resulted in the identity point.",
       );
@@ -54,24 +64,28 @@ class OrchardUtils {
     return p;
   }
 
-  static PallasNativeFp deriveNullfierKey({
+  static BuBytes deriveNullfierKey({
     required OrchardNullifierDerivingKey nk,
-    required PallasNativeFp rho,
-    required PallasNativeFp psi,
+    required List<int> rho,
+    required List<int> psi,
     required OrchardNoteCommitment cm,
     required ZcashCryptoContext context,
   }) {
-    final k = PallasNativePoint.hashToCurve(
+    final prf = nk.prfNf(rho: rho, context: context);
+    final sumBytes = blockchainUtils.api.vesta.scAdd(prf, psi);
+    if (!blockchainUtils.api.pallas.scCheck(sumBytes)) {
+      throw ZcashErrors.orchardFailed(
+        "deriveNullfierKey",
+        reason: "Invalid scalar.",
+      );
+    }
+    final k = blockchainUtils.api.pallas.hashToCurvePasta(
       domainPrefix: "z.cash:Orchard",
       message: "K".codeUnits,
     );
-    final s =
-        (k *
-                VestaNativeFq.fromBytes(
-                  (nk.prfNf(rho: rho, context: context) + psi).toBytes(),
-                ) +
-            cm.inner);
-    return s.toAffine().x;
+    final s = blockchainUtils.api.pallas.mult(sumBytes, k);
+    final out = blockchainUtils.api.pallas.add(s, cm.toBytes());
+    return PallasPoint.fromBytes(out).toAffine().x.toBytes();
   }
 
   static const int lOrchardBase = 255;

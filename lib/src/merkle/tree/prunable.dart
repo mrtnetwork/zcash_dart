@@ -1,6 +1,6 @@
 import 'dart:collection';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/merkle/exception/exception.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/serialization/tags/tags.dart';
 
@@ -282,7 +282,10 @@ class PrunableTree<H extends MerkleNodeValue>
             ),
           );
         }
-        throw MerkleMergeError.conflict(name: "mergeChecked", address: addr);
+        throw ZcashErrors.merkleMergeConflict(
+          name: "mergeChecked",
+          address: addr,
+        );
       }
       final leaf = t0Leaf ?? t1Leaf;
       final parent =
@@ -298,7 +301,10 @@ class PrunableTree<H extends MerkleNodeValue>
         if (parentHash == null || parentHash == leaf.value.value) {
           return parent.reannotateRoot(leaf.value.value);
         }
-        throw MerkleMergeError.conflict(name: "mergeChecked", address: addr);
+        throw ZcashErrors.merkleMergeConflict(
+          name: "mergeChecked",
+          address: addr,
+        );
       }
       H? lRoot = t0.rootHash(rootAddr: addr, truncateAt: noDefaultFill).ok();
       H? rRoot = t1.rootHash(rootAddr: addr, truncateAt: noDefaultFill).ok();
@@ -318,7 +324,10 @@ class PrunableTree<H extends MerkleNodeValue>
           );
         }
       }
-      throw MerkleMergeError.conflict(name: "mergeChecked", address: addr);
+      throw ZcashErrors.merkleMergeConflict(
+        name: "mergeChecked",
+        address: addr,
+      );
     }
 
     return fn(addr: rootAddr, t0: this, t1: other);
@@ -444,7 +453,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
     return root.rootHash(rootAddr: rootAddr, truncateAt: truncateAt).mapErr((
       addresses,
     ) {
-      throw MerkleTreeException.failed(
+      throw ZcashErrors.merkleFailed(
         "rootHash",
         reason: "Unable to compute root.",
         details: {"addresses": addresses.join(",")},
@@ -553,13 +562,13 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
         truncateAt: truncateAt,
       );
       return result.mapErr((addresses) {
-        throw MerkleWitnessError.incompleteTree(
+        throw ZcashErrors.merkleWitnessIncompleteTree(
           name: "witness",
           addresses: addresses,
         );
       }).unwrap();
     }
-    throw MerkleWitnessError.addressNotFound(
+    throw ZcashErrors.merkleWitnessAddressNotFound(
       name: "witness",
       address: rootAddr,
     );
@@ -658,10 +667,10 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
                 into.mergeChecked(rootAddr: rootAddr, other: subtree.root),
                 [],
               );
-            } on MerkleMergeError catch (e) {
-              throw MerkleInsertionError.subtreeInsertionFailed(
+            } on BuError catch (e) {
+              throw ZcashErrors.merkleInsertionSubtreeFailed(
                 name: "insertSubtree",
-                address: e.address,
+                address: rootAddr,
                 reason: e.details?["reason"],
               );
             }
@@ -713,7 +722,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
                 final v0 = leaf.value.value;
                 final ret0 = leaf.value.flags;
                 if (v0 != value) {
-                  throw MerkleInsertionError.subtreeInsertionFailed(
+                  throw ZcashErrors.merkleInsertionSubtreeFailed(
                     name: "insertSubtree",
                     address: rootAddr,
                     reason:
@@ -742,7 +751,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
             if (rValue == null || rValue == value) {
               return (subtree.root.reannotateRoot(value), []);
             } else {
-              throw MerkleInsertionError.subtreeInsertionFailed(
+              throw ZcashErrors.merkleInsertionSubtreeFailed(
                 name: "insertSubtree",
                 address: rootAddr,
                 reason:
@@ -771,7 +780,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
       assert(nPosition >= maxPosition);
       return TreeInsertReport(subtree: newTree, incomplete: r.$2);
     }
-    throw MerkleInsertionError.subtreeInsertionFailed(
+    throw ZcashErrors.merkleInsertionSubtreeFailed(
       name: "insertSubtree",
       reason: "Tree does not contain a root at address ${subtree.rootAddr}",
       address: subtree.rootAddr,
@@ -828,7 +837,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
               ),
             );
           } else {
-            throw MerkleTreeException.failed(
+            throw ZcashErrors.merkleFailed(
               "clearFlags",
               reason: 'Tree state inconsistent with checkpoints.',
             );
@@ -988,11 +997,11 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
     }
     final result = _batchAppend([(value, retention)].iterator);
     if (result == null) {
-      throw MerkleInsertionError.insertionFailed(name: "append", reason: null);
+      throw ZcashErrors.merkleInsertionFailed(name: "append", reason: null);
     }
     final remainder = result.remainder;
     if (remainder != null && remainder.moveNext()) {
-      throw MerkleInsertionError.insertionFailed(
+      throw ZcashErrors.merkleInsertionFailed(
         name: "append",
         reason: "Note commitment tree is full.",
       );
@@ -1066,7 +1075,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
       final updatedSubtree = inserted.subtree;
       return ((updatedSubtree, supertree));
     } else {
-      throw MerkleInsertionError.frontierInsertionFailed(
+      throw ZcashErrors.merkleInsertionFrontierFailed(
         name: "insertFrontierNodes",
         reason:
             "Attempted insertion point ${frontier.position} is not in range $subtreeRange",
@@ -1200,7 +1209,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
       return root.node.fold(
         onParent: (left, right, ann) {
           final (lAddr, rAddr) = address.children(
-            error: MerkleFrontierError.failed(
+            error: ZcashErrors.merkleFrontierFailed(
               name: "frontierOmmers",
               reason: "Invalid tree data.",
             ),
@@ -1216,7 +1225,7 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
           );
           ommers.add(
             leftHash.mapErr((addresses) {
-              throw MerkleFrontierError.incompleteTree(
+              throw ZcashErrors.merkleFrontierIncomplete(
                 name: "frontierOmmers",
                 addresses: [lAddr],
               );
@@ -1232,13 +1241,13 @@ class LocatedPrunableTree<H extends MerkleNodeValue>
               ommers: [],
             );
           }
-          throw MerkleFrontierError.incompleteTree(
+          throw ZcashErrors.merkleFrontierIncomplete(
             name: "frontierOmmers",
             addresses: [address],
           );
         },
         onNil: () {
-          throw MerkleFrontierError.incompleteTree(
+          throw ZcashErrors.merkleFrontierIncomplete(
             name: "frontierOmmers",
             addresses: [address],
           );

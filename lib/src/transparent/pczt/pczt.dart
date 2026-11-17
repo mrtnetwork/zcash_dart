@@ -7,7 +7,6 @@ import 'package:zcash_dart/src/pczt/pczt/utils.dart';
 import 'package:zcash_dart/src/transparent/keys/private_key.dart';
 import 'package:zcash_dart/src/transparent/pczt/utils.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
-import 'package:zcash_dart/src/transparent/pczt/exception.dart';
 import 'package:zcash_dart/src/transparent/transaction/bundle.dart';
 import 'package:zcash_dart/src/transparent/transaction/input.dart';
 import 'package:zcash_dart/src/transparent/transaction/output.dart';
@@ -61,7 +60,7 @@ class TransparentPcztInput with LayoutSerializable {
   int getTimelock() {
     final timelock = _requiredTimeLockTime;
     if (timelock == null) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "getTimelock",
         reason: "Missing input time lock.",
       );
@@ -73,7 +72,7 @@ class TransparentPcztInput with LayoutSerializable {
   int getHeightlock() {
     final timelock = _requiredHeightLockTime;
     if (timelock == null) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "getHeightlock",
         reason: "Missing input height lock.",
       );
@@ -88,7 +87,7 @@ class TransparentPcztInput with LayoutSerializable {
     required ZcashCryptoContext context,
   }) async {
     final signature = TransparentPcztPartialSignatures(
-      publicKey: sk.toPublicKey().toBytes(mode: PubKeyModes.compressed),
+      publicKey: sk.toPublicKey().toBytes(mode: CryptoKeyEncoding.base),
       signature: await context.signEcdsaDer(sk, sighash, sighash: sighashType),
     );
     addPrtialSignature(signature);
@@ -219,7 +218,7 @@ class TransparentPcztInput with LayoutSerializable {
         TransparentPcztInputHash256.layout(),
         property: "hash256_preimages",
       ),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -262,7 +261,7 @@ class TransparentPcztInput with LayoutSerializable {
   /// /// Sets the redeem script for a P2SH input, validating correctness.
   void setRedeemScript(Script? redeemScript) {
     if (redeemScript != null && !BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "setRedeemScript",
         reason: "No P2sh input.",
       );
@@ -270,7 +269,7 @@ class TransparentPcztInput with LayoutSerializable {
     if (redeemScript != null &&
         P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
             scriptPubkey) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "setRedeemScript",
         reason: "Invalid redeem script.",
       );
@@ -320,7 +319,7 @@ class TransparentPcztInput with LayoutSerializable {
     if (BitcoinScriptUtils.isP2pkh(scriptPubkey) ||
         BitcoinScriptUtils.isP2pk(scriptPubkey)) {
       if (redeemScript != null) {
-        throw TransparentPcztException.operationFailed(
+        throw ZcashErrors.transparentPcztFailed(
           "verify",
           reason: "Invalid input scipts.",
         );
@@ -329,18 +328,18 @@ class TransparentPcztInput with LayoutSerializable {
       if (!BitcoinScriptUtils.isP2sh(scriptPubkey) ||
           P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
               scriptPubkey) {
-        throw TransparentPcztException.operationFailed(
+        throw ZcashErrors.transparentPcztFailed(
           "verify",
           reason: "Invalid p2sh input redeem script.",
         );
       }
     } else if (BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "verify",
         reason: "Missing input redeem script.",
       );
     } else {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "verify",
         reason: "Unsupported script pub key.",
       );
@@ -536,7 +535,7 @@ class TransparentPcztOutput with LayoutSerializable {
         property: "bip32_derivation",
       ),
       LayoutConst.optional(LayoutConst.bcsString(), property: "user_address"),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -557,7 +556,7 @@ class TransparentPcztOutput with LayoutSerializable {
     final redeemScript = this.redeemScript;
     if (BitcoinScriptUtils.isP2pkh(scriptPubkey)) {
       if (redeemScript != null) {
-        throw TransparentPcztException.operationFailed(
+        throw ZcashErrors.transparentPcztFailed(
           "verify",
           reason: "No P2sh output.",
         );
@@ -566,13 +565,13 @@ class TransparentPcztOutput with LayoutSerializable {
       if (!BitcoinScriptUtils.isP2sh(scriptPubkey) ||
           P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
               scriptPubkey) {
-        throw TransparentPcztException.operationFailed(
+        throw ZcashErrors.transparentPcztFailed(
           "verify",
           reason: "Invalid p2sh output.",
         );
       }
     } else {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "verify",
         reason: "Unsupported output script pub key.",
       );
@@ -592,13 +591,13 @@ class TransparentPcztOutput with LayoutSerializable {
 
   void setRedeemScript(Script? redeemScript) {
     if (redeemScript != null && !BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "setRedeemScript",
         reason: "No P2sh output.",
       );
     }
     if (!BitcoinScriptUtils.isP2sh(scriptPubkey)) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "setRedeemScript",
         reason: "No P2sh output.",
       );
@@ -606,7 +605,7 @@ class TransparentPcztOutput with LayoutSerializable {
     if (redeemScript != null &&
         P2shAddress.fromScript(script: redeemScript).toScriptPubKey() !=
             scriptPubkey) {
-      throw TransparentPcztException.operationFailed(
+      throw ZcashErrors.transparentPcztFailed(
         "setRedeemScript",
         reason: "Invalid redeem script.",
       );
@@ -678,6 +677,7 @@ class TransparentPcztBundle
         PcztBundle<
           TransparentBundle,
           TransparentExtractedBundle,
+          DefaultExtractBundleParams,
           TransparentPcztBundle
         > {
   final List<TransparentPcztInput> inputs;
@@ -717,16 +717,19 @@ class TransparentPcztBundle
       TransparentPcztBundle(inputs: inputs, outputs: outputs);
 
   @override
-  TransparentBundle extractEffects() => _toTxData(extract: false);
+  TransparentBundle extractEffects({
+    DefaultExtractBundleParams params = const DefaultExtractBundleParams(),
+  }) => _toTxData(extract: false);
   @override
-  TransparentExtractedBundle extract() =>
-      TransparentExtractedBundle(bundle: _toTxData(), valueSum: valueSum);
+  TransparentExtractedBundle extract({
+    DefaultExtractBundleParams params = const DefaultExtractBundleParams(),
+  }) => TransparentExtractedBundle(bundle: _toTxData(), valueSum: valueSum);
   TransparentBundle _toTxData({bool extract = true}) {
     final inputs =
         this.inputs.map((e) {
           final scriptSig = e.scriptSig;
           if (extract && scriptSig == null) {
-            throw TransparentPcztException.operationFailed(
+            throw ZcashErrors.transparentPcztFailed(
               "extract",
               reason: "Missing input scriptsig.",
             );

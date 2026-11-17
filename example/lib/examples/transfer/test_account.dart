@@ -57,7 +57,10 @@ class ZcashTestAccount with Equality {
       context,
     );
   }
-  factory ZcashTestAccount.fromUsk(UnifiedSpendingKey sk, ZCryptoContext context) {
+  factory ZcashTestAccount.fromUsk(
+    UnifiedSpendingKey sk,
+    ZCryptoContext context,
+  ) {
     final ufvk = sk.toUnifiedFullViewingKey();
     final uivk = ufvk.toUnifiedIncomingViewingKey(context);
     final uivkInternal = ufvk.toUnifiedIncomingViewingKey(
@@ -90,7 +93,9 @@ class ZcashTestAccount with Equality {
       uivk: uivk,
       uivkInternal: uivkInternal,
       usk: sk,
-      address: ZcashUnifiedAddress(ufvk.defaultAddress(context: context).address),
+      address: ZcashUnifiedAddress(
+        ufvk.defaultAddress(context: context).address,
+      ),
     );
   }
 

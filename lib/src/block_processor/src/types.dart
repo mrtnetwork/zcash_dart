@@ -1,5 +1,5 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/block_processor/src/exception.dart';
+import 'package:zcash_dart/src/address/address.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/note/note.dart';
@@ -13,6 +13,10 @@ import 'package:zcash_dart/src/value/value.dart';
 abstract mixin class ChainMetadata {
   int? get saplingCommitmentTreeSize;
   int? get orchardCommitmentTreeSize;
+
+  /// Ironwood note commitment tree size (NU6.3+). Null when the serving
+  /// lightwalletd predates Ironwood compact support.
+  int? get ironwoodCommitmentTreeSize;
 }
 
 abstract mixin class CompactBlock {
@@ -21,6 +25,8 @@ abstract mixin class CompactBlock {
       chainMetadata?.saplingCommitmentTreeSize;
   int? get orchardCommitmentTreeSize =>
       chainMetadata?.orchardCommitmentTreeSize;
+  int? get ironwoodCommitmentTreeSize =>
+      chainMetadata?.ironwoodCommitmentTreeSize;
   BigInt? get height;
   List<int>? get hash;
   List<CompactTx>? get vtx;
@@ -28,6 +34,11 @@ abstract mixin class CompactBlock {
 
   List<CompactAction> getCompactActions() =>
       vtx?.expand((e) => e.getCompactActions()).toList() ?? [];
+
+  /// Ironwood-pool compact actions (NU6.3 second slot). Empty when the
+  /// serving lightwalletd predates Ironwood compact support.
+  List<CompactAction> getCompactIronwoodActions() =>
+      vtx?.expand((e) => e.getCompactIronwoodActions()).toList() ?? [];
   List<CompactOutputDescription> getOutputDescription() =>
       vtx?.expand((e) => e.getOutputDescription()).toList() ?? [];
   List<SaplingNullifier> getSpends() =>
@@ -45,7 +56,7 @@ abstract mixin class CompactBlock {
   int timestamp() {
     final time = this.time;
     if (time == null) {
-      throw ZcashBlockScannerException.invalidCompact(
+      throw ZcashErrors.scannerInvalidCompact(
         "time",
         reason: "Missing block timestamp.",
       );
@@ -56,7 +67,7 @@ abstract mixin class CompactBlock {
   int getHeight() {
     final height = this.height;
     if (height == null) {
-      throw ZcashBlockScannerException.invalidCompact(
+      throw ZcashErrors.scannerInvalidCompact(
         "height",
         reason: "Missing block height.",
       );
@@ -68,6 +79,8 @@ abstract mixin class CompactBlock {
       vtx?.fold<int>(0, (p, c) => p + (c.outputs?.length ?? 0)) ?? 0;
   int totalOrchardOutputs() =>
       vtx?.fold<int>(0, (p, c) => p + (c.actions?.length ?? 0)) ?? 0;
+  int totalIronwoodOutputs() =>
+      vtx?.fold<int>(0, (p, c) => p + (c.ironwoodActions?.length ?? 0)) ?? 0;
 }
 
 abstract mixin class CompactOrchardAction implements Equality {
@@ -78,7 +91,7 @@ abstract mixin class CompactOrchardAction implements Equality {
   CompactAction toAction(int outputIndex) {
     final nullifier = this.nullifier;
     if (nullifier == null) {
-      throw ZcashBlockScannerException.invalidCompact(
+      throw ZcashErrors.scannerInvalidCompact(
         "action",
         reason: "Nullifier missing.",
       );
@@ -86,28 +99,25 @@ abstract mixin class CompactOrchardAction implements Equality {
 
     final cmx = this.cmx;
     if (cmx == null) {
-      throw ZcashBlockScannerException.invalidCompact(
-        "action",
-        reason: "cmx missing.",
-      );
+      throw ZcashErrors.scannerInvalidCompact("action", reason: "cmx missing.");
     }
     final ephemeralKey = this.ephemeralKey;
     if (ephemeralKey == null) {
-      throw ZcashBlockScannerException.invalidCompact(
+      throw ZcashErrors.scannerInvalidCompact(
         "action",
         reason: "ephemeralKey missing.",
       );
     }
     final ciphertext = this.ciphertext;
     if (ciphertext == null) {
-      throw ZcashBlockScannerException.invalidCompact(
+      throw ZcashErrors.scannerInvalidCompact(
         "action",
         reason: "ciphertext missing.",
       );
     }
     return CompactAction(
       nf: OrchardNullifier.fromBytes(nullifier),
-      cmx: OrchardExtractedNoteCommitment(PallasNativeFp.fromBytes(cmx)),
+      cmx: OrchardExtractedNoteCommitment(PallasFp.fromBytes(cmx)),
       ephemeralKey: EphemeralKeyBytes(ephemeralKey),
       encCiphertextCompact: ciphertext,
       outputIndex: outputIndex,
@@ -128,10 +138,10 @@ abstract mixin class CompactSaplingOutput implements Equality {
     final ephemeralKey = this.ephemeralKey;
     final ciphertext = this.ciphertext;
     if (cmu == null || ephemeralKey == null || ciphertext == null) {
-      throw ZcashBlockScannerException.invalidCompact("output");
+      throw ZcashErrors.scannerInvalidCompact("output");
     }
     return CompactOutputDescription(
-      cmu: SaplingExtractedNoteCommitment(JubJubNativeFq.fromBytes(cmu)),
+      cmu: SaplingExtractedNoteCommitment(JubJubFq.fromBytes(cmu)),
       ephemeralKey: EphemeralKeyBytes(ephemeralKey),
       encCiphertextCompact: ciphertext,
       outputIndex: outputIndex,
@@ -156,6 +166,9 @@ abstract mixin class CompactTx {
   List<CompactSaplingSpend>? get spends;
   List<CompactSaplingOutput>? get outputs;
   List<CompactOrchardAction>? get actions;
+
+  /// Ironwood-pool compact actions (NU6.3). Same wire shape as [actions].
+  List<CompactOrchardAction>? get ironwoodActions;
   List<SaplingNullifier> getSpends() {
     final spends = this.spends;
     if (spends == null) return [];
@@ -163,7 +176,7 @@ abstract mixin class CompactTx {
     for (final i in spends) {
       final nf = i.nf;
       if (nf == null) {
-        throw ZcashBlockScannerException.invalidCompact(
+        throw ZcashErrors.scannerInvalidCompact(
           "spend",
           reason: "Nullifier missing.",
         );
@@ -184,12 +197,23 @@ abstract mixin class CompactTx {
     return cActions;
   }
 
+  List<CompactAction> getCompactIronwoodActions() {
+    final actions = ironwoodActions;
+    if (actions == null) return [];
+    List<CompactAction> cActions = [];
+    for (final i in actions.indexed) {
+      final action = i.$2.toAction(i.$1);
+      cActions.add(action);
+    }
+    return cActions;
+  }
+
   ZcashTxId getTxId() {
     final hash = txid;
     if (hash != null && hash.length == QuickCrypto.blake2b256DigestSize) {
       return ZcashTxId(hash);
     }
-    throw ZcashBlockScannerException.invalidCompact(
+    throw ZcashErrors.scannerInvalidCompact(
       "tx",
       reason: "Transaction hash missing or invalid.",
     );
@@ -198,7 +222,7 @@ abstract mixin class CompactTx {
   int getTxIndex() {
     final index = this.index ?? BigInt.zero;
     if (index.isNegative) {
-      throw ZcashBlockScannerException.invalidCompact(
+      throw ZcashErrors.scannerInvalidCompact(
         "tx",
         reason: "Invalid transaction index.",
       );
@@ -248,7 +272,8 @@ class CompactAction extends OrchardShildOutput {
 
   @override
   List<int> get encCiphertext =>
-      throw ZcashBlockScannerException(
+      throw BuError(
+        DefaultErrorType.unsupported,
         "`encCiphertext` not available in compact action.",
       );
 }
@@ -280,7 +305,8 @@ class CompactOutputDescription extends SaplingShildOutput {
 
   @override
   List<int> get encCiphertext =>
-      throw ZcashBlockScannerException(
+      throw BuError(
+        DefaultErrorType.unsupported,
         "`encCiphertext` not available in compact output.",
       );
 }
@@ -290,13 +316,20 @@ class ScannedTx with LayoutSerializable, Equality {
   final int index;
   final List<SaplingScannedOutputWithIvk> saplingOutputs;
   final List<OrchardScannedOutputWithIvk> orchardOutputs;
+
+  /// Ironwood-pool scanned outputs (NU6.3). Same element type as the
+  /// Orchard pool (Ironwood notes are Orchard-shaped, v3); pool
+  /// membership is given by list placement.
+  final List<OrchardScannedOutputWithIvk> ironwoodOutputs;
   ScannedTx({
     required this.txId,
     required this.index,
     required List<SaplingScannedOutputWithIvk> saplingOutputs,
     required List<OrchardScannedOutputWithIvk> orchardOutputs,
+    List<OrchardScannedOutputWithIvk> ironwoodOutputs = const [],
   }) : saplingOutputs = saplingOutputs.immutable,
-       orchardOutputs = orchardOutputs.immutable;
+       orchardOutputs = orchardOutputs.immutable,
+       ironwoodOutputs = ironwoodOutputs.immutable;
   factory ScannedTx.deserializeJson(Map<String, dynamic> json) {
     return ScannedTx(
       txId: ZcashTxId.deserializeJson(json.valueAs("tx_id")),
@@ -311,9 +344,38 @@ class ScannedTx with LayoutSerializable, Equality {
               .valueEnsureAsList<Map<String, dynamic>>("orchardOutputs")
               .map((e) => OrchardScannedOutputWithIvk.deserializeJson(e))
               .toList(),
+      ironwoodOutputs:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>(
+                "ironwoodOutputs",
+                onMissing: () => [],
+              )
+              .map((e) => OrchardScannedOutputWithIvk.deserializeJson(e))
+              .toList(),
     );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
+    return LayoutConst.struct([
+      ZcashTxId.layout(property: "tx_id"),
+      LayoutConst.lebU32(property: "index"),
+      LayoutConst.bcsVector(
+        ScannedOutputWithIvk.layout(),
+        property: "saplingOutputs",
+      ),
+      LayoutConst.bcsVector(
+        ScannedOutputWithIvk.layout(),
+        property: "orchardOutputs",
+      ),
+      LayoutConst.bcsVector(
+        ScannedOutputWithIvk.layout(),
+        property: "ironwoodOutputs",
+      ),
+    ], property: property);
+  }
+
+  /// Layout without the trailing Ironwood field, for scans stored
+  /// before NU6.3 support.
+  static Layout<Map<String, dynamic>> legacyLayout({String? property}) {
     return LayoutConst.struct([
       ZcashTxId.layout(property: "tx_id"),
       LayoutConst.lebU32(property: "index"),
@@ -340,6 +402,8 @@ class ScannedTx with LayoutSerializable, Equality {
       "index": index,
       "saplingOutputs": saplingOutputs.map((e) => e.toSerializeJson()).toList(),
       "orchardOutputs": orchardOutputs.map((e) => e.toSerializeJson()).toList(),
+      "ironwoodOutputs":
+          ironwoodOutputs.map((e) => e.toSerializeJson()).toList(),
     };
   }
 
@@ -348,6 +412,7 @@ class ScannedTx with LayoutSerializable, Equality {
     int? index,
     List<SaplingScannedOutputWithIvk>? saplingOutputs,
     List<OrchardScannedOutputWithIvk>? orchardOutputs,
+    List<OrchardScannedOutputWithIvk>? ironwoodOutputs,
     List<OrchardNullifier>? orchardSpends,
     List<SaplingNullifier>? saplingSpends,
   }) {
@@ -356,14 +421,22 @@ class ScannedTx with LayoutSerializable, Equality {
       index: index ?? this.index,
       saplingOutputs: saplingOutputs ?? this.saplingOutputs,
       orchardOutputs: orchardOutputs ?? this.orchardOutputs,
+      ironwoodOutputs: ironwoodOutputs ?? this.ironwoodOutputs,
     );
   }
 
   @override
-  List<dynamic> get variables => [txId, index, saplingOutputs, orchardOutputs];
+  List<dynamic> get variables => [
+    txId,
+    index,
+    saplingOutputs,
+    orchardOutputs,
+    ironwoodOutputs,
+  ];
 
   List<ScannedOutputWithIvk> scannedOutputs() => [
     ...orchardOutputs,
+    ...ironwoodOutputs,
     ...saplingOutputs,
   ];
 }
@@ -385,7 +458,13 @@ abstract class ScannedOutput<NOTE extends Note>
   });
 
   T cast<T extends ScannedOutput>() {
-    if (this is! T) throw CastFailedException<T>(value: this);
+    if (this is! T) {
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "T", "value": runtimeType.toString()},
+      );
+    }
     return this as T;
   }
 
@@ -624,7 +703,7 @@ class SaplingScannedOutputWithIvk
       context: context,
     );
     if (scope == null) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "toScannecOutputWithNullifier",
         reason: "Failed to derive output scope and diversifier index.",
       );
@@ -708,7 +787,7 @@ class OrchardScannedOutputWithIvk
       context: context,
     );
     if (scope == null) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "toScannecOutputWithNullifier",
         reason: "Failed to derive output scope and diversifier index.",
       );
@@ -1017,7 +1096,16 @@ class ScannedBlockBundles
     with CborTagSerializable, LayoutSerializable, Equality {
   final ScannedProtocolBundles<SaplingNode> sapling;
   final ScannedProtocolBundles<OrchardMerkleHash> orchard;
-  ScannedBlockBundles({required this.sapling, required this.orchard});
+
+  /// Ironwood note-commitment bundle data (NU6.3 second pool).
+  final ScannedProtocolBundles<OrchardMerkleHash> ironwood;
+  ScannedBlockBundles({
+    required this.sapling,
+    required this.orchard,
+    ScannedProtocolBundles<OrchardMerkleHash>? ironwood,
+  }) : ironwood =
+           ironwood ??
+           ScannedProtocolBundles<OrchardMerkleHash>(finalTreeSize: 0);
   factory ScannedBlockBundles.deserialize({
     List<int>? bytes,
     CborObject? object,
@@ -1027,6 +1115,22 @@ class ScannedBlockBundles
       cborBytes: bytes,
       cborObject: object,
     );
+    ScannedProtocolBundles<OrchardMerkleHash> readIronwood() {
+      try {
+        final obj = values.objectAt(2);
+        if (obj == null) {
+          return ScannedProtocolBundles<OrchardMerkleHash>(finalTreeSize: 0);
+        }
+        return ScannedProtocolBundles.deserialize(
+          fromBytes: OrchardMerkleHash.fromBytes,
+          obj: obj,
+        );
+      } catch (_) {
+        // Scans stored before NU6.3 support have no third item.
+        return ScannedProtocolBundles<OrchardMerkleHash>(finalTreeSize: 0);
+      }
+    }
+
     return ScannedBlockBundles(
       sapling: ScannedProtocolBundles.deserialize(
         fromBytes: SaplingNode.fromBytes,
@@ -1036,9 +1140,21 @@ class ScannedBlockBundles
         fromBytes: OrchardMerkleHash.fromBytes,
         obj: values.objectAt(1),
       ),
+      ironwood: readIronwood(),
     );
   }
   factory ScannedBlockBundles.deserializeJson(Map<String, dynamic> json) {
+    ScannedProtocolBundles<OrchardMerkleHash> readIronwood() {
+      try {
+        return ScannedProtocolBundles.deserializeJson(
+          json: json.valueAs("ironwood"),
+          fromBytes: OrchardMerkleHash.fromBytes,
+        );
+      } catch (_) {
+        return ScannedProtocolBundles<OrchardMerkleHash>(finalTreeSize: 0);
+      }
+    }
+
     return ScannedBlockBundles(
       sapling: ScannedProtocolBundles.deserializeJson(
         json: json.valueAs("orchard"),
@@ -1048,9 +1164,20 @@ class ScannedBlockBundles
         json: json.valueAs("orchard"),
         fromBytes: OrchardMerkleHash.fromBytes,
       ),
+      ironwood: readIronwood(),
     );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
+    return LayoutConst.struct([
+      ScannedProtocolBundles.layout(property: "sapling"),
+      ScannedProtocolBundles.layout(property: "orchard"),
+      ScannedProtocolBundles.layout(property: "ironwood"),
+    ], property: property);
+  }
+
+  /// Layout without the trailing Ironwood bundle, for scans stored
+  /// before NU6.3 support.
+  static Layout<Map<String, dynamic>> legacyLayout({String? property}) {
     return LayoutConst.struct([
       ScannedProtocolBundles.layout(property: "sapling"),
       ScannedProtocolBundles.layout(property: "orchard"),
@@ -1070,16 +1197,18 @@ class ScannedBlockBundles
   List<CborObject?> get serializationItems => [
     sapling.toCbor(),
     orchard.toCbor(),
+    ironwood.toCbor(),
   ];
 
   @override
-  List<dynamic> get variables => [sapling, orchard];
+  List<dynamic> get variables => [sapling, orchard, ironwood];
 
   @override
   Map<String, dynamic> toSerializeJson() {
     return {
       "sapling": sapling.toSerializeJson(),
       "orchard": orchard.toSerializeJson(),
+      "ironwood": ironwood.toSerializeJson(),
     };
   }
 }
@@ -1092,6 +1221,9 @@ class ScannedBlock with LayoutSerializable, Equality {
   final ScannedBlockBundles bundles;
   final List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers;
   final List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers;
+
+  /// Ironwood-pool nullifiers (NU6.3 second pool, separate nullifier set).
+  final List<ScannedBlockNullifier<OrchardNullifier>> ironwoodNullifiers;
   ScannedBlock({
     required this.blockId,
     required this.timestamp,
@@ -1099,10 +1231,12 @@ class ScannedBlock with LayoutSerializable, Equality {
     List<ScannedTx> txes = const [],
     required List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers,
     required List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers,
+    List<ScannedBlockNullifier<OrchardNullifier>> ironwoodNullifiers = const [],
     required this.bundles,
   }) : txes = txes.immutable,
        saplingNullifiers = saplingNullifiers.immutable,
-       orchardNullifiers = orchardNullifiers.immutable;
+       orchardNullifiers = orchardNullifiers.immutable,
+       ironwoodNullifiers = ironwoodNullifiers.immutable;
   factory ScannedBlock.deserializeJson(Map<String, dynamic> json) {
     return ScannedBlock(
       blockId: json.valueAs("blockId"),
@@ -1135,6 +1269,19 @@ class ScannedBlock with LayoutSerializable, Equality {
                 ),
               )
               .toList(),
+      ironwoodNullifiers:
+          json
+              .valueEnsureAsList<Map<String, dynamic>>(
+                "ironwoodNullifiers",
+                onMissing: () => [],
+              )
+              .map(
+                (e) => ScannedBlockNullifier._deserializeJson(
+                  json: e,
+                  fromBytes: OrchardNullifier.fromBytes,
+                ),
+              )
+              .toList(),
     );
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
@@ -1144,6 +1291,31 @@ class ScannedBlock with LayoutSerializable, Equality {
       LayoutConst.optional(LayoutConst.bcsString(), property: "blockhash"),
       LayoutConst.bcsVector(ScannedTx.layout(), property: "txes"),
       ScannedBlockBundles.layout(property: "bundles"),
+
+      LayoutConst.bcsVector(
+        ScannedBlockNullifier.layout(),
+        property: "saplingNullifiers",
+      ),
+      LayoutConst.bcsVector(
+        ScannedBlockNullifier.layout(),
+        property: "orchardNullifiers",
+      ),
+      LayoutConst.bcsVector(
+        ScannedBlockNullifier.layout(),
+        property: "ironwoodNullifiers",
+      ),
+    ], property: property);
+  }
+
+  /// Layout without the trailing Ironwood fields, for scans stored
+  /// before NU6.3 support.
+  static Layout<Map<String, dynamic>> legacyLayout({String? property}) {
+    return LayoutConst.struct([
+      LayoutConst.lebU32(property: "blockId"),
+      LayoutConst.optional(LayoutConst.lebU32(), property: "timestamp"),
+      LayoutConst.optional(LayoutConst.bcsString(), property: "blockhash"),
+      LayoutConst.bcsVector(ScannedTx.legacyLayout(), property: "txes"),
+      ScannedBlockBundles.legacyLayout(property: "bundles"),
 
       LayoutConst.bcsVector(
         ScannedBlockNullifier.layout(),
@@ -1164,6 +1336,7 @@ class ScannedBlock with LayoutSerializable, Equality {
     ScannedBlockBundles? bundles,
     List<ScannedBlockNullifier<SaplingNullifier>>? saplingNullifiers,
     List<ScannedBlockNullifier<OrchardNullifier>>? orchardNullifiers,
+    List<ScannedBlockNullifier<OrchardNullifier>>? ironwoodNullifiers,
   }) {
     return ScannedBlock(
       blockId: blockId ?? this.blockId,
@@ -1173,6 +1346,7 @@ class ScannedBlock with LayoutSerializable, Equality {
       bundles: bundles ?? this.bundles,
       orchardNullifiers: orchardNullifiers ?? this.orchardNullifiers,
       saplingNullifiers: saplingNullifiers ?? this.saplingNullifiers,
+      ironwoodNullifiers: ironwoodNullifiers ?? this.ironwoodNullifiers,
     );
   }
 
@@ -1181,6 +1355,7 @@ class ScannedBlock with LayoutSerializable, Equality {
   List<Nullifier> nullifiers() => [
     ...saplingNullifiers.map((e) => e.nullifier),
     ...orchardNullifiers.map((e) => e.nullifier),
+    ...ironwoodNullifiers.map((e) => e.nullifier),
   ];
 
   @override
@@ -1200,22 +1375,40 @@ class ScannedBlock with LayoutSerializable, Equality {
           saplingNullifiers.map((e) => e.toSerializeJson()).toList(),
       "orchardNullifiers":
           orchardNullifiers.map((e) => e.toSerializeJson()).toList(),
+      "ironwoodNullifiers":
+          ironwoodNullifiers.map((e) => e.toSerializeJson()).toList(),
     };
   }
 
   @override
-  List<dynamic> get variables => [blockId, timestamp, blockhash, txes, bundles];
+  List<dynamic> get variables => [
+    blockId,
+    timestamp,
+    blockhash,
+    txes,
+    bundles,
+    ironwoodNullifiers,
+  ];
 }
 
 class ScannedBlocks with LayoutSerializable, Equality {
   final List<ScannedBlock> blocks;
   ScannedBlocks(List<ScannedBlock> blocks) : blocks = blocks.immutable;
   factory ScannedBlocks.deserialize(List<int> bytes) {
-    final decode = LayoutSerializable.deserialize(
-      bytes: bytes,
-      layout: layout(),
-    );
-    return ScannedBlocks.deserializeJson(decode);
+    try {
+      final decode = LayoutSerializable.deserialize(
+        bytes: bytes,
+        layout: layout(),
+      );
+      return ScannedBlocks.deserializeJson(decode);
+    } on BuError {
+      // Scans stored before NU6.3 support lack the Ironwood fields.
+      final decode = LayoutSerializable.deserialize(
+        bytes: bytes,
+        layout: legacyLayout(),
+      );
+      return ScannedBlocks.deserializeJson(decode);
+    }
   }
   factory ScannedBlocks.deserializeJson(Map<String, dynamic> json) {
     return ScannedBlocks(
@@ -1231,6 +1424,14 @@ class ScannedBlocks with LayoutSerializable, Equality {
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
       LayoutConst.bcsVector(ScannedBlock.layout(), property: "blocks"),
+    ], property: property);
+  }
+
+  /// Layout without the trailing Ironwood fields, for scans stored
+  /// before NU6.3 support.
+  static Layout<Map<String, dynamic>> legacyLayout({String? property}) {
+    return LayoutConst.struct([
+      LayoutConst.bcsVector(ScannedBlock.legacyLayout(), property: "blocks"),
     ], property: property);
   }
 
@@ -1252,8 +1453,10 @@ class BlockStateInfo {
   final ZcashNetworkProtocol upgrade;
   final int saplingCommitmentTreeSize;
   final int orchardCommitmentTreeSize;
+  final int ironwoodCommitmentTreeSize;
   final int orchardFinalTreeSize;
   final int saplingFinalTreeSize;
+  final int ironwoodFinalTreeSize;
   final int blockId;
   final int timestamp;
   final String? blockhash;
@@ -1262,8 +1465,10 @@ class BlockStateInfo {
     required this.upgrade,
     required this.saplingCommitmentTreeSize,
     required this.orchardCommitmentTreeSize,
+    this.ironwoodCommitmentTreeSize = 0,
     required this.orchardFinalTreeSize,
     required this.saplingFinalTreeSize,
+    this.ironwoodFinalTreeSize = 0,
     required this.timestamp,
     required this.blockId,
     required this.blockhash,
@@ -1281,8 +1486,12 @@ class ZcashBlockProcessorConfig {
     ZcashBlockProcessorScanKey<OrchardFullViewingKey, OrchardIncomingViewingKey>
   >
   orchardViewKeys;
-  final SaplingDomainNative saplingDomain;
-  final OrchardDomainNative orchardDomain;
+  final SaplingDomain saplingDomain;
+  final OrchardDomain orchardDomain;
+
+  /// Trial-decryption domain for the Ironwood pool (NU6.3): Orchard-shaped
+  /// notes with note version v3. Same viewing keys as the Orchard pool.
+  final OrchardDomain ironwoodDomain;
   final ZcashCryptoContext context;
   final UpgradeActivationProvider activationProvider;
   final bool exportMemos;
@@ -1324,7 +1533,7 @@ class ZcashBlockProcessorConfig {
         if (k.ivk.ivk == ivk) return (scanKey: i, ivk: k.ivk);
       }
     }
-    throw ZcashBlockScannerException.failed(
+    throw ZcashErrors.scannerFailed(
       "findSaplingIncommingViewKey",
       reason: "key not found.",
     );
@@ -1341,7 +1550,7 @@ class ZcashBlockProcessorConfig {
         if (k.ivk.ivk == ivk) return (scanKey: i, ivk: k.ivk);
       }
     }
-    throw ZcashBlockScannerException.failed(
+    throw ZcashErrors.scannerFailed(
       "findOrchardIncommingViewKey",
       reason: "key not found.",
     );
@@ -1369,10 +1578,14 @@ class ZcashBlockProcessorConfig {
         >
         orchardViewKeys =
         const [],
-    SaplingDomainNative? saplingDomain,
-    OrchardDomainNative? orchardDomain,
-  }) : saplingDomain = saplingDomain ?? SaplingDomainNative(context),
-       orchardDomain = orchardDomain ?? OrchardDomainNative(context),
+    SaplingDomain? saplingDomain,
+    OrchardDomain? orchardDomain,
+    OrchardDomain? ironwoodDomain,
+  }) : saplingDomain = saplingDomain ?? SaplingDomain(context),
+       orchardDomain = orchardDomain ?? OrchardDomain(context),
+       ironwoodDomain =
+           ironwoodDomain ??
+           OrchardDomain(context, version: OrchardNoteVersion.v3),
        saplingViewKeys = saplingViewKeys.immutable,
        orchardViewKeys = orchardViewKeys.immutable,
        activationProvider =
@@ -1400,6 +1613,8 @@ class ZcashBlockProcessorScanKey<
 class ChainState with LayoutSerializable, CborTagSerializable {
   final NonEmptyFrontier<OrchardMerkleHash>? finalOrchardTree;
   final NonEmptyFrontier<SaplingNode>? finalSaplingTree;
+
+  final NonEmptyFrontier<OrchardMerkleHash>? finalIronwoodTree;
   final int blockHeight;
   final List<int> blockHash;
   const ChainState({
@@ -1407,6 +1622,7 @@ class ChainState with LayoutSerializable, CborTagSerializable {
     required this.blockHeight,
     required this.finalOrchardTree,
     required this.finalSaplingTree,
+    this.finalIronwoodTree,
   });
   factory ChainState.deserialize({List<int>? bytes, CborObject? object}) {
     final values = CborTagSerializable.decodeTaggedValue(
@@ -1433,6 +1649,13 @@ class ChainState with LayoutSerializable, CborTagSerializable {
           ),
       blockHeight: values.rawValueAt(2),
       blockHash: values.rawValueAt(3),
+      finalIronwoodTree: switch (values.objectAt<CborObject?>(4)) {
+        null => null,
+        final o => NonEmptyFrontier.deserialize(
+          object: o,
+          fromBytes: OrchardMerkleHash.fromBytes,
+        ),
+      },
     );
   }
 
@@ -1459,6 +1682,15 @@ class ChainState with LayoutSerializable, CborTagSerializable {
                   fromBytes: (bytes) => SaplingNode.fromBytes(bytes),
                 ),
           ),
+      finalIronwoodTree: json
+          .valueTo<NonEmptyFrontier<OrchardMerkleHash>?, Map<String, dynamic>>(
+            key: "final_ironwood_tree",
+            parse:
+                (e) => NonEmptyFrontier<OrchardMerkleHash>.deserializeJson(
+                  json: e,
+                  fromBytes: (bytes) => OrchardMerkleHash.fromBytes(bytes),
+                ),
+          ),
     );
   }
 
@@ -1473,6 +1705,10 @@ class ChainState with LayoutSerializable, CborTagSerializable {
       LayoutConst.optional(
         NonEmptyFrontier.layout(),
         property: "final_sapling_tree",
+      ),
+      LayoutConst.optional(
+        NonEmptyFrontier.layout(),
+        property: "final_ironwood_tree",
       ),
     ], property: property);
   }
@@ -1489,6 +1725,7 @@ class ChainState with LayoutSerializable, CborTagSerializable {
       "block_height": blockHeight,
       "final_orchard_tree": finalOrchardTree?.toSerializeJson(),
       "final_sapling_tree": finalSaplingTree?.toSerializeJson(),
+      "final_ironwood_tree": finalIronwoodTree?.toSerializeJson(),
     };
   }
 
@@ -1502,6 +1739,7 @@ class ChainState with LayoutSerializable, CborTagSerializable {
     finalSaplingTree?.toCbor(),
     blockHeight.toCbor(),
     CborBytesValue(blockHash),
+    finalIronwoodTree?.toCbor(),
   ];
 }
 
@@ -1543,7 +1781,7 @@ abstract class ScannedOutputWithNullifier<
       ZcashProtocol.orchard =>
         OrchardScannedOutputWithNullifier.deserializeJson(json),
       ZcashProtocol.transparent =>
-        throw ZcashBlockScannerException.failed(
+        throw ZcashErrors.scannerFailed(
           "ScannedOutputWithNullifier",
           reason: "Invalid shield protocol.",
         ),
@@ -1588,7 +1826,11 @@ abstract class ScannedOutputWithNullifier<
 
   T cast<T extends ScannedOutputWithNullifier>() {
     if (this is! T) {
-      throw CastFailedException<T>(value: this);
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "T", "value": runtimeType.toString()},
+      );
     }
     return this as T;
   }
@@ -1703,6 +1945,25 @@ class FullScannedOutput {
     required this.changes,
     required this.index,
   });
+
+  ZcashAddress? address({ZcashNetwork network = ZcashNetwork.mainnet}) {
+    final addr = viewKey.addressAt(index);
+    return ZcashUnifiedAddress.fromReceivers(
+      receivers: [
+        switch (viewKey.protocol) {
+          ZcashProtocol.orchard => ReceiverOrchard(
+            data: addr.toBytes(),
+            mode: UnifiedReceiverMode.address,
+          ),
+          _ => ReceiverSapling(
+            data: addr.toBytes(),
+            mode: UnifiedReceiverMode.address,
+          ),
+        },
+      ],
+      network: network,
+    ).toProtocolAddress(viewKey.protocol);
+  }
 }
 
 class ScannedNullifiers with CborTagSerializable, Equality {
@@ -1711,14 +1972,19 @@ class ScannedNullifiers with CborTagSerializable, Equality {
   final String? blockhash;
   final List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers;
   final List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers;
+
+  /// Ironwood-pool nullifiers (NU6.3 second pool, separate nullifier set).
+  final List<ScannedBlockNullifier<OrchardNullifier>> ironwoodNullifiers;
   ScannedNullifiers({
     required this.blockId,
     required this.timestamp,
     required this.blockhash,
     List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers = const [],
     List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers = const [],
+    List<ScannedBlockNullifier<OrchardNullifier>> ironwoodNullifiers = const [],
   }) : orchardNullifiers = orchardNullifiers.immutable,
-       saplingNullifiers = saplingNullifiers.immutable;
+       saplingNullifiers = saplingNullifiers.immutable,
+       ironwoodNullifiers = ironwoodNullifiers.immutable;
   factory ScannedNullifiers.deserialize({
     List<int>? bytes,
     CborObject? object,
@@ -1728,6 +1994,23 @@ class ScannedNullifiers with CborTagSerializable, Equality {
       cborBytes: bytes,
       cborObject: object,
     );
+    List<ScannedBlockNullifier<OrchardNullifier>> readIronwood() {
+      try {
+        return values
+            .listAt<CborTagValue>(5)
+            .map(
+              (e) => ScannedBlockNullifier.deserialize(
+                object: e,
+                fromBytes: OrchardNullifier.fromBytes,
+              ),
+            )
+            .toList();
+      } catch (_) {
+        // Scans stored before NU6.3 support have no sixth item.
+        return [];
+      }
+    }
+
     return ScannedNullifiers(
       blockId: values.rawValueAt(0),
       timestamp: values.rawValueAt(1),
@@ -1752,12 +2035,14 @@ class ScannedNullifiers with CborTagSerializable, Equality {
                 ),
               )
               .toList(),
+      ironwoodNullifiers: readIronwood(),
     );
   }
 
   List<Nullifier> get nullifiers => [
     ...orchardNullifiers.map((e) => e.nullifier),
     ...saplingNullifiers.map((e) => e.nullifier),
+    ...ironwoodNullifiers.map((e) => e.nullifier),
   ];
 
   @override
@@ -1767,6 +2052,7 @@ class ScannedNullifiers with CborTagSerializable, Equality {
     blockhash,
     orchardNullifiers,
     saplingNullifiers,
+    ironwoodNullifiers,
   ];
 
   @override
@@ -1782,6 +2068,9 @@ class ScannedNullifiers with CborTagSerializable, Equality {
     ),
     CborTagSerializable.listFromDynamic(
       saplingNullifiers.map((e) => e.toCbor()).toList(),
+    ),
+    CborTagSerializable.listFromDynamic(
+      ironwoodNullifiers.map((e) => e.toCbor()).toList(),
     ),
   ];
 }

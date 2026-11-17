@@ -1,15 +1,14 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/address.dart';
-import 'package:zcash_dart/src/transparent/exception/exception.dart';
 
 class ZECPublic with Equality {
   final Secp256k1PublicKey publicKey;
   const ZECPublic._(this.publicKey);
 
   factory ZECPublic.fromBip32(Bip32PublicKey publicKey) {
-    if (publicKey.curveType != EllipticCurveTypes.secp256k1) {
-      throw TransparentExceptoion.operationFailed(
+    if (publicKey.type != CryptoKeyType.secp256k1) {
+      throw ZcashErrors.transparentFailed(
         "fromBip32",
         reason: 'invalid public key curve for bitcoin',
       );
@@ -30,13 +29,13 @@ class ZECPublic with Equality {
 
   /// toHex converts the ZECPublic key to a hex-encoded string.
   /// If 'compressed' is true, the key is in compressed format.
-  String toHex({PublicKeyType mode = PublicKeyType.compressed}) {
+  String toHex({PublicKeyType mode = CryptoKeyEncoding.base}) {
     return BytesUtils.toHexString(toBytes(mode: mode));
   }
 
   /// toHash160 computes the RIPEMD160 hash of the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
-  List<int> toHash160({PublicKeyType mode = PublicKeyType.compressed}) {
+  List<int> toHash160({PublicKeyType mode = CryptoKeyEncoding.base}) {
     final bytes = BytesUtils.fromHexString(toHex(mode: mode));
     return QuickCrypto.hash160(bytes);
   }
@@ -44,7 +43,7 @@ class ZECPublic with Equality {
   /// toAddress generates a P2PKH (Pay-to-Public-Key-Hash) address from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
   ZcashP2pkhAddress toAddress({
-    PublicKeyType mode = PublicKeyType.compressed,
+    PublicKeyType mode = CryptoKeyEncoding.base,
     ZcashNetwork network = ZcashNetwork.mainnet,
   }) {
     final h160 = toHash160(mode: mode);
@@ -53,7 +52,7 @@ class ZECPublic with Equality {
 
   /// toRedeemScript generates a redeem script from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
-  Script toP2pkRedeemScript({PublicKeyType mode = PublicKeyType.compressed}) {
+  Script toP2pkRedeemScript({PublicKeyType mode = CryptoKeyEncoding.base}) {
     return Script(script: [toHex(mode: mode), BitcoinOpcode.opCheckSig]);
   }
 
@@ -61,7 +60,7 @@ class ZECPublic with Equality {
   /// wrapping a P2PK (Pay-to-Public-Key) script derived from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
   ZcashP2shAddress toP2pkhInP2sh({
-    PublicKeyType mode = PublicKeyType.compressed,
+    PublicKeyType mode = CryptoKeyEncoding.base,
     ZcashNetwork network = ZcashNetwork.mainnet,
   }) {
     final addr = toAddress(mode: mode);
@@ -79,7 +78,7 @@ class ZECPublic with Equality {
   /// wrapping a P2PK (Pay-to-Public-Key) script derived from the ZECPublic key.
   /// If 'compressed' is true, the key is in compressed format.
   ZcashP2shAddress toP2pkInP2sh({
-    PublicKeyType mode = PublicKeyType.compressed,
+    PublicKeyType mode = CryptoKeyEncoding.base,
     ZcashNetwork network = ZcashNetwork.mainnet,
   }) {
     final script = toP2pkRedeemScript(mode: mode);
@@ -92,13 +91,8 @@ class ZECPublic with Equality {
     );
   }
 
-  List<int> toBytes({PubKeyModes mode = PubKeyModes.uncompressed}) {
-    switch (mode) {
-      case PubKeyModes.uncompressed:
-        return publicKey.uncompressed;
-      case PubKeyModes.compressed:
-        return publicKey.compressed;
-    }
+  BuBytes toBytes({CryptoKeyEncoding mode = CryptoKeyEncoding.uncompressed}) {
+    return publicKey.toBytes(mode: mode);
   }
 
   /// Verifies a Bitcoin signed message using the provided signature.
@@ -179,7 +173,7 @@ class ZECPublic with Equality {
     final mode = BIP137Mode.findMode(signatureBytes[0]);
     return switch (mode) {
       BIP137Mode.p2pkhUncompressed => publicKey.toAddress(
-        mode: PubKeyModes.uncompressed,
+        mode: CryptoKeyEncoding.uncompressed,
       ),
       BIP137Mode.p2pkhCompressed => publicKey.toAddress(),
       _ => null,

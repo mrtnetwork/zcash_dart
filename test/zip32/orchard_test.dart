@@ -3,10 +3,20 @@ import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
 import 'package:zcash_dart/src/crypto/crypto.dart';
 
-void main() {
+import '../utils.dart';
+
+void orchardTest() {
   test("Orchard/ZIP-32", _zip32);
   test("Orchard/Diversifier", _diversifier);
   test("Orchard/Diversifier", _diversifierCompare);
+}
+
+void zip32OrchardTest() {
+  ZcashTestApi.runTest(orchardTest, "Orchard");
+}
+
+void main() {
+  ZcashTestApi.runTest(zip32OrchardTest, "Orchard");
 }
 
 void _zip32() {

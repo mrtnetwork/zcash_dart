@@ -8,15 +8,15 @@ import 'package:zcash_dart/src/value/value.dart';
 class SaplingPcztSpend with LayoutSerializable {
   final SaplingValueCommitment cv;
   final SaplingNullifier nullifier;
-  final SaplingSpendVerificationKey rk;
+  final RedJubJubSpendPublicKey rk;
 
   final SaplingPaymentAddress? recipient;
   final ZAmount? value;
   final SaplingRSeed? rseed;
   final SaplingValueCommitTrapdoor? rcv;
   final SaplingMerklePath? witness;
-  final JubJubNativeFr? alpha;
-  final SaplingSpendAuthorizingKey? dummySk;
+  final BuBytes? alpha;
+  final RedJubJubSpendPrivateKey? dummySk;
   SaplingProofGenerationKey? _proofGenerationKey;
   SaplingProofGenerationKey? get proofGenerationKey => _proofGenerationKey;
   Map<String, List<int>> _proprietary;
@@ -72,14 +72,14 @@ class SaplingPcztSpend with LayoutSerializable {
     final List<int>? rcm = json.valueAsBytes("rcm");
     final List<int>? rseedBytes = json.valueAsBytes("rseed");
     if (rcm != null && rseedBytes != null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "deserializeJson",
         reason: "Invalid note commit randomness.",
       );
     }
     SaplingRSeed? rseed;
     if (rcm != null) {
-      rseed = SaplingRSeedBeforeZip212(JubJubNativeFr.fromBytes(rcm));
+      rseed = SaplingRSeedBeforeZip212.fromBytes(rcm);
     } else if (rseedBytes != null) {
       rseed = SaplingRSeedAfterZip212(rseedBytes);
     }
@@ -90,7 +90,7 @@ class SaplingPcztSpend with LayoutSerializable {
       nullifier: SaplingNullifier.deserializeJson(
         json.valueEnsureAsMap<String, dynamic>("nullifier"),
       ),
-      rk: SaplingSpendVerificationKey.deserializeJson(
+      rk: RedJubJubSpendPublicKey.deserializeJson(
         json.valueEnsureAsMap<String, dynamic>("rk"),
       ),
       zkproof: json.valueTo<GrothProofBytes?, Map<String, dynamic>>(
@@ -125,17 +125,30 @@ class SaplingPcztSpend with LayoutSerializable {
         key: "witness",
         parse: (v) => SaplingMerklePath.deserializeJson(v),
       ),
-      alpha: json.valueTo<JubJubNativeFr?, List<int>>(
+      alpha: json.valueTo<BuBytes?, List<int>>(
         key: "alpha",
-        parse: (v) => JubJubNativeFr.fromBytes(v),
+        parse: (v) {
+          final b = v.exc(
+            length: 32,
+            operation: "SaplingPcztSpend.deserializeJson",
+            reason: "Invalid alpha bytes length.",
+          );
+          if (!blockchainUtils.api.jubjub.scCheck(b)) {
+            throw ZcashErrors.saplingPcztFailed(
+              "deserializeJson",
+              reason: "Invalid spend auth randomizer.",
+            );
+          }
+          return BuBytes.from(b);
+        },
       ),
       zip32derivation: json.valueTo<PcztZip32Derivation?, Map<String, dynamic>>(
         key: "zip32_derivation",
         parse: (v) => PcztZip32Derivation.deserializeJson(v),
       ),
-      dummySk: json.valueTo<SaplingSpendAuthorizingKey?, List<int>>(
+      dummySk: json.valueTo<RedJubJubSpendPrivateKey?, List<int>>(
         key: "dummy_sk",
-        parse: (v) => SaplingSpendAuthorizingKey.fromBytes(v),
+        parse: (v) => RedJubJubSpendPrivateKey.fromBytes(v),
       ),
       proprietary: json.valueEnsureAsMap<String, List<int>>("proprietary"),
     );
@@ -143,7 +156,7 @@ class SaplingPcztSpend with LayoutSerializable {
   SaplingPcztSpend copyWith({
     SaplingValueCommitment? cv,
     SaplingNullifier? nullifier,
-    SaplingSpendVerificationKey? rk,
+    RedJubJubSpendPublicKey? rk,
     GrothProofBytes? zkproof,
     SaplingPaymentAddress? recipient,
     ZAmount? value,
@@ -151,9 +164,9 @@ class SaplingPcztSpend with LayoutSerializable {
     SaplingValueCommitTrapdoor? rcv,
     SaplingProofGenerationKey? proofGenerationKey,
     SaplingMerklePath? witness,
-    JubJubNativeFr? alpha,
+    BuBytes? alpha,
     PcztZip32Derivation? zip32derivation,
-    SaplingSpendAuthorizingKey? dummySk,
+    RedJubJubSpendPrivateKey? dummySk,
     Map<String, List<int>>? proprietary,
     ReddsaSignature? spendAuthSig,
   }) {
@@ -180,7 +193,7 @@ class SaplingPcztSpend with LayoutSerializable {
     return LayoutConst.struct([
       SaplingValueCommitment.layout(property: "cv"),
       Nullifier.layout(property: "nullifier"),
-      SaplingSpendVerificationKey.layout(property: "rk"),
+      RedJubJubSpendPublicKey.layout(property: "rk"),
       LayoutConst.optional(GrothProofBytes.layout(), property: "zkproof"),
       LayoutConst.optional(
         ReddsaSignature.layout(),
@@ -205,7 +218,7 @@ class SaplingPcztSpend with LayoutSerializable {
         property: "zip32_derivation",
       ),
       LayoutConst.optional(LayoutConst.fixedBlob32(), property: "dummy_ask"),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -239,7 +252,7 @@ class SaplingPcztSpend with LayoutSerializable {
   ZAmount getValue() {
     final value = this.value;
     if (value == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getValue",
         reason: "Missing spend value.",
       );
@@ -250,7 +263,7 @@ class SaplingPcztSpend with LayoutSerializable {
   SaplingValueCommitTrapdoor getRcv() {
     final rcv = this.rcv;
     if (rcv == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getRcv",
         reason: "Missing spend value commit trapdoor.",
       );
@@ -261,7 +274,7 @@ class SaplingPcztSpend with LayoutSerializable {
   SaplingProofGenerationKey getProofGenerationKey() {
     final proofGenerationKey = this.proofGenerationKey;
     if (proofGenerationKey == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getProofGenerationKey",
         reason: "Missing spend proof generation key.",
       );
@@ -269,21 +282,18 @@ class SaplingPcztSpend with LayoutSerializable {
     return proofGenerationKey;
   }
 
-  JubJubNativeFr getAlpha() {
+  BuBytes getAlpha() {
     final alpha = this.alpha;
-    if (alpha == null) {
-      throw SaplingPcztException.operationFailed(
-        "getAlpha",
-        reason: "Invalid spend auth randomizer.",
-      );
-    }
-    return alpha;
+    if (alpha != null) return alpha;
+    return blockchainUtils.api.jubjub.scReduce64(
+      QuickCrypto.generateRandom(length: 64),
+    );
   }
 
   SaplingPaymentAddress getRecipient() {
     final recipient = this.recipient;
     if (recipient == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getRecipient",
         reason: "Missing spend recipient.",
       );
@@ -294,7 +304,7 @@ class SaplingPcztSpend with LayoutSerializable {
   SaplingRSeed getRseed() {
     final rseed = this.rseed;
     if (rseed == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getRseed",
         reason: "Missing spend rseed.",
       );
@@ -305,7 +315,7 @@ class SaplingPcztSpend with LayoutSerializable {
   SaplingMerklePath getWitness() {
     final witness = this.witness;
     if (witness == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getWitness",
         reason: "Missing spend witness.",
       );
@@ -318,7 +328,7 @@ class SaplingPcztSpend with LayoutSerializable {
     final rcv = getRcv();
     final cvNet = SaplingValueCommitment.derive(value: value, rcv: rcv);
     if (cvNet == cv) return;
-    throw SaplingPcztException.operationFailed(
+    throw ZcashErrors.saplingPcztFailed(
       "verifyCv",
       reason: "Invalid spend value commit.",
     );
@@ -332,7 +342,7 @@ class SaplingPcztSpend with LayoutSerializable {
       }
       final value = this.value;
       if ((value?.isZero() ?? false)) return vk;
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "vkForValidation",
         reason: "Mismatch full view key.",
       );
@@ -340,7 +350,7 @@ class SaplingPcztSpend with LayoutSerializable {
     vk ??= fvk?.vk;
 
     if (vk == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "vkForValidation",
         reason: "Missing spend proof generation key.",
       );
@@ -359,7 +369,7 @@ class SaplingPcztSpend with LayoutSerializable {
     final note = SaplingNote(recipient: recipient, value: value, rseed: rseed);
     if (vk.ivk().toPaymentAddress(note.recipient.diversifier) !=
         note.recipient) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "verifyNullifier",
         reason: "Invalid full view key for note.",
       );
@@ -371,7 +381,7 @@ class SaplingPcztSpend with LayoutSerializable {
           context: context,
         ) !=
         nullifier) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "verifyNullifier",
         reason: "Invalid spend nullifier.",
       );
@@ -382,16 +392,16 @@ class SaplingPcztSpend with LayoutSerializable {
     final vk = vkForValidation(fvk: fvk);
     final alpha = getAlpha();
     if (vk.ak.randomize(alpha) != rk) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "verifyRk",
         reason: "Invalid spend randomized verification key.",
       );
     }
   }
 
-  SaplingSpendAuthorizingKey _validateAndGetRsk(
+  RedJubJubSpendPrivateKey _validateAndGetRsk(
     List<int> sighash,
-    SaplingSpendAuthorizingKey ask,
+    RedJubJubSpendPrivateKey ask,
   ) {
     sighash = sighash.exc(
       length: 32,
@@ -400,9 +410,9 @@ class SaplingPcztSpend with LayoutSerializable {
     );
     final alpha = getAlpha();
     final rk = this.rk;
-    final rsk = ask.randomize(JubJubFr.fromBytes(alpha.toBytes()));
-    if (rsk.toVerificationKey() != rk) {
-      throw SaplingPcztException.operationFailed(
+    final rsk = ask.randomize(alpha);
+    if (rsk.publicKey != rk) {
+      throw ZcashErrors.saplingPcztFailed(
         "sign",
         reason: "Invalid spend authorization key.",
       );
@@ -413,7 +423,7 @@ class SaplingPcztSpend with LayoutSerializable {
   Future<void> sign({
     required ZcashCryptoContext context,
     required List<int> sighash,
-    required SaplingSpendAuthorizingKey ask,
+    required RedJubJubSpendPrivateKey ask,
   }) async {
     final rsk = _validateAndGetRsk(sighash, ask);
     final signature = await context.signRedJubJub(rsk, sighash);
@@ -432,7 +442,7 @@ class SaplingPcztSpend with LayoutSerializable {
           signature: signature,
           message: sighash,
         )) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "applySignature",
         reason: "Invalid external signature.",
       );
@@ -456,7 +466,7 @@ class SaplingPcztSpend with LayoutSerializable {
       "recipient": recipient?.toBytes(),
       "value": value?.value,
       "rcm": switch (rseed) {
-        SaplingRSeedBeforeZip212(:final inner) => inner.toBytes(),
+        SaplingRSeedBeforeZip212(:final inner) => inner.cloneBytes(),
         _ => null,
       },
       "rseed": switch (rseed) {
@@ -466,7 +476,7 @@ class SaplingPcztSpend with LayoutSerializable {
       "rcv": rcv?.toSerializeJson(),
       "proof_generation_key": proofGenerationKey?.toSerializeJson(),
       "witness": witness?.toSerializeJson(),
-      "alpha": alpha?.toBytes(),
+      "alpha": alpha?.cloneBytes(),
       "zip32_derivation": zip32derivation?.toSerializeJson(),
       "dummy_ask": dummySk?.toBytes(),
       "proprietary": proprietary,
@@ -711,7 +721,7 @@ class SaplingPcztOutput with LayoutSerializable {
         property: "zip32_derivation",
       ),
       LayoutConst.optional(LayoutConst.string(), property: "user_address"),
-      LayoutConst.bscMap<String, List<int>>(
+      LayoutConst.bcsMap<String, List<int>>(
         LayoutConst.bcsString(),
         LayoutConst.bcsBytes(),
         property: "proprietary",
@@ -741,7 +751,7 @@ class SaplingPcztOutput with LayoutSerializable {
   SaplingPaymentAddress getRecipient() {
     final recipient = this.recipient;
     if (recipient == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getRecipient",
         reason: "Missing output recipient.",
       );
@@ -752,7 +762,7 @@ class SaplingPcztOutput with LayoutSerializable {
   GrothProofBytes getZkproof() {
     final zkproof = this.zkproof;
     if (zkproof == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getZkproof",
         reason: "Missing output zkproof.",
       );
@@ -763,7 +773,7 @@ class SaplingPcztOutput with LayoutSerializable {
   ZAmount getValue() {
     final value = this.value;
     if (value == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getValue",
         reason: "Missing output value.",
       );
@@ -774,7 +784,7 @@ class SaplingPcztOutput with LayoutSerializable {
   List<int> getRseed() {
     final rseed = this.rseed;
     if (rseed == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getRseed",
         reason: "Missing output random seed.",
       );
@@ -785,7 +795,7 @@ class SaplingPcztOutput with LayoutSerializable {
   SaplingValueCommitTrapdoor getRcv() {
     final rcv = this.rcv;
     if (rcv == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getRcv",
         reason: "Missing output value commit trapdoor.",
       );
@@ -798,7 +808,7 @@ class SaplingPcztOutput with LayoutSerializable {
     final rcv = getRcv();
     final cvNet = SaplingValueCommitment.derive(value: value, rcv: rcv);
     if (cvNet == cv) return;
-    throw SaplingPcztException.operationFailed(
+    throw ZcashErrors.saplingPcztFailed(
       "verifyCv",
       reason: "Invalid output value commit.",
     );
@@ -814,7 +824,7 @@ class SaplingPcztOutput with LayoutSerializable {
       rseed: SaplingRSeedAfterZip212(rseed),
     );
     if (note.cmu(context) != cmu) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "verifyNcommitment",
         reason: "Invalid output extracted note commitment",
       );
@@ -901,20 +911,25 @@ class SaplingPcztOutput with LayoutSerializable {
 class SaplingPcztBundle
     with LayoutSerializable
     implements
-        PcztBundle<SaplingBundle, SaplingExtractedBundle, SaplingPcztBundle> {
+        PcztBundle<
+          SaplingBundle,
+          SaplingExtractedBundle,
+          DefaultExtractBundleParams,
+          SaplingPcztBundle
+        > {
   final List<SaplingPcztSpend> spends;
   final List<SaplingPcztOutput> outputs;
   @override
   final ZAmount valueSum;
   final SaplingAnchor anchor;
-  SaplingBindingAuthorizingKey? _bsk;
-  SaplingBindingAuthorizingKey? get bsk => _bsk;
+  RedJubJubBindingPrivateKey? _bsk;
+  RedJubJubBindingPrivateKey? get bsk => _bsk;
   SaplingPcztBundle({
     required List<SaplingPcztSpend> spends,
     required List<SaplingPcztOutput> outputs,
     required this.valueSum,
     required this.anchor,
-    SaplingBindingAuthorizingKey? bsk,
+    RedJubJubBindingPrivateKey? bsk,
   }) : _bsk = bsk,
        spends = spends.immutable,
        outputs = outputs.immutable;
@@ -942,9 +957,9 @@ class SaplingPcztBundle
               .toList(),
       valueSum: ZAmount(json.valueAs("value_sum")),
       anchor: SaplingAnchor.deserializeJson(json.valueAs("anchor")),
-      bsk: json.valueTo<SaplingBindingAuthorizingKey?, List<int>>(
+      bsk: json.valueTo<RedJubJubBindingPrivateKey?, List<int>>(
         key: "bsk",
-        parse: (v) => SaplingBindingAuthorizingKey.fromBytes(v),
+        parse: (v) => RedJubJubBindingPrivateKey.fromBytes(v),
       ),
     );
   }
@@ -958,10 +973,10 @@ class SaplingPcztBundle
     ], property: property);
   }
 
-  SaplingBindingAuthorizingKey getBsk() {
+  RedJubJubBindingPrivateKey getBsk() {
     final bsk = this.bsk;
     if (bsk == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "getBsk",
         reason: "Missing bundle binding signing key.",
       );
@@ -975,7 +990,7 @@ class SaplingPcztBundle
   ) {
     final spend = spends.elementAtOrNull(index);
     if (spend == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "setProofGenerationKey",
         reason: "Index out of range.",
       );
@@ -983,14 +998,14 @@ class SaplingPcztBundle
     spend.setProofGenerationKey(proofGenerationKey);
   }
 
-  void setBsk(SaplingBindingAuthorizingKey? bsk) {
+  void setBsk(RedJubJubBindingPrivateKey? bsk) {
     _bsk = bsk;
   }
 
   void setSpendProof(int index, GrothProofBytes proof) {
     final spend = spends.elementAtOrNull(index);
     if (spend == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "setSpendProof",
         reason: "Index out of range.",
       );
@@ -1001,7 +1016,7 @@ class SaplingPcztBundle
   void setOutputProof(int index, GrothProofBytes proof) {
     final output = outputs.elementAtOrNull(index);
     if (output == null) {
-      throw SaplingPcztException.operationFailed(
+      throw ZcashErrors.saplingPcztFailed(
         "setOutputProof",
         reason: "Index out of range.",
       );
@@ -1049,7 +1064,11 @@ class SaplingPcztBundle
             value: value,
             rseed: SaplingRSeedAfterZip212(e.getRseed()),
           );
-          final esk = note.deriveEsk() ?? JubJubNativeFr.random();
+          final esk =
+              note.deriveEsk() ??
+              blockchainUtils.api.jubjub.scReduce64(
+                QuickCrypto.generateRandom(length: 64),
+              );
           final rcm = note.rseed.rcm();
           final rcv = e.getRcv();
           return SaplingOutputParams.build(
@@ -1082,7 +1101,9 @@ class SaplingPcztBundle
   }
 
   @override
-  SaplingExtractedBundle? extract() {
+  SaplingExtractedBundle? extract({
+    DefaultExtractBundleParams params = const DefaultExtractBundleParams(),
+  }) {
     final bundle = _toTxData();
     if (bundle == null) return null;
     final bsk = getBsk();
@@ -1090,7 +1111,9 @@ class SaplingPcztBundle
   }
 
   @override
-  SaplingBundle? extractEffects() => _toTxData(extract: false);
+  SaplingBundle? extractEffects({
+    DefaultExtractBundleParams params = const DefaultExtractBundleParams(),
+  }) => _toTxData(extract: false);
 
   SaplingBundle? _toTxData({bool extract = true}) {
     if (this.spends.isEmpty && this.outputs.isEmpty) return null;
@@ -1100,7 +1123,7 @@ class SaplingPcztBundle
           final zkProof = spend.zkproof;
           final authSig = spend.spendAuthSig;
           if (extract && (zkProof == null || authSig == null)) {
-            throw SaplingPcztException.operationFailed(
+            throw ZcashErrors.saplingPcztFailed(
               "extract",
               reason:
                   zkProof == null
@@ -1122,7 +1145,7 @@ class SaplingPcztBundle
         this.outputs.map((e) {
           final zkProof = e.zkproof;
           if (extract && zkProof == null) {
-            throw SaplingPcztException.operationFailed(
+            throw ZcashErrors.saplingPcztFailed(
               "extract",
               reason: "Missing output zkproof.",
             );
@@ -1161,8 +1184,8 @@ class SaplingPcztBundle
         .map((e) => e.cv)
         .fold(SaplingCommitmentSum.zero(), (p, c) => p + c);
     final bvk = (sumSpendCvs - sumOutputCvs).toBvk(valueSum);
-    if (bsk.toVerificationKey() != bvk) {
-      throw SaplingPcztException.operationFailed(
+    if (bsk.publicKey != bvk) {
+      throw ZcashErrors.saplingPcztFailed(
         "finalize",
         reason: "value commit mismatch.",
       );
@@ -1211,15 +1234,15 @@ class SaplingPcztBundle
 
     switch ((bsk, other.bsk)) {
       case (
-            final SaplingBindingAuthorizingKey a,
-            final SaplingBindingAuthorizingKey b,
+            final RedJubJubBindingPrivateKey a,
+            final RedJubJubBindingPrivateKey b,
           )
           when a != b:
         {
           return null;
         }
-      case (final SaplingBindingAuthorizingKey _, null):
-      case (null, final SaplingBindingAuthorizingKey _):
+      case (final RedJubJubBindingPrivateKey _, null):
+      case (null, final RedJubJubBindingPrivateKey _):
         if (spends.length != other.spends.length ||
             outputs.length != other.outputs.length ||
             valueSum != other.valueSum) {
@@ -1281,7 +1304,7 @@ class SaplingPcztBundle
 class SaplingExtractedBundle implements ExtractedBundle<SaplingBundle> {
   @override
   final SaplingBundle bundle;
-  final SaplingBindingAuthorizingKey bindingSigningKey;
+  final RedJubJubBindingPrivateKey bindingSigningKey;
   const SaplingExtractedBundle({
     required this.bundle,
     required this.bindingSigningKey,
@@ -1300,7 +1323,7 @@ class SaplingExtractedBundle implements ExtractedBundle<SaplingBundle> {
     for (final i in bundle.shieldedSpends) {
       final signature = i.authSig;
       if (signature == null) {
-        throw SaplingPcztException.operationFailed(
+        throw ZcashErrors.saplingPcztFailed(
           "buildBindingAutorization",
           reason: "Missing spend autorization.",
         );
@@ -1311,13 +1334,15 @@ class SaplingExtractedBundle implements ExtractedBundle<SaplingBundle> {
             message: sighash,
             vk: i.rk,
           )) {
-        throw SaplingPcztException.operationFailed(
+        throw ZcashErrors.saplingPcztFailed(
           "buildBindingAutorization",
           reason: "spend autorization verification failed.",
         );
       }
     }
-    final bindingSignature = bindingSigningKey.sign(sighash);
+    final bindingSignature = bindingSigningKey.sign(
+      RedJubJubSigningParams(sighash),
+    );
     return SaplingBundle(
       shieldedOutputs: bundle.shieldedOutputs,
       shieldedSpends: bundle.shieldedSpends,

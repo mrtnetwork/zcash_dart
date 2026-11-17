@@ -1,6 +1,5 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/exception/exception.dart';
-import 'package:zcash_dart/src/note/src/exception.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:zcash_dart/src/note/src/note_encryption.dart';
 import 'package:zcash_dart/src/orchard/transaction/commitment.dart';
 import 'package:zcash_dart/src/sapling/transaction/commitment.dart';
@@ -24,7 +23,10 @@ abstract class Nullifier<T extends Object>
       ZcashProtocol.orchard => OrchardNullifier.fromBytes(values.rawValueAt(1)),
       ZcashProtocol.sapling => SaplingNullifier(values.rawValueAt(1)),
       ZcashProtocol.transparent =>
-        throw DartZcashPluginException("Invalid nullifier protocol."),
+        throw BuError(
+          DefaultErrorType.invalidArgument,
+          "Invalid nullifier protocol.",
+        ),
     };
     return nullifier.cast();
   }
@@ -46,7 +48,7 @@ abstract class Nullifier<T extends Object>
     return {"inner": inner};
   }
 
-  List<int> toBytes();
+  BuBytes toBytes();
   @override
   List<dynamic> get variables => [inner];
 
@@ -64,7 +66,11 @@ abstract class Nullifier<T extends Object>
 
   E cast<E extends Nullifier>() {
     if (this is! E) {
-      throw CastFailedException<E>(value: this);
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "E", "value": runtimeType.toString()},
+      );
     }
     return this as E;
   }
@@ -76,7 +82,7 @@ abstract class Note with LayoutSerializable, Equality {
 }
 
 class EphemeralKeyBytes with LayoutSerializable, Equality {
-  final List<int> inner;
+  final BuBytes inner;
   EphemeralKeyBytes(List<int> bytes)
     : inner =
           bytes
@@ -90,7 +96,10 @@ class EphemeralKeyBytes with LayoutSerializable, Equality {
     return EphemeralKeyBytes(json.valueAsBytes("inner"));
   }
   factory EphemeralKeyBytes.random() {
-    return EphemeralKeyBytes(JubJubNativePoint.random().toBytes());
+    final scalar = blockchainUtils.api.jubjub.scReduce64(
+      QuickCrypto.generateRandom(length: 64),
+    );
+    return EphemeralKeyBytes(blockchainUtils.api.jubjub.multBase(scalar));
   }
   static Layout<Map<String, dynamic>> layout({String? property}) {
     return LayoutConst.struct([
@@ -108,12 +117,19 @@ class EphemeralKeyBytes with LayoutSerializable, Equality {
     return layout(property: property);
   }
 
-  List<int> toBytes() => inner.clone();
+  BuBytes toBytes() => inner.clone();
 
   @override
   List<dynamic> get variables => [inner];
 
-  JubJubNativePoint toPoint() => JubJubNativePoint.fromBytes(inner);
+  bool isValidPoint() {
+    try {
+      JubJubPoint.fromBytes(inner);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 class BatchOutputDecryptionResult<
@@ -163,7 +179,7 @@ abstract mixin class ShieldedOutput<EXTRACTEDCOMMITMENT extends Object> {
     assert(tagLoc > 0);
     if (tagLoc <= 0) return null;
     if (tagLoc < 0) {
-      throw NoteEncryptionException.failed(
+      throw ZcashErrors.noteFailed(
         "splitCiphertextAtTag",
         reason: "Invalid compact note bytes length",
       );
@@ -174,7 +190,11 @@ abstract mixin class ShieldedOutput<EXTRACTEDCOMMITMENT extends Object> {
 
   T cast<T extends ShieldedOutput>() {
     if (this is! T) {
-      throw CastFailedException<T>(value: this);
+      throw BuError(
+        DefaultErrorType.castFailed,
+        "Failed to cast value",
+        details: {"expected": "T", "value": runtimeType.toString()},
+      );
     }
     return this as T;
   }

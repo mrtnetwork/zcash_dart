@@ -1,8 +1,8 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
-import 'package:blockchain_utils/layout/layout.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
+import 'package:blockchain_utils/encoding/encoding.dart';
 import 'package:blockchain_utils/utils/utils.dart';
 import 'package:zcash_dart/src/transaction/sighash_digest/types.dart';
-import 'package:zcash_dart/src/transparent/exception/exception.dart';
 
 /// Represents a transparent transaction input.
 class TransparentTxInput with LayoutSerializable {
@@ -43,7 +43,7 @@ class TransparentTxInput with LayoutSerializable {
   }) {
     if (sequance != null &&
         (sequance.isNegative || sequance > BinaryOps.maxUint32)) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "TransparentTxInput",
         reason: "Invalid transaction sequance.",
       );

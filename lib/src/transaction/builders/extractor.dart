@@ -5,6 +5,8 @@ mixin TransactionBuilderExtractor on BaseTransactionBuilder
   Future<ZcashTransaction> extractTransaction({
     bool verifyProofs = true,
     bool verifySignatures = true,
+    // required int orchardVersion,
+    // bool disableCrossAddress = false,
   }) async {
     return lock.run(() async {
       try {
@@ -17,8 +19,18 @@ mixin TransactionBuilderExtractor on BaseTransactionBuilder
           verifySignatures: verifySignatures,
         );
         return extract;
-      } on PcztException catch (e) {
-        throw TransactionBuilderException(e.message, details: e.details);
+      } on BuError catch (e) {
+        if (e.type == ZcashErrorType.pcztFailed ||
+            e.type == ZcashErrorType.saplingPcztFailed ||
+            e.type == ZcashErrorType.orchardPcztFailed ||
+            e.type == ZcashErrorType.transparentPcztFailed) {
+          throw BuError(
+            ZcashErrorType.txBuilderFailed,
+            e.message,
+            details: e.details,
+          );
+        }
+        rethrow;
       }
     });
   }
@@ -27,6 +39,8 @@ mixin TransactionBuilderExtractor on BaseTransactionBuilder
     ZcashWalletdProvider provider, {
     bool verifyProofs = true,
     bool verifySignatures = true,
+    // required int orchardVersion,
+    // bool disableCrossAddress = false,
   }) async {
     final tx = await extractTransaction(
       verifyProofs: verifyProofs,
@@ -40,11 +54,15 @@ mixin TransactionBuilderExtractor on BaseTransactionBuilder
         ),
       ),
     );
-    if (result.errorCode != 0) {
-      throw TransactionBuilderException.failed(
+    // A successful send returns error_code 0 and the txid in error_message.
+    // Proto3 does not put default (zero) values on the wire, so a successful
+    // reply deserializes error_code as null: treat null as 0.
+    final errorCode = result.errorCode ?? 0;
+    if (errorCode != 0) {
+      throw ZcashErrors.txBuilderFailed(
         "extractAndSendTransaction",
         reason: result.errorMessage,
-        details: {"code": result.errorCode.toString()},
+        details: {"code": errorCode.toString()},
       );
     }
     final message = result.errorMessage;

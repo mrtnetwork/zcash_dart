@@ -1,8 +1,10 @@
 import 'package:test/test.dart';
-import 'package:zcash_dart/src/merkle/exception/exception.dart';
+import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 
-void main() {
+import '../utils.dart';
+
+void addressTest() {
   test("Node Addres", () {
     addressISaplingAnchor();
     addressPositionRange();
@@ -12,6 +14,14 @@ void main() {
     testCommonAncestor();
     testPositionIsCompleteSubtree();
   });
+}
+
+void incrementalmerkletreeAddressTest() {
+  ZcashTestApi.runTest(addressTest, "Address");
+}
+
+void main() {
+  ZcashTestApi.runTest(incrementalmerkletreeAddressTest, "Address");
 }
 
 void context() {
@@ -36,7 +46,7 @@ void context() {
 void addressChildren() {
   expect(
     () => NodeAddress(level: TreeLevel.zero, index: 1).children(),
-    throwsA(isA<MerkleTreeException>()),
+    throwsA(isA<BuError>()),
   );
   expect(NodeAddress(level: TreeLevel(3), index: 1).children(), (
     NodeAddress(level: TreeLevel(2), index: 2),

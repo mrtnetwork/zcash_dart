@@ -1,4 +1,4 @@
-import 'package:blockchain_utils/proto/proto.dart';
+import 'package:blockchain_utils/encoding/encoding.dart';
 
 abstract class ZcashProtoMessage extends IProtoMessage {
   const ZcashProtoMessage();

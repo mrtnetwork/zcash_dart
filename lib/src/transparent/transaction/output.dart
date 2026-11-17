@@ -1,8 +1,8 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
+import 'package:zcash_dart/src/error/zcash_error.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/address/src/zcash_address.dart';
 import 'package:zcash_dart/src/transparent/builder/builder.dart';
-import 'package:zcash_dart/src/transparent/exception/exception.dart';
 
 /// Represents a transparent transaction output.
 class TransparentTxOutput with Equality, LayoutSerializable {
@@ -25,7 +25,7 @@ class TransparentTxOutput with Equality, LayoutSerializable {
         scriptPubKey: scriptPubKey,
       );
     } catch (_) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "TransparentTxOutput",
         reason: "Invalid output amount.",
       );
@@ -109,7 +109,7 @@ class TransparentNullDataOutput implements BaseTransparentOutputInfo {
 
   factory TransparentNullDataOutput(List<int> data) {
     if (data.length > TransparentBuilderConstant.maxOpReturn) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "TransparentNullDataOutput",
         reason: "Data is to long.",
       );
@@ -121,13 +121,13 @@ class TransparentNullDataOutput implements BaseTransparentOutputInfo {
   factory TransparentNullDataOutput.fromScript(Script script) {
     final content = BitcoinScriptUtils.getOpRetrunContentBytes(script);
     if (content == null) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "TransparentNullDataOutput",
         reason: "Invalid OP_RETURN script.",
       );
     }
     if (content.length > TransparentBuilderConstant.maxOpReturn) {
-      throw TransparentExceptoion.operationFailed(
+      throw ZcashErrors.transparentFailed(
         "TransparentNullDataOutput",
         reason: "Data is to long.",
       );

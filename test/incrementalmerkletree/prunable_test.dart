@@ -1,11 +1,12 @@
-import 'package:blockchain_utils/utils/compare/compare.dart';
+import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
-import 'package:zcash_dart/src/merkle/exception/exception.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/merkle/tree/prunable.dart';
 import 'types.dart';
 
-void main() {
+import '../utils.dart';
+
+void prunableTest() {
   test("prunable tree", () {
     _witness();
     _locatedInsertSubtree();
@@ -15,6 +16,14 @@ void main() {
     _markedPosition();
     _rootHash();
   });
+}
+
+void incrementalmerkletreePrunableTest() {
+  ZcashTestApi.runTest(prunableTest, "Prunable");
+}
+
+void main() {
+  ZcashTestApi.runTest(incrementalmerkletreePrunableTest, "Prunable");
 }
 
 void _witness() {
@@ -115,7 +124,7 @@ void _locatedInsertSubtree() {
         ),
         containsMarked: false,
       ),
-      throwsA(isA<MerkleTreeException>()),
+      throwsA(isA<BuError>()),
     );
     // assert(t2
     //         .insertSubtree(
@@ -179,7 +188,7 @@ void _mergeChecked() {
         rootAddr: NodeAddress(level: TreeLevel(1), index: 0),
         other: t2,
       ),
-      throwsA(isA<MerkleTreeException>()),
+      throwsA(isA<BuError>()),
     );
   }
   final t3 = parent(left: t0, right: t2);

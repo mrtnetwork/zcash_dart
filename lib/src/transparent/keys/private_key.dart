@@ -21,7 +21,7 @@ class ZECPrivate {
       keyBytes,
       Bip32KeyData(),
       Bip32Const.mainNetKeyNetVersions,
-      EllipticCurveTypes.secp256k1,
+      CryptoKeyType.secp256k1,
     );
     return ZECPrivate._(key);
   }
@@ -30,13 +30,13 @@ class ZECPrivate {
   ZECPublic toPublicKey() => ZECPublic.fromBip32(inner.publicKey);
 
   /// returns the key's raw bytes
-  List<int> toBytes() {
-    return inner.raw;
+  SecretBytes toBytes() {
+    return inner.toBytes();
   }
 
   /// returns the key's as hex
   String toHex() {
-    return BytesUtils.toHexString(inner.raw);
+    return toBytes().toHex();
   }
 
   /// Signs a message using BIP-137 format for standardized Bitcoin message signing.
@@ -59,15 +59,15 @@ class ZECPrivate {
     List<int> extraEntropy = const [],
   }) {
     final btcSigner = BitcoinKeySigner.fromKeyBytes(toBytes());
-    final signature = btcSigner.signMessageConst(
+    final signature = btcSigner.signMessage(
       message: message,
       messagePrefix: messagePrefix,
       extraEntropy: extraEntropy,
     );
-    int rId = signature[0] + mode.header;
+    int rId = signature.encoded[0] + mode.header;
     return StringUtils.decode([
       rId,
-      ...signature.sublist(1),
+      ...signature.encoded.sublist(1),
     ], encoding: StringEncoding.base64);
   }
 
@@ -85,12 +85,12 @@ class ZECPrivate {
     List<int> extraEntropy = const [],
   }) {
     final btcSigner = BitcoinKeySigner.fromKeyBytes(toBytes());
-    final signature = btcSigner.signMessageConst(
+    final signature = btcSigner.signMessage(
       message: message,
       messagePrefix: messagePrefix,
       extraEntropy: extraEntropy,
     );
-    return BytesUtils.toHexString(signature.sublist(1));
+    return BytesUtils.toHexString(signature.encoded.sublist(1));
   }
 
   /// Signs the given transaction digest using ECDSA (DER-encoded).
@@ -103,14 +103,11 @@ class ZECPrivate {
     List<int> extraEntropy = const [],
   }) {
     final btcSigner = BitcoinKeySigner.fromKeyBytes(toBytes());
-    List<int> signature = btcSigner.signECDSADerConst(
+    final signature = btcSigner.signECDSADer(
       txDigest,
       extraEntropy: extraEntropy,
     );
-    if (sighash != null) {
-      signature = <int>[...signature, sighash];
-    }
-    return signature;
+    return [...signature.encoded, if (sighash != null) sighash.asU8];
   }
 
   factory ZECPrivate.random() {

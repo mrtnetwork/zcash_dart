@@ -5,7 +5,7 @@ import 'package:zcash_dart/zcash.dart';
 
 import '../utils.dart';
 
-void main() {
+void unifiedSpendKeyTest() {
   final context = DefaultZcashCryptoContext();
   test("ZCash UFVK/UFSK", () {
     final network = ZcashNetwork.mainnet;
@@ -68,6 +68,14 @@ void main() {
       expect(addr.address, test.unifiedAddr);
     }
   });
+}
+
+void zip32UnifiedSpendKeyTest() {
+  ZcashTestApi.runTest(unifiedSpendKeyTest, "Unified Spend Key");
+}
+
+void main() {
+  ZcashTestApi.runTest(zip32UnifiedSpendKeyTest, "Unified Spend Key");
 }
 
 class _TestVector {

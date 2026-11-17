@@ -1,4 +1,4 @@
-export 'exception/exception.dart';
+export '../error/zcash_error.dart';
 export 'tree/prunable.dart';
 export 'tree/shard_tree.dart';
 export 'store/memory.dart';

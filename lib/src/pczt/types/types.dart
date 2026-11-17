@@ -6,13 +6,20 @@ import 'package:zcash_dart/src/transaction/types/bundle.dart';
 import 'package:zcash_dart/src/transparent/pczt/pczt.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
+abstract class ExtractBundleParams {}
+
+class DefaultExtractBundleParams implements ExtractBundleParams {
+  const DefaultExtractBundleParams();
+}
+
 abstract class PcztBundle<
   BUNDLE extends Bundle<BUNDLE>,
   EXT extends ExtractedBundle<BUNDLE>,
-  PCZT extends PcztBundle<BUNDLE, EXT, PCZT>
+  EXTPARAMS extends ExtractBundleParams,
+  PCZT extends PcztBundle<BUNDLE, EXT, EXTPARAMS, PCZT>
 > {
-  BUNDLE? extractEffects();
-  EXT? extract();
+  BUNDLE? extractEffects({required EXTPARAMS params});
+  EXT? extract({required EXTPARAMS params});
   PCZT clone();
   ZAmount get valueSum;
 }
@@ -27,6 +34,10 @@ abstract mixin class PcztV1 {
   TransparentPcztBundle get transparent;
   SaplingPcztBundle get sapling;
   OrchardPcztBundle get orchard;
+
+  /// The Ironwood PCZT bundle (NU6.3 second Orchard-family slot).
+  /// Null means absent, mirroring the empty/absent Ironwood bundle.
+  OrchardPcztBundle? get ironwood;
 }
 
 class PcztZip32Derivation with LayoutSerializable, Equality {

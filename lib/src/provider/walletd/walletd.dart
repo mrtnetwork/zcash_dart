@@ -3,7 +3,7 @@ export 'methods/message.dart';
 export 'core/request.dart';
 export 'provider/provider.dart';
 export 'service/service.dart';
-export 'exception/exception.dart';
+export '../../error/zcash_error.dart';
 export 'extension/extensions.dart';
 export 'proto_messages/cash/z/wallet/sdk/rpc/models.dart';
 export 'proto_messages/types.dart';

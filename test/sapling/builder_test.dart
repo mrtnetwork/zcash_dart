@@ -5,7 +5,9 @@ import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/sapling/sapling.dart';
 import 'package:zcash_dart/src/value/value.dart';
 
-void main() {
+import '../utils.dart';
+
+void saplingBuilderTest() {
   test("Sapling transaction builder", () async {
     final context = DefaultZcashCryptoContext.lazy();
     final extendedKey = SaplingExtendedSpendingKey.master(
@@ -98,4 +100,12 @@ void main() {
     final b = pcztBundle.bundle.extract();
     expect(b?.bundle.valueBalance, ZAmount.zero());
   });
+}
+
+void builderTest() {
+  ZcashTestApi.runTest(saplingBuilderTest, "Builder");
+}
+
+void main() {
+  ZcashTestApi.runTest(builderTest, "Builder");
 }

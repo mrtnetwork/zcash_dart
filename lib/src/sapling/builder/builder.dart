@@ -1,6 +1,7 @@
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
 import 'package:zcash_dart/src/note/note.dart';
+import 'package:zcash_dart/src/pczt/types/types.dart';
 import 'package:zcash_dart/src/sapling/sapling.dart';
 import 'package:zcash_dart/src/transaction/builders/types.dart';
 import 'package:zcash_dart/src/value/value.dart';
@@ -41,7 +42,7 @@ class SaplingBundleTypeCoinbase implements SaplingBundleType {
   @override
   int numOutputs({required int numSpends, required int numOutputs}) {
     if (numSpends != 0) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "numOutputs",
         reason: "Spends not allowed in coinbase bundles.",
       );
@@ -52,7 +53,7 @@ class SaplingBundleTypeCoinbase implements SaplingBundleType {
   @override
   int numSpends(int numSpends) {
     if (numSpends != 0) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "numSpends",
         reason: "Spends not allowed in coinbase bundles.",
       );
@@ -130,11 +131,13 @@ class SaplingSpendInfo {
   ({
     SaplingValueCommitment cv,
     SaplingNullifier nullifier,
-    JubJubNativeFr alpha,
-    SaplingSpendVerificationKey rk,
+    BuBytes alpha,
+    RedJubJubSpendPublicKey rk,
   })
   _build(ZcashCryptoContext context) {
-    final alpha = JubJubNativeFr.random();
+    final alpha = blockchainUtils.api.jubjub.scReduce64(
+      QuickCrypto.generateRandom(length: 64),
+    );
     final cv = SaplingValueCommitment.derive(value: note.value, rcv: rcv);
     final ak = fvk.vk.ak;
     final rk = ak.randomize(alpha);
@@ -149,9 +152,9 @@ class SaplingSpendInfo {
   ({
     SaplingSpendParams spend,
     SaplingSpendDescription description,
-    JubJubNativeFr alpha,
-    SaplingSpendAuthorizingKey? expsk,
-    SaplingSpendVerificationKey ak,
+    BuBytes alpha,
+    RedJubJubSpendPrivateKey? expsk,
+    RedJubJubSpendPublicKey ak,
   })
   build(
     ZcashCryptoContext context, {
@@ -160,13 +163,13 @@ class SaplingSpendInfo {
     generationKey ??= this.generationKey;
     final dummyExpsk = this.dummyExpsk;
     if (generationKey != null && dummyExpsk != null) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "build",
         reason: "Invalid spending key.",
       );
     }
     if (generationKey == null && dummyExpsk == null) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "build",
         reason: "Missing spending key.",
       );
@@ -176,7 +179,7 @@ class SaplingSpendInfo {
     );
     final vk = generationKey.toViewingKey();
     if (vk != fvk.vk) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "build",
         reason: "Invalid spending key.",
       );
@@ -252,12 +255,18 @@ class SaplingOutputInfoInner {
   factory SaplingOutputInfoInner.dummy() {
     SaplingPaymentAddress to;
     while (true) {
-      final d = Diversifier(QuickCrypto.generateRandom(11));
-      final dummyIvk = SaplingIvk(JubJubNativeFr.random());
+      final d = Diversifier(QuickCrypto.generateRandom(length: 11));
+      final dummyIvk = SaplingIvk.fromBytes(
+        blockchainUtils.api.jubjub.scReduce64(
+          QuickCrypto.generateRandom(length: 64),
+        ),
+      );
       try {
         to = dummyIvk.toPaymentAddress(d);
         break;
-      } on SaplingKeyError catch (_) {}
+      } on BuError catch (e) {
+        if (e.type != DefaultErrorType.invalidKeyData) rethrow;
+      }
     }
     return SaplingOutputInfoInner(
       to: to,
@@ -294,10 +303,10 @@ class SaplingOutputInfo {
     EphemeralKeyBytes epk,
     List<int> encCiphertext,
     List<int> outCipherText,
-    JubJubNativeFr esk,
+    BuBytes esk,
   })
   _build(ZcashCryptoContext context) {
-    final domain = SaplingDomainNative(context);
+    final domain = SaplingDomain(context);
     final encryptor = domain.createNote(note: note, memo: memo, ovk: ovk);
     final cv = SaplingValueCommitment.derive(value: note.value, rcv: rcv);
     final cmu = note.cmu(context);
@@ -312,7 +321,7 @@ class SaplingOutputInfo {
     return (
       cv: cv,
       cmu: cmu,
-      epk: EphemeralKeyBytes(epk.toBytes()),
+      epk: EphemeralKeyBytes(epk),
       encCiphertext: encCiphertext,
       outCipherText: outCipherText,
       esk: esk,
@@ -361,8 +370,10 @@ class SaplingBuilder
         BundleBuilder<
           SaplingBundle,
           SaplingExtractedBundle,
+          DefaultExtractBundleParams,
           SaplingPcztBundle,
-          SaplingBindingAuthorizingKey
+
+          RedJubJubBindingPrivateKey
         > {
   // ZAmount _valueBalance;
   List<SaplingSpendInfoInner> _spends;
@@ -375,6 +386,7 @@ class SaplingBuilder
   PcztBundleWithMetadata<
     SaplingBundle,
     SaplingExtractedBundle,
+    DefaultExtractBundleParams,
     SaplingPcztBundle
   >?
   _cachedPczt;
@@ -419,7 +431,7 @@ class SaplingBuilder
     );
     if (proofGenerationKey != null &&
         proofGenerationKey.toViewingKey() != spend.fvk.vk) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "setGenerationKey",
         reason: "Invalid proof generation key.",
       );
@@ -427,14 +439,14 @@ class SaplingBuilder
     switch (bundleType) {
       case SaplingBundleTypeTransactional():
         if (!spend.hasMatchingAnchor(anchor, context)) {
-          throw SaplingBuilderException.operationFailed(
+          throw ZcashErrors.saplingBuilderFailed(
             "addSpend",
             reason: "Anchor mismatch.",
           );
         }
         break;
       default:
-        throw SaplingBuilderException.operationFailed(
+        throw ZcashErrors.saplingBuilderFailed(
           "addSpend",
           reason: "Unsupported bundle type.",
         );
@@ -449,20 +461,20 @@ class SaplingBuilder
   }) {
     final spend = _spends.elementAtOrNull(index);
     if (spend == null) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "setGenerationKey",
         reason: "Index out of range.",
       );
     }
     if (proofGenerationKey.toViewingKey() != spend.fvk.vk) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "setGenerationKey",
         reason: "Invalid proof generation key.",
       );
     }
     final dummyExpsk = spend.dummyExpsk;
     if (dummyExpsk != null) {
-      throw SaplingBuilderException.operationFailed(
+      throw ZcashErrors.saplingBuilderFailed(
         "build",
         reason: "Invalid spending key.",
       );
@@ -494,7 +506,7 @@ class SaplingBuilder
   }
 
   @override
-  BundleWithMetadata<SaplingBundle, SaplingBindingAuthorizingKey> build([
+  BundleWithMetadata<SaplingBundle, RedJubJubBindingPrivateKey> build([
     List<SaplingExtendedSpendingKey> extsks = const [],
   ]) {
     final bundle = _buildBundle();
@@ -534,7 +546,7 @@ class SaplingBuilder
               (p, c) => p + c.description.cv,
             ))
         .toBvk(bundle.value);
-    assert(bvk == bsk.toVerificationKey());
+    assert(bvk == bsk.publicKey);
     final sBunle = SaplingBundle(
       shieldedSpends: spends.map((e) => e.description).toList(),
       shieldedOutputs: outputs.map((e) => e.description).toList(),
@@ -558,7 +570,7 @@ class SaplingBuilder
       case SaplingBundleTypeTransactional():
         for (final i in spends) {
           if (!i.hasMatchingAnchor(anchor, context)) {
-            throw SaplingBuilderException.operationFailed(
+            throw ZcashErrors.saplingBuilderFailed(
               "buildBundle",
               reason: "Anchor mismatch.",
             );
@@ -567,7 +579,7 @@ class SaplingBuilder
         break;
       default:
         if (_spends.isNotEmpty) {
-          throw SaplingBuilderException.operationFailed(
+          throw ZcashErrors.saplingBuilderFailed(
             "buildBundle",
             reason: "Unsupported bundle type.",
           );
@@ -633,6 +645,7 @@ class SaplingBuilder
   PcztBundleWithMetadata<
     SaplingBundle,
     SaplingExtractedBundle,
+    DefaultExtractBundleParams,
     SaplingPcztBundle
   >
   toPczt() {
@@ -650,6 +663,7 @@ class SaplingBuilder
           return PcztBundleWithMetadata<
             SaplingBundle,
             SaplingExtractedBundle,
+            DefaultExtractBundleParams,
             SaplingPcztBundle
           >(bundle: pczt, metadata: bundle.metadata);
         }();

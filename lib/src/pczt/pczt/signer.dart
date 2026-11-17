@@ -1,7 +1,6 @@
 import 'package:bitcoin_base/bitcoin_base.dart';
 import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:zcash_dart/src/crypto/src/crypto.dart';
-import 'package:zcash_dart/src/pczt/exception/exception.dart';
 import 'package:zcash_dart/src/pczt/pczt/extractor.dart';
 import 'package:zcash_dart/src/sapling/keys/keys.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
@@ -14,7 +13,7 @@ abstract mixin class PcztSigner implements PcztExtractor {
     final digest = txData.toTxDeigest();
     final amounts = transparent.inputs.map((e) => e.value).toList();
     final scripts = transparent.inputs.map((e) => e.scriptPubkey).toList();
-    final sighash = SighashGenerator.v5(
+    final sighash = SighashGenerator.forVersion(
       tx: txData,
       digest: digest,
       input: input,
@@ -31,7 +30,7 @@ abstract mixin class PcztSigner implements PcztExtractor {
   }) async {
     final input = transparent.inputs.elementAtOrNull(index);
     if (input == null) {
-      throw PcztException.failed(
+      throw ZcashErrors.pcztFailed(
         "signTransparent",
         reason: "Index out of range.",
         details: {"index": index.toString()},
@@ -76,12 +75,12 @@ abstract mixin class PcztSigner implements PcztExtractor {
 
   Future<void> signSapling({
     required int index,
-    required SaplingSpendAuthorizingKey ask,
+    required RedJubJubSpendPrivateKey ask,
     required ZcashCryptoContext context,
   }) async {
     final spend = sapling.spends.elementAtOrNull(index);
     if (spend == null) {
-      throw PcztException.failed(
+      throw ZcashErrors.pcztFailed(
         "signSapling",
         reason: "Index out of range.",
         details: {"index": index.toString()},
@@ -95,18 +94,57 @@ abstract mixin class PcztSigner implements PcztExtractor {
 
   Future<void> signOrchard({
     required int index,
-    required OrchardSpendAuthorizingKey ask,
+    required RedPallasSpendPrivateKey ask,
     required ZcashCryptoContext context,
   }) async {
+    // Required by the cross-address restriction: signers must verify
+    // before signing (no-op when the bundle permits cross-address).
+    orchard.verifyCrossAddressRestriction();
     final action = orchard.actions.elementAtOrNull(index);
     if (action == null) {
-      throw PcztException.failed(
+      throw ZcashErrors.pcztFailed(
         "signOrchard",
         reason: "Index out of range.",
         details: {"index": index.toString()},
       );
     }
-    action.spend.verifyNullifier(context);
+    action.spend.verifyNullifier(
+      context,
+      version: orchard.bundleVersion.valuePool.noteVersion,
+    );
+    final digests = _generateTxDigest(ShieldedSignableInput());
+    await action.sign(sighash: digests.sighash, context: context, ask: ask);
+
+    global.disableModifiable();
+  }
+
+  Future<void> signIronwood({
+    required int index,
+    required RedPallasSpendPrivateKey ask,
+    required ZcashCryptoContext context,
+  }) async {
+    final bundle = ironwood;
+    if (bundle == null) {
+      throw ZcashErrors.pcztFailed(
+        "signIronwood",
+        reason: "No Ironwood bundle present.",
+      );
+    }
+    // Required by the cross-address restriction: signers must verify
+    // before signing (no-op when the bundle permits cross-address).
+    bundle.verifyCrossAddressRestriction();
+    final action = bundle.actions.elementAtOrNull(index);
+    if (action == null) {
+      throw ZcashErrors.pcztFailed(
+        "signIronwood",
+        reason: "Index out of range.",
+        details: {"index": index.toString()},
+      );
+    }
+    action.spend.verifyNullifier(
+      context,
+      version: bundle.bundleVersion.valuePool.noteVersion,
+    );
     final digests = _generateTxDigest(ShieldedSignableInput());
     await action.sign(sighash: digests.sighash, context: context, ask: ask);
 
@@ -120,14 +158,14 @@ abstract mixin class PcztSigner implements PcztExtractor {
   }) {
     final spend = sapling.spends.elementAtOrNull(index);
     if (spend == null) {
-      throw PcztException.failed(
+      throw ZcashErrors.pcztFailed(
         "setSaplingProofGenerationKey",
         reason: "Index out of range.",
         details: {"index": index.toString()},
       );
     }
     if (proofGenerationKey == null && expsk == null) {
-      throw PcztException.failed(
+      throw ZcashErrors.pcztFailed(
         "setSaplingProofGenerationKey",
         reason: "Either proofGenerationKey or expsk must be provided.",
         details: {"index": index.toString()},

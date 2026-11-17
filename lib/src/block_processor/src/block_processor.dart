@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/block_processor/src/exception.dart';
 import 'package:zcash_dart/src/block_processor/src/types.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 import 'package:zcash_dart/src/note/note.dart';
@@ -16,7 +15,7 @@ class DefaultZcashBlockScanner extends DefaultZcashBlockProcessor {
   /// Scans a range of blocks and emits scanned block results as a stream.
   Stream<ScannedBlock> scanBlock(int start, int end) {
     if (end < start) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "scanBlock",
         reason: "Invalid block range.",
       );
@@ -42,7 +41,7 @@ class DefaultZcashBlockScanner extends DefaultZcashBlockProcessor {
     Duration? throttleDelay,
   }) async {
     if (end < start) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "scanBlock",
         reason: "Invalid block range.",
       );
@@ -64,7 +63,7 @@ class DefaultZcashBlockScanner extends DefaultZcashBlockProcessor {
   /// Scans a range of blocks and emits scanned nullifiers results as a stream.
   Stream<ScannedNullifiers> scanNullifiers(int start, int end) {
     if (end < start) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "scanBlock",
         reason: "Invalid block range.",
       );
@@ -88,7 +87,7 @@ class DefaultZcashBlockScanner extends DefaultZcashBlockProcessor {
     int end,
   ) async {
     if (end < start) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "scanBlock",
         reason: "Invalid block range.",
       );
@@ -129,9 +128,10 @@ abstract mixin class ZcashBlockProcessor {
   get provider;
   abstract final ZcashBlockProcessorConfig config;
   ZcashNetwork get network => config.network;
-  late SaplingDomainNative _saplingDomain = config.saplingDomain;
-  SaplingDomainNative get saplingDomain => _saplingDomain;
-  OrchardDomainNative get orchardDomain => config.orchardDomain;
+  late SaplingDomain _saplingDomain = config.saplingDomain;
+  SaplingDomain get saplingDomain => _saplingDomain;
+  OrchardDomain get orchardDomain => config.orchardDomain;
+  OrchardDomain get ironwoodDomain => config.ironwoodDomain;
 
   /// Builds and validates block state information from a compact block,
   /// optionally verifying continuity with the previous block state.
@@ -140,7 +140,7 @@ abstract mixin class ZcashBlockProcessor {
     BlockStateInfo? previousState,
   }) {
     if (!block.isValid()) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "buildBlockState",
         reason: "Invalid compact block information.",
       );
@@ -153,26 +153,32 @@ abstract mixin class ZcashBlockProcessor {
     );
     int? saplingCommitmentTreeSize = block.saplingCommitmentTreeSize ?? 0;
     int? orchardCommitmentTreeSize = block.orchardCommitmentTreeSize ?? 0;
+    int? ironwoodCommitmentTreeSize = block.ironwoodCommitmentTreeSize ?? 0;
 
     orchardCommitmentTreeSize -= block.totalOrchardOutputs();
+    ironwoodCommitmentTreeSize -= block.totalIronwoodOutputs();
     saplingCommitmentTreeSize -= block.totalSaplingOutputs();
     if (orchardCommitmentTreeSize.isNegative ||
+        ironwoodCommitmentTreeSize.isNegative ||
         saplingCommitmentTreeSize.isNegative) {
-      throw ZcashBlockScannerException.failed(
+      throw ZcashErrors.scannerFailed(
         "buildBlockState",
         reason: "Invalid compact block tree size.",
       );
     }
     final orchardFinalTreeSize =
         orchardCommitmentTreeSize + block.totalOrchardOutputs();
+    final ironwoodFinalTreeSize =
+        ironwoodCommitmentTreeSize + block.totalIronwoodOutputs();
     final saplingFinalTreeSize =
         saplingCommitmentTreeSize + block.totalSaplingOutputs();
 
     if (previousState != null) {
       if (height != (previousState.blockId + 1) ||
           orchardCommitmentTreeSize != previousState.orchardFinalTreeSize ||
+          ironwoodCommitmentTreeSize != previousState.ironwoodFinalTreeSize ||
           saplingCommitmentTreeSize != previousState.saplingFinalTreeSize) {
-        throw ZcashBlockScannerException.failed(
+        throw ZcashErrors.scannerFailed(
           "buildBlockState",
           reason: "Block state mismatch with previous block.",
         );
@@ -187,9 +193,11 @@ abstract mixin class ZcashBlockProcessor {
     return BlockStateInfo(
       orchardCommitmentTreeSize: orchardCommitmentTreeSize,
       saplingCommitmentTreeSize: saplingCommitmentTreeSize,
+      ironwoodCommitmentTreeSize: ironwoodCommitmentTreeSize,
       upgrade: upgrade,
       orchardFinalTreeSize: orchardFinalTreeSize,
       saplingFinalTreeSize: saplingFinalTreeSize,
+      ironwoodFinalTreeSize: ironwoodFinalTreeSize,
       blockId: height,
       blockhash: block.getHash(),
       timestamp: block.timestamp(),
@@ -205,9 +213,8 @@ abstract mixin class ZcashBlockProcessor {
     CompactBlock block,
     BlockStateInfo state,
   ) async {
-    // print("new block!");
     if (saplingDomain.zip212enforcement != state.zip212enforcement) {
-      _saplingDomain = SaplingDomainNative(
+      _saplingDomain = SaplingDomain(
         saplingDomain.context,
         zip212enforcement: state.zip212enforcement,
       );
@@ -228,17 +235,24 @@ abstract mixin class ZcashBlockProcessor {
           orchard: ScannedProtocolBundles(
             finalTreeSize: state.orchardFinalTreeSize,
           ),
+          ironwood: ScannedProtocolBundles(
+            finalTreeSize: state.ironwoodFinalTreeSize,
+          ),
         ),
         orchardNullifiers: [],
+        ironwoodNullifiers: [],
         saplingNullifiers: [],
       );
     }
     int orchardCommitmentTreeSize = state.orchardCommitmentTreeSize;
+    int ironwoodCommitmentTreeSize = state.ironwoodCommitmentTreeSize;
     int saplingCommitmentTreeSize = state.saplingCommitmentTreeSize;
     List<ScannedTx> scannedTxes = [];
     List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers = [];
+    List<ScannedBlockNullifier<OrchardNullifier>> ironwoodNullifiers = [];
     List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers = [];
     List<ScannedBlockCommitment<OrchardMerkleHash>> orchardCommitments = [];
+    List<ScannedBlockCommitment<OrchardMerkleHash>> ironwoodCommitments = [];
     List<ScannedBlockCommitment<SaplingNode>> saplingCommitments = [];
     Retention<int> buildRetention(bool isLastCommitment, bool isMarked) {
       if (isLastCommitment) {
@@ -260,10 +274,12 @@ abstract mixin class ZcashBlockProcessor {
 
     for (final tx in txes) {
       List<OrchardScannedOutputWithIvk> orchardOutputs = [];
+      List<OrchardScannedOutputWithIvk> ironwoodOutputs = [];
       List<SaplingScannedOutputWithIvk> saplingOutputs = [];
       final txId = tx.getTxId();
       final txIndex = tx.getTxIndex();
       final actions = tx.getCompactActions();
+      final ironwoodActions = tx.getCompactIronwoodActions();
       final outputs = tx.getOutputDescription();
       for (final output in actions) {
         final leafPosition = orchardCommitmentTreeSize + output.outputIndex;
@@ -277,6 +293,7 @@ abstract mixin class ZcashBlockProcessor {
           ivks: orchardIvks,
           output: output,
         );
+
         if (decrypt != null && config.exportMemos && decrypt.memo == null) {
           final fullOutput = await _tryGetTransaction(
             txId: txId,
@@ -340,6 +357,93 @@ abstract mixin class ZcashBlockProcessor {
           ),
         );
         orchardNullifiers.add(
+          ScannedBlockNullifier(
+            txId: txId,
+            index: output.outputIndex,
+            nullifier: output.nf,
+          ),
+        );
+      }
+
+      // Ironwood pool (NU6.3 second slot): same Orchard-shaped compact
+      // actions, separate tree, v3 trial-decryption domain. Viewing keys
+      // are shared with the Orchard pool.
+      for (final output in ironwoodActions) {
+        final leafPosition = ironwoodCommitmentTreeSize + output.outputIndex;
+        assert(leafPosition < state.ironwoodFinalTreeSize);
+        BatchIVKDecryptionResult<
+          OrchardKeyAgreementPrivateKey,
+          OrchardNote,
+          OrchardAddress
+        >?
+        decrypt = ironwoodDomain.batchIvkCompactNoteDecryption(
+          ivks: orchardIvks,
+          output: output,
+        );
+        if (decrypt != null && config.exportMemos && decrypt.memo == null) {
+          final fullOutput = await _tryGetTransaction(
+            txId: txId,
+            index: output.outputIndex,
+            protocol: ZcashProtocol.orchard,
+            isIronwood: true,
+            txes: cachedTx,
+          );
+          assert(
+            fullOutput != null,
+            "Failed to export full output from transaction",
+          );
+          if (fullOutput != null) {
+            final newDecrypt = ironwoodDomain.batchIvkNoteDecryption(
+              ivks: orchardIvks,
+              output: fullOutput.cast<OrchardShildOutput>(),
+            );
+            assert(
+              newDecrypt != null,
+              "Unexpected decrypt result. must not be null.",
+            );
+            assert(
+              newDecrypt?.memo != null,
+              "Unexpected decrypt result. memo must not be null.",
+            );
+            if (newDecrypt != null) decrypt = newDecrypt;
+          }
+        }
+        if (decrypt != null) {
+          final scanKey = config.findOrchardScanKey(decrypt.ivk);
+          OrchardNullifier? nullifier;
+          final fvk = scanKey.scanKey.fvk;
+          if (fvk != null) {
+            nullifier = decrypt.note.nullifier(
+              fvk: fvk,
+              context: config.context,
+            );
+          }
+          ironwoodOutputs.add(
+            OrchardScannedOutputWithIvk(
+              output: OrchardScannedOutput(
+                index: output.outputIndex,
+                ephemeralKey: output.ephemeralKey,
+                note: decrypt.note,
+
+                noteCommitmentTreePosition: LeafPosition(leafPosition),
+              ),
+              ivk: scanKey.ivk,
+              nullifier: nullifier,
+              memo: decrypt.memo,
+            ),
+          );
+        }
+
+        ironwoodCommitments.add(
+          ScannedBlockCommitment(
+            node: OrchardMerkleHash(output.cmx.inner),
+            retention: buildRetention(
+              leafPosition + 1 == state.ironwoodFinalTreeSize,
+              decrypt != null,
+            ),
+          ),
+        );
+        ironwoodNullifiers.add(
           ScannedBlockNullifier(
             txId: txId,
             index: output.outputIndex,
@@ -436,9 +540,11 @@ abstract mixin class ZcashBlockProcessor {
           index: txIndex,
           saplingOutputs: saplingOutputs,
           orchardOutputs: orchardOutputs,
+          ironwoodOutputs: ironwoodOutputs,
         ),
       );
       orchardCommitmentTreeSize += actions.length;
+      ironwoodCommitmentTreeSize += ironwoodActions.length;
       saplingCommitmentTreeSize += outputs.length;
     }
     return ScannedBlock(
@@ -448,6 +554,7 @@ abstract mixin class ZcashBlockProcessor {
       txes: scannedTxes,
       saplingNullifiers: saplingNullifiers,
       orchardNullifiers: orchardNullifiers,
+      ironwoodNullifiers: ironwoodNullifiers,
       bundles: ScannedBlockBundles(
         sapling: ScannedProtocolBundles(
           finalTreeSize: state.saplingFinalTreeSize,
@@ -456,6 +563,10 @@ abstract mixin class ZcashBlockProcessor {
         orchard: ScannedProtocolBundles(
           finalTreeSize: state.orchardFinalTreeSize,
           commitments: orchardCommitments,
+        ),
+        ironwood: ScannedProtocolBundles(
+          finalTreeSize: state.ironwoodFinalTreeSize,
+          commitments: ironwoodCommitments,
         ),
       ),
     );
@@ -479,6 +590,7 @@ abstract mixin class ZcashBlockProcessor {
       );
     }
     List<ScannedBlockNullifier<OrchardNullifier>> orchardNullifiers = [];
+    List<ScannedBlockNullifier<OrchardNullifier>> ironwoodNullifiers = [];
     List<ScannedBlockNullifier<SaplingNullifier>> saplingNullifiers = [];
 
     for (final tx in txes) {
@@ -487,6 +599,15 @@ abstract mixin class ZcashBlockProcessor {
       final actions = tx.getCompactActions();
       for (final output in actions) {
         orchardNullifiers.add(
+          ScannedBlockNullifier(
+            txId: txId,
+            index: output.outputIndex,
+            nullifier: output.nf,
+          ),
+        );
+      }
+      for (final output in tx.getCompactIronwoodActions()) {
+        ironwoodNullifiers.add(
           ScannedBlockNullifier(
             txId: txId,
             index: output.outputIndex,
@@ -506,6 +627,7 @@ abstract mixin class ZcashBlockProcessor {
       timestamp: timestamp,
       blockhash: blockHash,
       orchardNullifiers: orchardNullifiers,
+      ironwoodNullifiers: ironwoodNullifiers,
       saplingNullifiers: saplingNullifiers,
     );
   }
@@ -514,6 +636,7 @@ abstract mixin class ZcashBlockProcessor {
     required ZcashTxId txId,
     required int index,
     required ZcashProtocol protocol,
+    bool isIronwood = false,
     required Map<ZcashTxId, TransactionData?> txes,
   }) async {
     try {
@@ -529,15 +652,17 @@ abstract mixin class ZcashBlockProcessor {
       );
       final toTx = txData.toTransaction();
       txes[txId] = toTx;
-      return switch (protocol) {
-        ZcashProtocol.orchard => toTx.orchardBundle?.actions.elementAtOrNull(
-          index,
-        ),
+      final ShieldedOutput? result = switch (protocol) {
+        ZcashProtocol.orchard =>
+          isIronwood
+              ? toTx.ironwoodBundle?.actions.elementAtOrNull(index)
+              : toTx.orchardBundle?.actions.elementAtOrNull(index),
         ZcashProtocol.sapling => toTx.saplingBundle?.shieldedOutputs.elementAt(
           index,
         ),
         ZcashProtocol.transparent => null,
       };
+      return result;
     } catch (_) {
       return null;
     }

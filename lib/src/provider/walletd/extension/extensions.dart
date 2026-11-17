@@ -1,9 +1,8 @@
-import 'package:blockchain_utils/bip/bip.dart';
 import 'package:blockchain_utils/helper/extensions/extensions.dart';
-import 'package:blockchain_utils/utils/binary/utils.dart';
+import 'package:blockchain_utils/protocol/protocol.dart';
+import 'package:blockchain_utils/utils/utils.dart';
 import 'package:zcash_dart/src/block_processor/src/types.dart';
 import 'package:zcash_dart/src/orchard/merkle/merkle.dart';
-import 'package:zcash_dart/src/provider/walletd/exception/exception.dart';
 import 'package:zcash_dart/src/provider/walletd/proto_messages/cash/z/wallet/sdk/rpc/src/service.dart';
 import 'package:zcash_dart/src/sapling/merkle/merkle.dart';
 import 'package:zcash_dart/src/transaction/transaction.dart';
@@ -14,7 +13,7 @@ extension ExtGetAddressUtxosReply on ZWalletdGetAddressUtxosReply {
     final txid = this.txid;
     final height = this.height ?? BigInt.zero;
     if (txid == null) {
-      throw WalletdException.failed(
+      throw ZcashErrors.walletdFailed(
         "toUtxo",
         reason: "Unexpected service response. missing utxo tx id.",
       );
@@ -22,8 +21,8 @@ extension ExtGetAddressUtxosReply on ZWalletdGetAddressUtxosReply {
     return TransparentUtxo(
       txHash: ZcashTxId(txid),
       value: valueZat ?? BigInt.zero,
-      vout: index,
-      blockHeight: height.toIntOrThrow,
+      vout: index ?? 0,
+      blockHeight: height.asSafeInt,
     );
   }
 }
@@ -34,7 +33,7 @@ extension ExtZcashProtocol on ZcashProtocol {
       ZcashProtocol.orchard => ZWalletdShieldedProtocol.orchard,
       ZcashProtocol.sapling => ZWalletdShieldedProtocol.sapling,
       ZcashProtocol.transparent =>
-        throw WalletdException.failed(
+        throw ZcashErrors.walletdFailed(
           "toShieldedProtocol",
           reason: "Invalid shield protocol.",
         ),
@@ -46,7 +45,7 @@ extension ExtSubtreeRoot on ZWalletdSubtreeRoot {
   List<int> getRootHashes() {
     final hash = rootHash;
     if (hash == null) {
-      throw WalletdException.failed(
+      throw ZcashErrors.walletdFailed(
         "getRootHashes",
         reason: "Unexpected service response. missing root hash.",
       );
@@ -59,7 +58,7 @@ extension ExtZWalletdTreeState on ZWalletdTreeState {
   ChainState toChainState() {
     final blockHash = hash;
     if (blockHash == null) {
-      throw WalletdException.failed(
+      throw ZcashErrors.walletdFailed(
         "toChainState",
         reason: "Missing block hash",
       );
@@ -68,9 +67,10 @@ extension ExtZWalletdTreeState on ZWalletdTreeState {
 
     final orchardTree = this.orchardTree;
     final saplingTree = this.saplingTree;
+    final ironwoodTree = this.ironwoodTree;
     return ChainState(
       blockHash: BytesUtils.fromHexString(blockHash).reversed.toList(),
-      blockHeight: height.toIntOrThrow,
+      blockHeight: height.asSafeInt,
       finalOrchardTree:
           orchardTree == null
               ? null
@@ -83,6 +83,12 @@ extension ExtZWalletdTreeState on ZWalletdTreeState {
               : SaplingCommitmentTree.deserialize(
                 BytesUtils.fromHexString(saplingTree),
               ).toFrontier().frontier,
+      finalIronwoodTree:
+          ironwoodTree == null
+              ? null
+              : OrchardCommitmentTree.deserialize(
+                BytesUtils.fromHexString(ironwoodTree),
+              ).toFrontier().frontier,
     );
   }
 }
@@ -91,12 +97,12 @@ extension ExtZWalletdBlockID on ZWalletdBlockID {
   int getHeight() {
     final height = this.height;
     if (height == null) {
-      throw WalletdException.failed(
+      throw ZcashErrors.walletdFailed(
         "getLatestBlock",
         reason: "Unexcpected provider response. Missing block height.",
       );
     }
-    return height.toIntOrThrow;
+    return height.asSafeInt;
   }
 }
 
@@ -104,7 +110,7 @@ extension ExtZWalletdRawTransaction on ZWalletdRawTransaction {
   TransactionData toTransaction() {
     final data = this.data;
     if (data == null) {
-      throw WalletdException.failed(
+      throw ZcashErrors.walletdFailed(
         "toTransaction",
         reason: "Unexcpected provider response. Missing transaction data.",
       );

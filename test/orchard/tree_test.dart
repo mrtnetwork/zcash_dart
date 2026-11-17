@@ -3,8 +3,18 @@ import 'package:test/test.dart';
 import 'package:zcash_dart/src/orchard/merkle/merkle.dart';
 import 'package:zcash_dart/src/merkle/types/types.dart';
 
-void main() {
+import '../utils.dart';
+
+void treeTest() {
   _test();
+}
+
+void orchardTreeTest() {
+  ZcashTestApi.runTest(treeTest, "Tree");
+}
+
+void main() {
+  ZcashTestApi.runTest(orchardTreeTest, "Tree");
 }
 
 void _test() {

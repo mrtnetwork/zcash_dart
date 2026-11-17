@@ -8,8 +8,11 @@ abstract mixin class OrchardBaseBundleVerifier {
     required OrchardBundle bundle,
     required List<int> sighash,
     required ZcashCryptoContext context,
+    required OrchardProtocolVersion version,
     bool verifyProofs,
     bool verifySignatures,
+    // required int version,
+    // bool disableCrossAddress = false,
   });
 }
 
@@ -19,8 +22,11 @@ class OrchardBundleVerifier implements OrchardBaseBundleVerifier {
     required OrchardBundle bundle,
     required List<int> sighash,
     required ZcashCryptoContext context,
+    required OrchardProtocolVersion version,
     bool verifyProofs = true,
     bool verifySignatures = true,
+    // required int version,
+    // bool disableCrossAddress = false,
   }) async {
     final bindingSig = bundle.authorization?.bindingSignature;
     final proof = bundle.authorization?.proof;
@@ -48,12 +54,15 @@ class OrchardBundleVerifier implements OrchardBaseBundleVerifier {
         )) {
       return false;
     }
+
     return !verifyProofs ||
         await (context.verifyOrchardProof(
           OrchardVerifyProofInputs(
             proofBytes: proof.inner,
             instances: bundle.toCircuitInstance(),
           ),
+          version: version,
+          disableCrossAddress: !bundle.flags.crossAddressEnabled,
         ));
   }
 }

@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:blockchain_utils/blockchain_utils.dart';
-import 'package:zcash_dart/src/exception/exception.dart';
 
 /// Represents an amount of Zcash in zatoshi with safe arithmetic and serialization.
 class ZAmount with Equality, LayoutSerializable {
@@ -24,7 +23,7 @@ class ZAmount with Equality, LayoutSerializable {
   /// Creates a ZAmount from a zatoshi value with range validation.
   factory ZAmount.fromZatoshi(BigInt amount) {
     if (amount.isNegative || amount > maxZatoshi) {
-      throw ArgumentException.invalidOperationArguments(
+      throw CoreErrors.invalidOperationArguments(
         "fromZatoshi",
         reason: "Inavlid zatoshi amount.",
       );
@@ -76,7 +75,7 @@ class ZAmount with Equality, LayoutSerializable {
   /// Creates a ZAmount from an 8-byte little-endian representation.
   factory ZAmount.fromBytes(List<int> bytes) {
     if (bytes.length != 8) {
-      throw ArgumentException.invalidOperationArguments(
+      throw CoreErrors.invalidOperationArguments(
         "ZAmount",
         reason: "Invalid bytes length.",
       );
@@ -85,7 +84,7 @@ class ZAmount with Equality, LayoutSerializable {
   }
 
   /// Serializes the ZAmount to an 8-byte little-endian array.
-  List<int> toBytes() {
+  BuBytes toBytes() {
     return value.toLeBytes(length: 8, sign: true);
   }
 
@@ -110,12 +109,15 @@ class ZAmount with Equality, LayoutSerializable {
           value = (value + amount).asI128;
           break;
         default:
-          throw DartZcashPluginException("Unsupported operation.");
+          throw BuError(DefaultErrorType.unsupported, "Unsupported operation.");
       }
 
       return ZAmount._(value);
     } catch (_) {}
-    throw DartZcashPluginException("Sum failed. ZAmount overflowed.");
+    throw BuError(
+      DefaultErrorType.invalidArgument,
+      "Sum failed. ZAmount overflowed.",
+    );
   }
 
   /// Subtracts another ZAmount or BigInt, throwing on overflow.
@@ -130,12 +132,15 @@ class ZAmount with Equality, LayoutSerializable {
           value = (value - amount).asI128;
           break;
         default:
-          throw DartZcashPluginException("Unsupported operation.");
+          throw BuError(DefaultErrorType.unsupported, "Unsupported operation.");
       }
 
       return ZAmount._(value);
     } catch (_) {}
-    throw DartZcashPluginException("Subtraction failed. ZAmount overflowed.");
+    throw BuError(
+      DefaultErrorType.invalidArgument,
+      "Subtraction failed. ZAmount overflowed.",
+    );
   }
 
   /// Converts the value to a 64-bit signed integer, throwing if out of range.
@@ -143,7 +148,7 @@ class ZAmount with Equality, LayoutSerializable {
     try {
       return value.asI64;
     } catch (_) {}
-    throw DartZcashPluginException("Value out of range.");
+    throw BuError(DefaultErrorType.invalidArgument, "Value out of range.");
   }
 
   /// Returns the amount in zatoshi, throwing if out of range.
@@ -151,7 +156,7 @@ class ZAmount with Equality, LayoutSerializable {
     try {
       return ZAmount.fromZatoshi(value).value;
     } catch (_) {}
-    throw DartZcashPluginException("Value out of range.");
+    throw BuError(DefaultErrorType.invalidArgument, "Value out of range.");
   }
 
   /// Returns a ZAmount clamped to zatoshi range.
@@ -159,7 +164,7 @@ class ZAmount with Equality, LayoutSerializable {
     try {
       return ZAmount._(value.toU64);
     } catch (_) {}
-    throw DartZcashPluginException("Value out of range.");
+    throw BuError(DefaultErrorType.invalidArgument, "Value out of range.");
   }
 
   /// Returns a ZAmount clamped to 64-bit signed integer range.

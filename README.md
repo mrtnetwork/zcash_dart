@@ -1,136 +1,106 @@
 # ZCash Dart
 
-**Zcash cryptography, transactions, and zero-knowledge proofs — implemented in Dart.**
+Low-level Dart library for Zcash wallets, SDKs, and protocol-level applications: transparent, Sapling, and Orchard transactions, unified addresses and keys, note scanning, PCZT, and zero-knowledge proving.
 
-`zcash_dart` is a low-level Dart library for building **Zcash wallets, SDKs, and protocol-level applications**.
+This package is the continuation of the original
+[mrtnetwork/zcash_dart](https://github.com/mrtnetwork/zcash_dart).
 
-It provides support for:
+## Crypto engine: `blockchain_utils` dual backend
 
-- Transparent transactions
-- Sapling transactions
-- Orchard transactions
-- Zcash addresses and keys
-- Zero-knowledge proof infrastructure
+All cryptography and proving delegate to
+[`blockchain_utils`](https://github.com/mrtnetwork/blockchain_utils): pure
+Dart by default, optional Rust backend (FFI on native, WASM on web). Details
+live in the
+[`blockchain_utils` README](https://github.com/mrtnetwork/blockchain_utils);
+the Rust core is maintained at
+[mrtnetwork/blockchain-utils](https://github.com/mrtnetwork/blockchain-utils).
 
----
+> Proving (Sapling / Orchard) runs on `blockchainUtils.api` — select the Rust
+> backend first, as pure-Dart Groth16 / Halo2 proving is unavailable:
+>
+> ```dart
+> blockchainUtils.setRustApi();
+> ```
 
-# Features
+## Supported networks
 
-## Transactions
+| Network | Transparent | Sapling | Orchard |
+|---|---|---|---|
+| Mainnet | ✅ | ✅ | ✅ |
+| Testnet | ✅ | ✅ | ✅ |
+| Regtest | ✅ (examples + local node) | ✅ | ✅ |
 
-Support for Zcash transaction handling:
+> Regtest activation heights default to `1` (`ProtocolActivationHeights`
+> `regtest: 1`) — a non-standard testing default, not a real chain schedule.
+> If your regtest node activates upgrades at different heights, provide your
+> own `UpgradeActivationProvider` (see `DefaultUpgradeActivationProvider`) and
+> pass it to `ZcashBlockProcessorConfig`.
 
-- Serialize and deserialize **all supported Zcash transaction versions**
-- Create, sign, and verify:
-  - Orchard bundles
-  - Sapling bundles
-  - Transparent transactions
-- PCZT (**Partially Constructed Zcash Transaction**) support
-- Dart implementation of the Zcash **Incremental Merkle Tree**
+## Features
 
----
+### Transactions
 
-## Addresses & Keys
+| Area | Support |
+|---|---|
+| Versions | All supported Zcash transaction versions incl. NU7 (ZIP 259, v6), serialize/deserialize |
+| Bundles | Transparent, Sapling, and Orchard create / sign / verify |
+| PCZT | Partially Constructed Zcash Transactions (build, combine, finalize) |
+| Merkle | Incremental Merkle tree + bridges, anchor checks, multi-account merge |
 
-Support for Zcash key and address systems:
+### Addresses & keys
 
-- Sprout addresses
-- Sapling payment addresses
-- Transparent addresses:
-  - P2PKH
-  - P2SH
-- Unified Addresses
-- ZIP-32 hierarchical deterministic wallets
-- BIP-32 HD wallet support
-- USK (**Unified Spending Key**)
-- UFVK (**Unified Full Viewing Key**)
-- UIVK (**Unified Incoming Viewing Key**)
+| Area | Support |
+|---|---|
+| Transparent | P2PKH, P2SH |
+| Shielded | Sprout, Sapling payment addresses |
+| Unified | UA (receivers), USK / UFVK / UIVK |
+| HD | ZIP-32, BIP-32 |
 
----
+### Notes & scanning
 
-# Zero-Knowledge Proofs
+| Area | Support |
+|---|---|
+| Notes | Sapling / Orchard note encryption, decryption, nullifiers |
+| Scanner | Block processor + trial decryption, overlap scans, spent tracking |
 
-Support for Zcash zero-knowledge proof components:
+### Zero-knowledge proving
 
-- Orchard proving system
-- Sapling proving system
-- PLONK / Groth16 proof support
+| Area | Support |
+|---|---|
+| Sapling | Prove via `blockchainUtils.api.sapling` (Rust backend) |
+| Orchard | Prove via `blockchainUtils.api.orchard` (Rust Halo2 bridge) |
+| Primitives | BLS12-381, JubJub, Pallas/Vesta, Sinsemilla, Poseidon, FF1, f4jumble (all in `blockchain_utils`) |
 
-## Building ZK Provers
+### Providers
 
-ZK proving code is located in the `zk` folder.
+| API | Support |
+|---|---|
+| `walletd` | Wallet integration provider |
+| Local node | Regtest + local-node example flows |
 
-To compile ZK components for your target platform:
+## Examples
 
-```bash
-cd zk
-cargo build --release [target]
+See [`example/`](https://github.com/mrtnetwork/zcash_dart/tree/main/example)
+(transparent, Sapling, Orchard, multi-account Merkle merge, anchor checks,
+validation suite, address examples, local node).
 
+## Testing
+
+```sh
+dart test            # unit + backend-parity suites
 ```
-Compile the prover for your required target:
 
-- Native platforms
-- WebAssembly (WASM)
-- Other supported targets
+Backend-parity one-shot suites (`one_shot_suite.dart`, `test_backend.dart`)
+exercise both the pure-Dart and Rust/WASM backends; browser WASM tests need
+the built `test/wasm_assets`.
 
----
+## Web support
 
-# Cryptography
+Core cryptography runs in pure Dart with no native dependency, so the web
+build works out of the box. Proof generation is computationally heavy —
+select the WASM Rust backend and keep proving off the browser main thread.
 
-All Zcash-required cryptographic primitives are implemented in:
-
-`blockchain_utils`
-
-Supported primitives include:
-
-- FF1 format-preserving encryption
-- f4jumble
-- BLS12-381
-- Jubjub
-- Pallas / Vesta curves
-- Sinsemilla
-- Poseidon hash
-
----
-
-# Providers
-
-Wallet integration support through:
-
-- `walletd` provider
-
----
-
-# Examples
-
-See the [example](https://github.com/mrtnetwork/zcash_dart/blob/main/example/lib) folder for usage examples.
-
----
-
-# Web Support
-
-`zcash_dart` supports Dart Web.
-
-Features:
-
-- Core cryptographic primitives are implemented in pure Dart
-- No native dependency is required for core cryptography
-- Compatible with Dart Web
-- Zero-knowledge components can be compiled to WebAssembly (WASM)
-
-## Performance Considerations
-
-Zcash cryptography and zero-knowledge proof generation are computationally expensive in Dart Web.
-
-For production web applications:
-
-- Compile heavy cryptographic operations to WASM
-- Avoid blocking the browser main thread
-
----
-
-
-# Contributing
+## Contributing
 
 Contributions are welcome.
 
@@ -139,9 +109,7 @@ Contributions are welcome.
 3. Ensure tests pass
 4. Open a pull request with a clear description
 
----
-
-# Bug Reports & Feature Requests
+## Bug Reports & Feature Requests
 
 Please use the GitHub Issues tab for:
 

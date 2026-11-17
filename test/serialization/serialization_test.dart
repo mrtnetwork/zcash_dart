@@ -1,148 +1,78 @@
+import 'package:blockchain_utils/blockchain_utils.dart';
 import 'package:test/test.dart';
 import 'package:zcash_dart/zcash.dart';
 
-void main() {
+import '../utils.dart';
+
+void _expectRoundTrip(BuError error) {
+  final decode = BuErrorCodec.decode(bytes: error.toCborBytes());
+  expect(decode.type, error.type);
+  expect(decode.message, error.message);
+  expect(decode.details, error.details);
+}
+
+void serializationSerializationTest() {
   test('Exception serialization', () {
-    {
-      final error = DartZcashPluginException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = ZcashAddressException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = ZcashBlockScannerException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = ZcashCryptoContextException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = MerkleTreeException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = MerkleMergeError.conflict(
+    BuErrorCodec.registerTypes(ZcashErrorType.values);
+    _expectRoundTrip(const BuError(ZcashErrorType.plugin, "error"));
+    _expectRoundTrip(
+      const BuError(ZcashErrorType.invalidUnifiedReceivers, "error"),
+    );
+    _expectRoundTrip(
+      ZcashErrors.mismatchNetwork(
+        network: ZcashNetwork.mainnet,
+        expected: ZcashNetwork.testnet,
+      ),
+    );
+    _expectRoundTrip(ZcashErrors.scannerFailed("sync", reason: "timeout"));
+    _expectRoundTrip(
+      ZcashErrors.scannerInvalidCompact("block", reason: "bad data"),
+    );
+    _expectRoundTrip(const BuError(ZcashErrorType.cryptoContext, "error"));
+    _expectRoundTrip(ZcashErrors.merkleFailed("error", reason: "reason"));
+    _expectRoundTrip(
+      ZcashErrors.merkleMergeConflict(
         name: "error",
         address: NodeAddress(level: TreeLevel(1), index: 32),
-      );
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = MerkleWitnessError.failed(
+      ),
+    );
+    _expectRoundTrip(
+      ZcashErrors.merkleWitnessFailed(
         name: "error",
         addresses: [NodeAddress(level: TreeLevel(1), index: 32)],
         reason: 'reason',
-      );
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
+      ),
+    );
+    _expectRoundTrip(ZcashErrors.noteFailed("encrypt", reason: "reason"));
+    _expectRoundTrip(ZcashErrors.orchardFailed("prove", reason: "reason"));
+    _expectRoundTrip(ZcashErrors.pcztFailed("merge", reason: "reason"));
+    _expectRoundTrip(ZcashErrors.walletdFailed("sync", reason: "reason"));
+    _expectRoundTrip(ZcashErrors.saplingFailed("prove", reason: "reason"));
+    _expectRoundTrip(ZcashErrors.txBuilderFailed("build", reason: "reason"));
+    _expectRoundTrip(ZcashErrors.txSerializationFailed("proof"));
+    _expectRoundTrip(ZcashErrors.txSerializationUnexpected);
+    _expectRoundTrip(
+      ZcashErrors.transparentFailed("transfer", reason: "reason"),
+    );
+    _expectRoundTrip(ZcashErrors.transparentMultisigFailed("setup"));
+    _expectRoundTrip(ZcashErrors.merkleInsertionFailed(name: "t", reason: "r"));
+    _expectRoundTrip(ZcashErrors.merkleFrontierFailed(name: "t", reason: "r"));
+    _expectRoundTrip(ZcashErrors.orchardBuilderFailed("build", reason: "r"));
+    _expectRoundTrip(ZcashErrors.saplingBuilderFailed("build", reason: "r"));
     {
-      final error = NoteEncryptionException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = OrchardException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = PcztException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = WalletdException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = SaplingException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = TransactionBuilderException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = ZTransactionSerializationError("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = TransparentExceptoion("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-
-    {
-      final error = ZKLibException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = OrchardPcztException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = SaplingBuilderException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
-    }
-    {
-      final error = SaplingPcztException("error");
-      final decode = BaseDartZcashPluginException.deserialize(
-        bytes: error.toCbor().encode(),
-      );
-      expect(decode, error);
+      final ids = ZcashErrorType.values.map((e) => e.id);
+      expect(ids.toSet().length, ZcashErrorType.values.length);
+      for (final id in ids) {
+        expect(id > 258, equals(true));
+      }
     }
   });
+}
+
+void serializationTest() {
+  ZcashTestApi.runTest(serializationSerializationTest, "Serialization");
+}
+
+void main() {
+  ZcashTestApi.runTest(serializationTest, "Serialization");
 }

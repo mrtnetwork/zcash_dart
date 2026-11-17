@@ -24,7 +24,7 @@ class ZcashWalletdProvider<SERVICE extends IServiceProvider>
       request,
       timeout: timeout,
     );
-    return request.onResonse(r);
+    return request.onResponse(r);
   }
 
   @override
@@ -33,7 +33,7 @@ class ZcashWalletdProvider<SERVICE extends IServiceProvider>
     request, {
     Duration? timeout,
   }) async {
-    final params = request.buildRequest(0);
+    final params = await request.buildRequest(0);
     final response = await service.doGrpcRequest(params, timeout: timeout);
     return JsonParser.valueAs<SERVICERESPONSE>(response);
   }
@@ -42,12 +42,10 @@ class ZcashWalletdProvider<SERVICE extends IServiceProvider>
   Stream<RESULT> requestStream<RESULT>(
     IGRPCServiceRequest<RESULT, ZcashWalletdRequestDetails> request, {
     Duration? timeout,
-  }) {
-    final result = service.doGrpcRequestStream(
-      request.buildRequest(0),
-      timeout: timeout,
-    );
-    return result.map((e) => request.onResonse(e));
+  }) async* {
+    final r = await request.buildRequest(0);
+    final result = service.doGrpcRequestStream(r, timeout: timeout);
+    yield* result.map((e) => request.onResponse(e));
   }
 
   @override
@@ -65,10 +63,10 @@ class ZcashWalletdProvider<SERVICE extends IServiceProvider>
     Duration? timeout,
   }) async {
     final result = await service.doGrpcRequestStreamAsync(
-      request.buildRequest(0),
+      await request.buildRequest(0),
       timeout: timeout,
     );
-    return result.map((e) => request.onResonse(e));
+    return result.map((e) => request.onResponse(e));
   }
 
   @override

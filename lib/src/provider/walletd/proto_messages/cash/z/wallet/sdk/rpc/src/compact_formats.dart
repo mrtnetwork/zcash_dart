@@ -11,15 +11,20 @@ import 'package:zcash_dart/src/serialization/protobuf/protobuf.dart';
 /// Information about the state of the chain as of a given block.
 class ZWalletdChainMetadata extends ZcashProtoMessage with ChainMetadata {
   @override
-  final int saplingCommitmentTreeSize;
+  final int? saplingCommitmentTreeSize;
 
   /// the size of the Sapling note commitment tree as of the end of this block
   @override
-  final int orchardCommitmentTreeSize;
+  final int? orchardCommitmentTreeSize;
+
+  /// the size of the Orchard note commitment tree as of the end of this block
+  @override
+  final int? ironwoodCommitmentTreeSize;
 
   const ZWalletdChainMetadata({
-    this.saplingCommitmentTreeSize = 0,
-    this.orchardCommitmentTreeSize = 0,
+    this.saplingCommitmentTreeSize,
+    this.orchardCommitmentTreeSize,
+    this.ironwoodCommitmentTreeSize,
   });
 
   @override
@@ -29,7 +34,11 @@ class ZWalletdChainMetadata extends ZcashProtoMessage with ChainMetadata {
     return ProtoMessageConfig(
       syntax: ProtoSyntax.v3,
       options: const [],
-      fields: [ProtoFieldConfig.uint32(1), ProtoFieldConfig.uint32(2)],
+      fields: [
+        ProtoFieldConfig.uint32(1),
+        ProtoFieldConfig.uint32(2),
+        ProtoFieldConfig.uint32(3),
+      ],
     );
   }
 
@@ -37,13 +46,46 @@ class ZWalletdChainMetadata extends ZcashProtoMessage with ChainMetadata {
   List<Object?> get protoValues => [
     saplingCommitmentTreeSize,
     orchardCommitmentTreeSize,
+    ironwoodCommitmentTreeSize,
   ];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'saplingCommitmentTreeSize': saplingCommitmentTreeSize,
+      'orchardCommitmentTreeSize': orchardCommitmentTreeSize,
+      'ironwoodCommitmentTreeSize': ironwoodCommitmentTreeSize,
+    };
+  }
+
+  factory ZWalletdChainMetadata.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdChainMetadata(
+      saplingCommitmentTreeSize: json.valueAsInt<int?>(
+        'saplingCommitmentTreeSize',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      orchardCommitmentTreeSize: json.valueAsInt<int?>(
+        'orchardCommitmentTreeSize',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      ironwoodCommitmentTreeSize: json.valueAsInt<int?>(
+        'ironwoodCommitmentTreeSize',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
 
   factory ZWalletdChainMetadata.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdChainMetadata(
-      saplingCommitmentTreeSize: decode.getInt<int>(1),
-      orchardCommitmentTreeSize: decode.getInt<int>(2),
+      saplingCommitmentTreeSize: decode.getInt<int?>(1),
+      orchardCommitmentTreeSize: decode.getInt<int?>(2),
+      ironwoodCommitmentTreeSize: decode.getInt<int?>(3),
     );
   }
 
@@ -52,7 +94,7 @@ class ZWalletdChainMetadata extends ZcashProtoMessage with ChainMetadata {
       DefaultZcashProtoTypeUrl.cashZWalletSdkRpcChainMetadata;
 }
 
-/// the size of the Orchard note commitment tree as of the end of this block
+/// the size of the Ironwood note commitment tree as of the end of this block
 /// A compact representation of a Zcash block.
 ///
 /// CompactBlock is a packaging of ONLY the data from a block that's needed to:
@@ -66,9 +108,8 @@ class ZWalletdChainMetadata extends ZcashProtoMessage with ChainMetadata {
 /// parameters, although it is likely that such flexibility will only be provided via
 /// newly-added service methods, not via existing APIs.
 class ZWalletdCompactBlock extends ZcashProtoMessage with CompactBlock {
-  final int protoVersion;
-
-  /// the version of this wire format, for storage
+  /// Field 1 (`protoVersion`) was removed; see
+  /// https://github.com/zcash/lightwallet-protocol/issues/25
   @override
   final BigInt? height;
 
@@ -81,7 +122,7 @@ class ZWalletdCompactBlock extends ZcashProtoMessage with CompactBlock {
 
   /// if present, the ID (hash) of this block's predecessor
   @override
-  final int time;
+  final int? time;
 
   /// if non-zero, Unix epoch time when the block was mined
   final List<int>? header;
@@ -95,11 +136,10 @@ class ZWalletdCompactBlock extends ZcashProtoMessage with CompactBlock {
   final ZWalletdChainMetadata? chainMetadata;
 
   const ZWalletdCompactBlock({
-    this.protoVersion = 0,
     this.height,
     this.hash,
     this.prevHash,
-    this.time = 0,
+    this.time,
     this.header,
     this.vtx = const [],
     this.chainMetadata,
@@ -113,7 +153,6 @@ class ZWalletdCompactBlock extends ZcashProtoMessage with CompactBlock {
       syntax: ProtoSyntax.v3,
       options: const [],
       fields: [
-        ProtoFieldConfig.uint32(1),
         ProtoFieldConfig.uint64(2),
         ProtoFieldConfig.bytes(3),
         ProtoFieldConfig.bytes(4),
@@ -130,7 +169,6 @@ class ZWalletdCompactBlock extends ZcashProtoMessage with CompactBlock {
 
   @override
   List<Object?> get protoValues => [
-    protoVersion,
     height,
     hash,
     prevHash,
@@ -140,14 +178,79 @@ class ZWalletdCompactBlock extends ZcashProtoMessage with CompactBlock {
     chainMetadata,
   ];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'height': config.encodeBigint(height),
+      'hash': config.encodeBinary(hash),
+      'prevHash': config.encodeBinary(prevHash),
+      'time': time,
+      'header': config.encodeBinary(header),
+      'vtx': vtx.map((e) => config.encodeMessage(e)).toList(),
+      'chainMetadata': config.encodeMessage(chainMetadata),
+    };
+  }
+
+  factory ZWalletdCompactBlock.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdCompactBlock(
+      height: json.valueAsBigInt<BigInt?>(
+        'height',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      hash: config.decodeBinary<List<int>?>(
+        json.valueAs('hash', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      prevHash: config.decodeBinary<List<int>?>(
+        json.valueAs('prevHash', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      time: json.valueAsInt<int?>(
+        'time',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      header: config.decodeBinary<List<int>?>(
+        json.valueAs('header', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      vtx:
+          (json.valueEnsureAsList<dynamic>(
+                'vtx',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdCompactTx, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdCompactTx.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+      chainMetadata: json.valueTo<ZWalletdChainMetadata?, Object>(
+        key: 'chainMetadata',
+        parse:
+            (v) => ZWalletdChainMetadata.fromJson(
+              JsonParser.valueAs(v),
+              config: config,
+            ),
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdCompactBlock.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdCompactBlock(
-      protoVersion: decode.getInt<int>(1),
       height: decode.getBigInt<BigInt?>(2),
       hash: decode.getBytes<List<int>?>(3),
       prevHash: decode.getBytes<List<int>?>(4),
-      time: decode.getInt<int>(5),
+      time: decode.getInt<int?>(5),
       header: decode.getBytes<List<int>?>(6),
       vtx:
           decode
@@ -190,8 +293,9 @@ class ZWalletdCompactTx extends ZcashProtoMessage with CompactTx {
   /// stateless server and a transaction with transparent inputs, this will be
   /// unset because the calculation requires reference to prior transactions.
   /// If there are no transparent inputs, the fee will be calculable as:
-  /// valueBalanceSapling + valueBalanceOrchard + sum(vPubNew) - sum(vPubOld) - sum(tOut)
-  final int fee;
+  /// valueBalanceSapling + valueBalanceOrchard + valueBalanceIronwood
+  /// + sum(vPubNew) - sum(vPubOld) - sum(tOut)
+  final int? fee;
 
   @override
   final List<ZWalletdCompactSaplingSpend> spends;
@@ -201,6 +305,9 @@ class ZWalletdCompactTx extends ZcashProtoMessage with CompactTx {
 
   @override
   final List<ZWalletdCompactOrchardAction> actions;
+
+  @override
+  final List<ZWalletdCompactOrchardAction> ironwoodActions;
 
   /// `CompactTxIn` values corresponding to the `vin` entries of the full transaction.
   ///
@@ -216,10 +323,11 @@ class ZWalletdCompactTx extends ZcashProtoMessage with CompactTx {
   const ZWalletdCompactTx({
     this.index,
     this.txid,
-    this.fee = 0,
+    this.fee,
     this.spends = const [],
     this.outputs = const [],
     this.actions = const [],
+    this.ironwoodActions = const [],
     this.vin = const [],
     this.vout = const [],
   });
@@ -248,6 +356,10 @@ class ZWalletdCompactTx extends ZcashProtoMessage with CompactTx {
           elementType: ProtoFieldType.message,
         ),
         ProtoFieldConfig.repeated(
+          fieldNumber: 9,
+          elementType: ProtoFieldType.message,
+        ),
+        ProtoFieldConfig.repeated(
           fieldNumber: 7,
           elementType: ProtoFieldType.message,
         ),
@@ -267,16 +379,156 @@ class ZWalletdCompactTx extends ZcashProtoMessage with CompactTx {
     spends,
     outputs,
     actions,
+    ironwoodActions,
     vin,
     vout,
   ];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'index': config.encodeBigint(index),
+      'txid': config.encodeBinary(txid),
+      'fee': fee,
+      'spends': spends.map((e) => config.encodeMessage(e)).toList(),
+      'outputs': outputs.map((e) => config.encodeMessage(e)).toList(),
+      'actions': actions.map((e) => config.encodeMessage(e)).toList(),
+      'ironwoodActions':
+          ironwoodActions.map((e) => config.encodeMessage(e)).toList(),
+      'vin': vin.map((e) => config.encodeMessage(e)).toList(),
+      'vout': vout.map((e) => config.encodeMessage(e)).toList(),
+    };
+  }
+
+  factory ZWalletdCompactTx.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdCompactTx(
+      index: json.valueAsBigInt<BigInt?>(
+        'index',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      txid: config.decodeBinary<List<int>?>(
+        json.valueAs('txid', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      fee: json.valueAsInt<int?>(
+        'fee',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      spends:
+          (json.valueEnsureAsList<dynamic>(
+                'spends',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdCompactSaplingSpend, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdCompactSaplingSpend.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+      outputs:
+          (json.valueEnsureAsList<dynamic>(
+                'outputs',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdCompactSaplingOutput, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdCompactSaplingOutput.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+      actions:
+          (json.valueEnsureAsList<dynamic>(
+                'actions',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdCompactOrchardAction, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdCompactOrchardAction.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+      ironwoodActions:
+          (json.valueEnsureAsList<dynamic>(
+                'ironwoodActions',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdCompactOrchardAction, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdCompactOrchardAction.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+      vin:
+          (json.valueEnsureAsList<dynamic>(
+                'vin',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdCompactTxIn, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdCompactTxIn.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+      vout:
+          (json.valueEnsureAsList<dynamic>(
+                'vout',
+                normalizeKeyLookup: config.normalizeKeys,
+                onMissing: () => [],
+              ))
+              .map(
+                (e) => JsonParser.valueTo<ZWalletdTxOut, Object>(
+                  value: e,
+                  parse:
+                      (v) => ZWalletdTxOut.fromJson(
+                        JsonParser.valueAs(v),
+                        config: config,
+                      ),
+                ),
+              )
+              .toList(),
+    );
+  }
 
   factory ZWalletdCompactTx.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdCompactTx(
       index: decode.getBigInt<BigInt?>(1),
       txid: decode.getBytes<List<int>?>(2),
-      fee: decode.getInt<int>(3),
+      fee: decode.getInt<int?>(3),
       spends:
           decode
               .getListOfBytes(4)
@@ -290,6 +542,11 @@ class ZWalletdCompactTx extends ZcashProtoMessage with CompactTx {
       actions:
           decode
               .getListOfBytes(6)
+              .map((b) => ZWalletdCompactOrchardAction.deserialize(b))
+              .toList(),
+      ironwoodActions:
+          decode
+              .getListOfBytes(9)
               .map((b) => ZWalletdCompactOrchardAction.deserialize(b))
               .toList(),
       vin:
@@ -319,9 +576,9 @@ class ZWalletdCompactTxIn extends ZcashProtoMessage {
 
   /// The index of the output being spent in the `vout` array of the
   /// transaction referred to by `prevoutTxid`.
-  final int prevoutIndex;
+  final int? prevoutIndex;
 
-  const ZWalletdCompactTxIn({this.prevoutTxid, this.prevoutIndex = 0});
+  const ZWalletdCompactTxIn({this.prevoutTxid, this.prevoutIndex});
 
   @override
   ProtoMessageConfig protoConfig() => protoConfigStatic();
@@ -337,11 +594,36 @@ class ZWalletdCompactTxIn extends ZcashProtoMessage {
   @override
   List<Object?> get protoValues => [prevoutTxid, prevoutIndex];
 
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'prevoutTxid': config.encodeBinary(prevoutTxid),
+      'prevoutIndex': prevoutIndex,
+    };
+  }
+
+  factory ZWalletdCompactTxIn.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdCompactTxIn(
+      prevoutTxid: config.decodeBinary<List<int>?>(
+        json.valueAs('prevoutTxid', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      prevoutIndex: json.valueAsInt<int?>(
+        'prevoutIndex',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+    );
+  }
+
   factory ZWalletdCompactTxIn.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
     return ZWalletdCompactTxIn(
       prevoutTxid: decode.getBytes<List<int>?>(1),
-      prevoutIndex: decode.getInt<int>(2),
+      prevoutIndex: decode.getInt<int?>(2),
     );
   }
 
@@ -376,6 +658,31 @@ class ZWalletdTxOut extends ZcashProtoMessage {
 
   @override
   List<Object?> get protoValues => [value, scriptPubKey];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'value': config.encodeBigint(value),
+      'scriptPubKey': config.encodeBinary(scriptPubKey),
+    };
+  }
+
+  factory ZWalletdTxOut.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdTxOut(
+      value: json.valueAsBigInt<BigInt?>(
+        'value',
+        normalizeKeyLookup: config.normalizeKeys,
+      ),
+      scriptPubKey: config.decodeBinary<List<int>?>(
+        json.valueAs('scriptPubKey', normalizeKeyLookup: config.normalizeKeys),
+      ),
+    );
+  }
 
   factory ZWalletdTxOut.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
@@ -414,6 +721,24 @@ class ZWalletdCompactSaplingSpend extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => [nf];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {'nf': config.encodeBinary(nf)};
+  }
+
+  factory ZWalletdCompactSaplingSpend.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdCompactSaplingSpend(
+      nf: config.decodeBinary<List<int>?>(
+        json.valueAs('nf', normalizeKeyLookup: config.normalizeKeys),
+      ),
+    );
+  }
 
   factory ZWalletdCompactSaplingSpend.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
@@ -466,6 +791,34 @@ class ZWalletdCompactSaplingOutput extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => [cmu, ephemeralKey, ciphertext];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'cmu': config.encodeBinary(cmu),
+      'ephemeralKey': config.encodeBinary(ephemeralKey),
+      'ciphertext': config.encodeBinary(ciphertext),
+    };
+  }
+
+  factory ZWalletdCompactSaplingOutput.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdCompactSaplingOutput(
+      cmu: config.decodeBinary<List<int>?>(
+        json.valueAs('cmu', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      ephemeralKey: config.decodeBinary<List<int>?>(
+        json.valueAs('ephemeralKey', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      ciphertext: config.decodeBinary<List<int>?>(
+        json.valueAs('ciphertext', normalizeKeyLookup: config.normalizeKeys),
+      ),
+    );
+  }
 
   factory ZWalletdCompactSaplingOutput.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
@@ -525,6 +878,38 @@ class ZWalletdCompactOrchardAction extends ZcashProtoMessage
 
   @override
   List<Object?> get protoValues => [nullifier, cmx, ephemeralKey, ciphertext];
+
+  @override
+  Map<String, dynamic> toJson({
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return {
+      'nullifier': config.encodeBinary(nullifier),
+      'cmx': config.encodeBinary(cmx),
+      'ephemeralKey': config.encodeBinary(ephemeralKey),
+      'ciphertext': config.encodeBinary(ciphertext),
+    };
+  }
+
+  factory ZWalletdCompactOrchardAction.fromJson(
+    Map<String, dynamic> json, {
+    ProtoJsonConfig config = DefaultProtoJsonConfig.defaultConfig,
+  }) {
+    return ZWalletdCompactOrchardAction(
+      nullifier: config.decodeBinary<List<int>?>(
+        json.valueAs('nullifier', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      cmx: config.decodeBinary<List<int>?>(
+        json.valueAs('cmx', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      ephemeralKey: config.decodeBinary<List<int>?>(
+        json.valueAs('ephemeralKey', normalizeKeyLookup: config.normalizeKeys),
+      ),
+      ciphertext: config.decodeBinary<List<int>?>(
+        json.valueAs('ciphertext', normalizeKeyLookup: config.normalizeKeys),
+      ),
+    );
+  }
 
   factory ZWalletdCompactOrchardAction.deserialize(List<int> bytes) {
     final decode = ZcashProtoMessage.decode(bytes, protoConfigStatic());
