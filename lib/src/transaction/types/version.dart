@@ -261,12 +261,8 @@ class LightwalletdBranchActivationProvider
   /// malformed, or unknown — callers fall back to static defaults.
   static ZcashNetworkProtocol? tryParseBranchId(String? hex) {
     if (hex == null) return null;
-    var s = hex.trim().toLowerCase();
-    if (s.startsWith('0x')) s = s.substring(2);
-    final id = int.tryParse(s, radix: 16);
-    if (id == null) return null;
     try {
-      return ZcashNetworkProtocol.fromId(id);
+      return ZcashNetworkProtocol.fromId(IntUtils.parse(hex));
     } catch (_) {
       return null;
     }
